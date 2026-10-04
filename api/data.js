@@ -1551,27 +1551,109 @@ function fmtMoney(n){return Number(n||0).toLocaleString('es-MX',{style:'currency
 function financeFolio(prefix){const now=new Date();return `${prefix}-${now.getFullYear()}-${now.getTime().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;}
 
 async function buildPaymentReceiptPdf({admin,institution,payment,student,concept,signer,verificationUrl,qrBytes,documentType='CON-PAG'}){
+  // Recibo de caja: formato compacto tipo ticket, independiente de los documentos oficiales tipo oficio.
+  const width=226; // ~80 mm
+  const margin=16;
+  const lineWidth=width-(margin*2);
   const payer=student?.nombre_completo||payment.pagador_nombre||'Ingreso institucional';
-  const amount=fmtMoney(payment.importe);
-  const body=student
-    ? `Se hace constar que ${student.nombre_completo||'el(la) alumno(a)'} realizó un pago por ${amount}, correspondiente al concepto ${concept?.nombre||'—'}, registrado el ${payment.fecha_pago||'—'}, mediante ${String(payment.metodo_pago||'otro').replace(/^./,m=>m.toUpperCase())}. ${payment.referencia_pago?`Referencia: ${payment.referencia_pago}.`:''}`
-    : `Se hace constar que se registró un ingreso institucional por ${amount}, correspondiente al concepto ${concept?.nombre||'—'}, recibido de ${payer}. El movimiento quedó registrado el ${payment.fecha_pago||'—'} mediante ${String(payment.metodo_pago||'otro').replace(/^./,m=>m.toUpperCase())}. ${payment.referencia_pago?`Referencia: ${payment.referencia_pago}.`:''}`;
-  const bytes=await buildOfficialPdf({
-    admin,
-    institution,
-    type:documentType,
-    folio:payment.folio,
-    date:payment.fecha_pago,
-    student:student||null,
-    destinatario:student?.nombre_completo||payment.pagador_nombre||null,
-    asunto:student?'Comprobante de pago escolar':'Comprobante de ingreso institucional',
-    cuerpo:body,
-    signer,
-    qrBytes
-  });
-  return Buffer.from(bytes);
-}
+  const method=String(payment.metodo_pago||'otro').replace(/^./,m=>m.toUpperCase());
+  const amount=Number(payment.importe||0);
+  const money=fmtMoney(amount);
+  const instName=String(institution?.nombre||institution?.razon_social||'INSTITUTO TECNOLÓGICO E HISTÓRICO LATINOAMERICANO').toUpperCase();
+  const motto=String(institution?.lema||institution?.motto||'Scientia, Humanitas et Progressum');
+  const conceptName=String(concept?.nombre||'Pago escolar');
+  const ref=String(payment.referencia_pago||'').trim();
+  const date=String(payment.fecha_pago||'');
+  const qrSize=82;
 
+  function textWidth(text,font,size){return font.widthOfTextAtSize(String(text),size)}
+  function center(page,text,font,size,y){
+    const t=String(text);page.drawText(t,{x:(width-textWidth(t,font,size))/2,y,size,font});
+  }
+  function line(page,y,dashed=false){
+    if(dashed){
+      for(let x=margin;x<width-margin;x+=7) page.drawLine({start:{x,y},end:{x:Math.min(x+4,width-margin),y},thickness:0.7,color:rgb(.55,.55,.55)});
+    }else page.drawLine({start:{x:margin,y},end:{x:width-margin,y},thickness:.7,color:rgb(.35,.35,.35)});
+  }
+  function wrap(text,font,size,maxWidth){
+    const words=String(text||'').split(/\s+/).filter(Boolean),rows=[];let row='';
+    for(const word of words){
+      const test=row?`${row} ${word}`:word;
+      if(textWidth(test,font,size)<=maxWidth) row=test;
+      else {if(row) rows.push(row);row=word;}
+    }
+    if(row) rows.push(row); return rows;
+  }
+  function drawLabelValue(page,label,value,y,fonts){
+    page.drawText(label,{x:margin,y,size:8,font:fonts.bold,color:rgb(.3,.3,.3)});
+    const val=String(value||'—');
+    const max=width-margin-86;
+    const rows=wrap(val,fonts.regular,8.5,max);
+    rows.slice(0,2).forEach((r,i)=>page.drawText(r,{x:margin+86,y:y-(i*10),size:8.5,font:fonts.regular}));
+    return y-(Math.max(1,Math.min(2,rows.length))*10);
+  }
+
+  // Start with a generous ticket and trim naturally only through content positioning.
+  const height=560 + (instName.length>42?22:0) + (payer.length>42?18:0) + (conceptName.length>42?18:0);
+  const pdf=await PDFDocument.create();
+  const page=pdf.addPage([width,height]);
+  const regular=await pdf.embedFont(StandardFonts.Helvetica);
+  const bold=await pdf.embedFont(StandardFonts.HelveticaBold);
+  const mono=await pdf.embedFont(StandardFonts.Courier);
+  const fonts={regular,bold,mono};
+  let y=height-22;
+
+  center(page,'RECIBO DE PAGO',bold,15,y); y-=17;
+  center(page,'COMPROBANTE DE CAJA',regular,8.5,y); y-=15;
+  line(page,y,true); y-=13;
+
+  for(const row of wrap(instName,bold,8.5,lineWidth)) { center(page,row,bold,8.5,y); y-=10; }
+  center(page,`Ciclo ${payment.ciclo_escolar||'—'}`,regular,7.5,y); y-=10;
+  center(page,motto,regular,6.5,y); y-=13;
+  line(page,y); y-=13;
+
+  page.drawText('FOLIO',{x:margin,y,size:8,font:bold});
+  page.drawText(String(payment.folio||'—'),{x:margin+39,y,size:8.5,font:mono}); y-=12;
+  page.drawText('FECHA',{x:margin,y,size:8,font:bold});
+  page.drawText(date||'—',{x:margin+39,y,size:8.5,font:regular}); y-=14;
+
+  page.drawText('RECIBIMOS DE',{x:margin,y,size:8,font:bold}); y-=11;
+  for(const row of wrap(payer,bold,9.2,lineWidth)) { page.drawText(row,{x:margin,y,size:9.2,font:bold}); y-=11; }
+  if(student?.matricula){page.drawText(`Matrícula: ${student.matricula}`,{x:margin,y,size:7.8,font:regular});y-=11;}
+  y-=2; line(page,y,true); y-=12;
+
+  page.drawText('CONCEPTO',{x:margin,y,size:8,font:bold}); y-=11;
+  for(const row of wrap(conceptName,bold,9.2,lineWidth)) { page.drawText(row,{x:margin,y,size:9.2,font:bold}); y-=11; }
+  y-=3;
+
+  page.drawText('IMPORTE',{x:margin,y,size:9,font:bold});
+  const amountText=money;
+  page.drawText(amountText,{x:width-margin-textWidth(amountText,bold,17),y:y-1,size:17,font:bold}); y-=24;
+  line(page,y); y-=12;
+
+  y=drawLabelValue(page,'MÉTODO',method,y,fonts);
+  if(ref) y=drawLabelValue(page,'REFERENCIA',ref,y,fonts);
+  if(payment.cuenta_nombre||payment.cuenta_clave){y=drawLabelValue(page,'CUENTA',payment.cuenta_nombre||payment.cuenta_clave,y,fonts);}
+  y-=3; line(page,y,true); y-=12;
+
+  center(page,'GRACIAS POR SU PAGO',bold,9.5,y); y-=12;
+  center(page,'Conserve este comprobante.',regular,7.5,y); y-=14;
+
+  if(qrBytes){
+    try{
+      const qr=await pdf.embedPng(qrBytes);
+      page.drawImage(qr,{x:(width-qrSize)/2,y:y-qrSize,width:qrSize,height:qrSize});
+      y-=qrSize+8;
+      center(page,'Verificación digital',regular,7,y); y-=12;
+    }catch{}
+  }
+
+  line(page,y,true); y-=11;
+  center(page,`Documento ${documentType}`,mono,6.5,y); y-=9;
+  center(page,'ITHLA · Recursos Monetarios',regular,6.5,y);
+
+  return Buffer.from(await pdf.save());
+}
 async function financeDashboard(admin,user,profile){
   ensureFinanceRead(profile);
   const cycle=await activeCycle(admin);
