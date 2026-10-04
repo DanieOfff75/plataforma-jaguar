@@ -946,10 +946,10 @@ async function enrichArchiveRows(admin,rows){
 
 
 function officialDocumentManagers(profile){
-  return ['archivo_escolar','direccion_escolar','control_escolar','control'].includes(profile?.rol);
+  return profile?.rol==='archivo_escolar';
 }
 function officialDocumentIssuers(profile){
-  return ['archivo_escolar','direccion_escolar','control_escolar','control'].includes(profile?.rol);
+  return profile?.rol==='archivo_escolar';
 }
 function officialRoleFromDepartment(code){const map={AE:'archivo_escolar',DIR:'direccion_escolar',CE:'control_escolar',SD:'servicios_docentes',SE:'servicios_estudiantiles',PRE:'prefectura',CA:'coordinacion_academica',RM:'recursos_monetarios'};return map[String(code||'').toUpperCase()]||null;}
 function normalizeOfficialSignerCodes(values){const allowed=new Set(['DIR','CE','SD','SE','PRE','CA','RM']);return [...new Set((Array.isArray(values)?values:[]).map(x=>String(x||'').trim().toUpperCase()).filter(x=>allowed.has(x)))];}
@@ -4238,7 +4238,8 @@ export default async function handler(
 
     if (req.method === 'POST' && req.body?.resource === 'prepareSignatureUpload') {
       const staffRoles=['docente','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','direccion_escolar','control_escolar','control','archivo_escolar','recursos_monetarios'];
-      if(!staffRoles.includes(profile.rol)) return res.status(403).json({ok:false,error:'Solo personal institucional puede registrar firma.'});
+      const deptRole=departmentKeyForRole(profile?.rol);
+      if(!staffRoles.includes(profile?.rol) && !deptRole) return res.status(403).json({ok:false,error:'Esta cuenta no pertenece a un departamento institucional habilitado para firma.'});
       const filename=String(req.body.filename||'firma.png').replace(/[^a-zA-Z0-9._-]/g,'_');
       const ext=filename.toLowerCase().endsWith('.jpg')||filename.toLowerCase().endsWith('.jpeg')?'jpg':'png';
       const path=`${user.id}/firma-${Date.now()}.${ext}`;
@@ -4255,7 +4256,8 @@ export default async function handler(
 
     if (req.method === 'POST' && req.body?.resource === 'saveProfileSignature') {
       const staffRoles=['docente','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','direccion_escolar','control_escolar','control','archivo_escolar','recursos_monetarios'];
-      if(!staffRoles.includes(profile.rol)) return res.status(403).json({ok:false,error:'Solo personal institucional puede registrar firma.'});
+      const deptRole=departmentKeyForRole(profile?.rol);
+      if(!staffRoles.includes(profile?.rol) && !deptRole) return res.status(403).json({ok:false,error:'Esta cuenta no pertenece a un departamento institucional habilitado para firma.'});
       const path=String(req.body.path||'');
       if(!path || !path.startsWith(`${user.id}/`) || !/^[-a-zA-Z0-9_/.]+\.(png|jpg|jpeg|webp)$/i.test(path)) return res.status(400).json({ok:false,error:'Ruta de firma no válida.'});
       const clientSha=String(req.body.sha256||'').trim().toLowerCase();
