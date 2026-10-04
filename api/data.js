@@ -787,14 +787,11 @@ async function dashboard(admin, profile, user) {
   const counts = {};
 
   for (const name of names) {
-    const result = await admin
-      .from(name)
-      .select('*', {
-        count: 'exact',
-        head: true
-      });
-
-    counts[name] = result.count || 0;
+    let q=admin.from(name).select('*',{count:'exact',head:true});
+    if(name==='alumnos') q=q.eq('activo',true).not('estado_escolar','in','(archivado,baja,traslado,egresado)');
+    if(name==='docentes') q=q.eq('activo',true).not('estado_profesional','in','(archivado,baja,inactivo)');
+    const result=await q;
+    counts[name]=result.count||0;
   }
 
   const {
@@ -1262,7 +1259,7 @@ async function archiveSchoolRecords(admin,req){
   const q=String(req?.query?.q||'').trim().toLowerCase();
   const estado=String(req?.query?.estado||'').trim().toLowerCase();
   const [sq,tq,mq]=await Promise.all([
-    admin.from('alumnos').select('id,nombre_completo,matricula,activo,estado_escolar,grado_ingreso,grupo_id,ciclo_escolar,archivado_at,archivado_motivo,archivado_tipo,grupos(id,clave,grado,letra,turno)').order('id',{ascending:false}).limit(3000),
+    admin.from('alumnos').select('id,nombre_completo,matricula,activo,estado_escolar,grado_ingreso,grupo_id,archivado_at,archivado_motivo,archivado_tipo,grupos(id,clave,grado,letra,turno)').order('id',{ascending:false}).limit(3000),
     admin.from('docentes').select('id,nombre_completo,numero_empleado,correo,activo,estado_profesional,archivado_at').order('id',{ascending:false}).limit(3000),
     admin.from('movimientos_alumnos').select('id,alumno_id,folio,tipo,motivo,escuela_destino,fecha_movimiento,observaciones,created_at').order('id',{ascending:false}).limit(5000)
   ]);
@@ -1737,8 +1734,26 @@ async function financeStudentPayments(admin,user,profile){
   if(profile.rol!=='alumno')throw Object.assign(new Error('Este recurso es exclusivo para alumnos.'),{status:403});const sid=await studentId(admin,user.id);if(!sid)throw Object.assign(new Error('Alumno no encontrado.'),{status:404});const {data,error}=await admin.from('recursos_pagos').select('id,folio,importe,metodo_pago,referencia_pago,fecha_pago,estado,archivo_path,recursos_conceptos(nombre),recursos_cargos(folio)').eq('alumno_id',sid.id).order('id',{ascending:false}).limit(100);if(error)throw error;return data||[];
 }
 
+async function financeStudentCharges(admin,user,profile){
+  if(profile.rol!=='alumno')throw Object.assign(new Error('Este recurso es exclusivo para alumnos.'),{status:403});
+  const sid=await studentId(admin,user.id);if(!sid)throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
+  const cycle=await activeCycle(admin);
+  const {data:charges,error}=await admin.from('recursos_cargos').select('*,recursos_conceptos(id,codigo,nombre)').eq('alumno_id',sid.id).eq('ciclo_escolar',cycle).order('id',{ascending:false}).limit(100);if(error)throw error;
+  const ids=(charges||[]).map(x=>x.id);let paid=[];if(ids.length){const q=await admin.from('recursos_pagos').select('cargo_id,importe').in('cargo_id',ids).eq('estado','registrado');if(q.error)throw q.error;paid=q.data||[];}
+  const by=new Map();for(const p of paid)by.set(Number(p.cargo_id),(by.get(Number(p.cargo_id))||0)+Number(p.importe||0));
+  return (charges||[]).map(c=>({...c,paid:Number(by.get(Number(c.id))||0),remaining:Math.max(0,Number(c.importe||0)-Number(by.get(Number(c.id))||0))})).filter(c=>c.remaining>0);
+}
+async function financeRequestCredentialPayment(admin,user,profile,body,req){
+  if(profile.rol!=='servicios_estudiantiles')throw Object.assign(new Error('Solo Servicios Estudiantiles puede solicitar el pago de una credencial.'),{status:403});
+  const alumnoId=Number(body.alumno_id||0);if(!alumnoId)throw Object.assign(new Error('Alumno no válido.'),{status:400});
+  const {data:student,error:se}=await admin.from('alumnos').select('id,nombre_completo,matricula,activo').eq('id',alumnoId).maybeSingle();if(se)throw se;if(!student||student.activo===false)throw Object.assign(new Error('Alumno no encontrado o inactivo.'),{status:404});
+  const {data:concept,error:ce}=await admin.from('recursos_conceptos').select('*').eq('codigo','CREDENCIAL').eq('activo',true).maybeSingle();if(ce)throw ce;if(!concept)throw Object.assign(new Error('No existe el concepto financiero CREDENCIAL.'),{status:409});
+  const cycle=await activeCycle(admin);const amount=Number(body.importe||concept.monto_sugerido||0);if(!(amount>0))throw Object.assign(new Error('Configura el monto_sugerido del concepto CREDENCIAL o captura el importe.'),{status:400});
+  const {data:existing,error:ee}=await admin.from('recursos_cargos').select('*,recursos_conceptos(id,codigo,nombre)').eq('alumno_id',alumnoId).eq('concepto_id',concept.id).eq('ciclo_escolar',cycle).in('estado',['pendiente','parcial']).order('id',{ascending:false}).limit(1).maybeSingle();if(ee)throw ee;if(existing)return existing;
+  const folio=financeFolio('CARGO');const row={folio,alumno_id:alumnoId,concepto_id:concept.id,ciclo_escolar:cycle,importe:Number(amount.toFixed(2)),fecha_cargo:new Date().toISOString().slice(0,10),notas:'Solicitud de pago de credencial escolar.',creado_por:user.id};const {data,error}=await admin.from('recursos_cargos').insert(row).select('*,recursos_conceptos(id,codigo,nombre)').single();if(error)throw error;await audit(admin,{userId:user.id,role:profile.rol,action:'credential_payment_request',module:'servicios_estudiantiles',entity:'recursos_cargos',entityId:data.id,description:`Solicitud de pago de credencial para ${student.nombre_completo}.`,after:data,req});return data;
+}
 async function financeVoidPayment(admin,user,profile,body,req){
-  ensureFinanceDirection(profile);const id=Number(body.id||0),motivo=String(body.motivo||'').trim().slice(0,1000);if(!id||!motivo)throw Object.assign(new Error('Indica el pago y un motivo de anulación.'),{status:400});const {data:p,error}=await admin.from('recursos_pagos').select('*').eq('id',id).maybeSingle();if(error)throw error;if(!p)throw Object.assign(new Error('Pago no encontrado.'),{status:404});if(p.estado==='anulado')throw Object.assign(new Error('El pago ya está anulado.'),{status:409});const now=new Date().toISOString();const {data:updated,error:ue}=await admin.from('recursos_pagos').update({estado:'anulado',anulado_por:user.id,anulado_at:now,motivo_anulacion:motivo}).eq('id',id).eq('estado','registrado').select('*').single();if(ue)throw ue;if(p.documento_verificable_id)await admin.from('documentos_verificables').update({estado:'cancelado'}).eq('id',p.documento_verificable_id);if(p.archivo_path){const {data:docs}=await admin.from('expedientes_documentales').select('id').eq('archivo_path',p.archivo_path).limit(10);for(const d of docs||[])await admin.from('expedientes_documentales').update({estado:'anulado',cierre_motivo:motivo,cerrado_por:user.id,cerrado_at:now,actualizado_at:now}).eq('id',d.id);}await admin.from('documentos_oficiales_emitidos').update({estado:'cancelado',actualizado_at:now}).eq('documento_verificable_id',p.documento_verificable_id||0);await audit(admin,{userId:user.id,role:profile.rol,action:'finance_void_payment',module:'recursos_monetarios',entity:'recursos_pagos',entityId:id,description:`Pago ${p.folio} anulado.`,before:p,after:updated,req});return updated;
+  ensureFinanceWrite(profile);const id=Number(body.id||0),motivo=String(body.motivo||'').trim().slice(0,1000);if(!id||!motivo)throw Object.assign(new Error('Indica el pago y un motivo de anulación.'),{status:400});const {data:p,error}=await admin.from('recursos_pagos').select('*').eq('id',id).maybeSingle();if(error)throw error;if(!p)throw Object.assign(new Error('Pago no encontrado.'),{status:404});if(p.estado==='anulado')throw Object.assign(new Error('El pago ya está anulado.'),{status:409});const now=new Date().toISOString();const {data:updated,error:ue}=await admin.from('recursos_pagos').update({estado:'anulado',anulado_por:user.id,anulado_at:now,motivo_anulacion:motivo}).eq('id',id).eq('estado','registrado').select('*').single();if(ue)throw ue;if(p.documento_verificable_id)await admin.from('documentos_verificables').update({estado:'cancelado'}).eq('id',p.documento_verificable_id);if(p.archivo_path){const {data:docs}=await admin.from('expedientes_documentales').select('id').eq('archivo_path',p.archivo_path).limit(10);for(const d of docs||[])await admin.from('expedientes_documentales').update({estado:'anulado',cierre_motivo:motivo,cerrado_por:user.id,cerrado_at:now,actualizado_at:now}).eq('id',d.id);}await admin.from('documentos_oficiales_emitidos').update({estado:'cancelado',actualizado_at:now}).eq('documento_verificable_id',p.documento_verificable_id||0);await audit(admin,{userId:user.id,role:profile.rol,action:'finance_void_payment',module:'recursos_monetarios',entity:'recursos_pagos',entityId:id,description:`Pago ${p.folio} anulado.`,before:p,after:updated,req});return updated;
 }
 
 async function financeCreateExpense(admin,user,profile,body,req){
@@ -1817,6 +1832,7 @@ async function getResource(
   }
   if (key === 'financeDashboard') return financeDashboard(admin,user,profile);
   if (key === 'financeStudentPayments') return financeStudentPayments(admin,user,profile);
+  if (key === 'financeStudentCharges') return financeStudentCharges(admin,user,profile);
   if (key === 'institutionStatistics') return institutionStatistics(admin,user,profile,req);
   if (key === 'periodContext') return academicContext(admin);
   if (key === 'teacherDashboard') {
@@ -2043,7 +2059,7 @@ async function getResource(
         'servicios_estudiantiles',
         'prefectura',
         'coordinacion_academica',
-        'servicios_docentes'
+        'servicios_docentes','archivo_escolar'
       ].includes(profile.rol)
     ) {
       throw Object.assign(
@@ -3754,14 +3770,15 @@ async function assignRandomWorkshops(admin,user,profile){
   const [{data:students,error:se},{data:workshops,error:we},{data:ins,error:ie}]=await Promise.all([
     admin.from('alumnos').select('id,nombre_completo,matricula,grupo_id').eq('activo',true),
     admin.from('talleres').select('id,nombre,cupo').eq('activo',true),
-    admin.from('inscripciones_talleres').select('alumno_id,taller_id,estado').eq('ciclo_escolar',cycle).eq('estado','inscrito')
+    admin.from('inscripciones_talleres').select('id,alumno_id,taller_id,estado,ciclo_escolar').eq('ciclo_escolar',cycle)
   ]);
   if(se)throw se;if(we)throw we;if(ie)throw ie;
-  const current=new Set((ins||[]).map(x=>Number(x.alumno_id)));
+  const current=new Set((ins||[]).filter(x=>x.estado==='inscrito').map(x=>Number(x.alumno_id)));
   const pending=(students||[]).filter(s=>!current.has(Number(s.id)));
   if(!pending.length)return {ciclo:cycle,total_sin_taller:0,asignados:0,sin_cupo:0,detalles:[]};
   const counts=Object.fromEntries((workshops||[]).map(w=>[String(w.id),0]));
-  for(const x of ins||[])counts[String(x.taller_id)]=(counts[String(x.taller_id)]||0)+1;
+  for(const x of (ins||[]).filter(x=>x.estado==='inscrito'))counts[String(x.taller_id)]=(counts[String(x.taller_id)]||0)+1;
+  const priorByPair=new Map((ins||[]).map(x=>[`${x.alumno_id}|${x.taller_id}`,x]));
   const pool=(workshops||[]).filter(w=>Number(w.cupo||0)>0);
   const detalles=[],sinCupo=[];
   for(const student of pending.sort(()=>Math.random()-.5)){
@@ -3771,8 +3788,17 @@ async function assignRandomWorkshops(admin,user,profile){
     const maxFree=Math.max(...available.map(w=>Number(w.cupo)-(counts[String(w.id)]||0)));
     const candidates=available.filter(w=>Number(w.cupo)-(counts[String(w.id)]||0)>=Math.max(1,maxFree-1));
     const workshop=candidates[Math.floor(Math.random()*candidates.length)];
-    const {error}=await admin.from('inscripciones_talleres').insert({alumno_id:student.id,taller_id:workshop.id,ciclo_escolar:cycle,estado:'inscrito',fecha_inscripcion:new Date().toISOString().slice(0,10)});
+    const existing=priorByPair.get(`${student.id}|${workshop.id}`);
+    let error=null;
+    if(existing){
+      const {error:e}=await admin.from('inscripciones_talleres').update({estado:'inscrito',fecha_inscripcion:new Date().toISOString().slice(0,10)}).eq('id',existing.id);
+      error=e;
+    }else{
+      const {error:e}=await admin.from('inscripciones_talleres').insert({alumno_id:student.id,taller_id:workshop.id,ciclo_escolar:cycle,estado:'inscrito',fecha_inscripcion:new Date().toISOString().slice(0,10)});
+      error=e;
+    }
     if(error){sinCupo.push({id:student.id,nombre_completo:student.nombre_completo,matricula:student.matricula,motivo:error.message});continue;}
+    priorByPair.set(`${student.id}|${workshop.id}`,{id:existing?.id||null,alumno_id:student.id,taller_id:workshop.id,estado:'inscrito'});
     counts[String(workshop.id)]=(counts[String(workshop.id)]||0)+1;
     detalles.push({alumno_id:student.id,nombre_completo:student.nombre_completo,matricula:student.matricula,taller:workshop.nombre});
   }
@@ -4646,6 +4672,15 @@ export default async function handler(
     if(req.method==='POST' && req.body?.resource==='changeArchiveDocumentStatus'){
       const data=await changeArchiveDocumentStatus(adminClient,user,profile,req.body||{},req);return res.status(200).json({ok:true,data,message:'Estado documental actualizado.'});
     }
+    if(req.method==='POST' && req.body?.resource==='updateRetentionCatalog'){
+      if(profile.rol!=='archivo_escolar')return res.status(403).json({ok:false,error:'Solo Archivo Escolar puede modificar el catálogo de retención.'});
+      const body=req.body?.data||req.body||{};const id=Number(body.id||0);if(!id)return res.status(400).json({ok:false,error:'Registro de retención no válido.'});
+      const patch={nombre:String(body.nombre||'').trim().slice(0,180),categoria:String(body.categoria||'').trim(),alcance:String(body.alcance||'interno').trim(),confidencialidad:String(body.confidencialidad||'interno').trim(),editable:String(body.editable||'versionable').trim(),requiere_autorizacion:Boolean(body.requiere_autorizacion),retencion_tipo:String(body.retencion_tipo||'permanente').trim(),retencion_anios:body.retencion_tipo==='anios'?(Number(body.retencion_anios)||null):null,evento_cierre:String(body.evento_cierre||'').trim().slice(0,180)||null,departamento_responsable:String(body.departamento_responsable||'').trim().slice(0,120)||null,descripcion:String(body.descripcion||'').trim().slice(0,1000)||null,updated_at:new Date().toISOString()};
+      if(!patch.nombre||!['alumno','docente','evaluacion','administrativo','institucional','financiero'].includes(patch.categoria))return res.status(400).json({ok:false,error:'Datos de retención incompletos o categoría no válida.'});
+      const {data,error}=await adminClient.from('catalogo_retencion_documental').update(patch).eq('id',id).select('*').single();if(error)throw error;
+      await audit(adminClient,{userId:user.id,role:profile.rol,action:'update_retention_catalog',module:'archivo_escolar',entity:'catalogo_retencion_documental',entityId:id,description:`Actualización de retención ${data.codigo}.`,after:data,req});
+      return res.status(200).json({ok:true,data,message:'Registro de retención actualizado.'});
+    }
     if(req.method==='POST' && req.body?.resource==='getArchiveDocumentUrl'){
       const data=await getArchiveDocumentUrl(adminClient,user,profile,req.body||{},req);
       return res.status(200).json({ok:true,data});
@@ -4694,6 +4729,7 @@ export default async function handler(
     /* RECURSOS MONETARIOS */
     if(req.method==='POST' && req.body?.resource==='resolveOfficialDocumentApproval'){const data=await resolveOfficialDocumentApproval(adminClient,user,profile,req.body?.data||req.body||{},req);return res.status(200).json({ok:true,data,message:'Revisión de oficio registrada.'});}
 
+    if(req.method==='POST' && req.body?.resource==='financeRequestCredentialPayment'){const data=await financeRequestCredentialPayment(adminClient,user,profile,req.body?.data||req.body||{},req);return res.status(200).json({ok:true,data,message:'Solicitud de pago de credencial creada.'});}
     if(req.method==='POST' && req.body?.resource==='financeCreateCharge'){const data=await financeCreateCharge(adminClient,user,profile,req.body?.data||req.body||{},req);return res.status(200).json({ok:true,data,message:'Cargo registrado.'});}
     if(req.method==='POST' && req.body?.resource==='financeRegisterPayment'){const data=await financeRegisterPayment(adminClient,user,profile,req.body?.data||req.body||{},req);return res.status(200).json({ok:true,data,message:'Pago registrado y comprobante generado.'});}
     if(req.method==='POST' && req.body?.resource==='financeReceiptUrl'){const data=await financeReceiptUrl(adminClient,user,profile,req.body?.data||req.body||{},req);return res.status(200).json({ok:true,data});}

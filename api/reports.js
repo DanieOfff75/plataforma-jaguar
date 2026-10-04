@@ -526,6 +526,11 @@ async function credentialPdf(admin,id,req=null){
   if(error) throw error;
   if(!s) throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
   const cycle=await activeCycle(admin);
+  const paymentFolio=String(req?.body?.payment_folio||'').trim();
+  if(!paymentFolio)throw Object.assign(new Error('Para generar la credencial debes ingresar el folio del ticket de pago.'),{status:400});
+  const paymentQ=await admin.from('recursos_pagos').select('id,folio,importe,estado,alumno_id,recursos_conceptos(codigo,nombre)').eq('folio',paymentFolio).eq('alumno_id',s.id).eq('estado','registrado').maybeSingle();
+  if(paymentQ.error)throw paymentQ.error;
+  if(!paymentQ.data||paymentQ.data.recursos_conceptos?.codigo!=='CREDENCIAL')throw Object.assign(new Error('El folio no corresponde a un pago registrado de credencial para este alumno.'),{status:409});
   const profileQ=await admin.from('perfiles').select('correo,correo_recuperacion,matricula').eq('matricula',s.matricula).maybeSingle();
   if(profileQ.error) throw profileQ.error;
   const email=profileQ.data?.correo||'';
