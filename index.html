@@ -3846,6 +3846,11 @@ function dailyWorkbook(d){
   const left={...thin,alignment:{horizontal:'left',vertical:'center',wrapText:true}};
   const center={...thin,alignment:{horizontal:'center',vertical:'center',wrapText:true}};
   const headerRows=(ws,lastCol,lastRow,freeze)=>{
+    // IMPORTANTE: las hojas se construyen manualmente con xlsxSet().
+    // SheetJS necesita !ref para serializar esas celdas al escribir el XLSX.
+    // Sin este rango, Excel recibe hojas aparentemente vacías aunque tengan
+    // celdas y estilos en memoria.
+    ws['!ref']=`A1:${dailyCol(lastCol)}${lastRow}`;
     ws['!freeze']=freeze;
     ws['!autofilter']={ref:`A5:${dailyCol(lastCol)}${lastRow}`};
     ws['!rows']=Array.from({length:lastRow},(_,i)=>({hpt:i<4?22:(i===4?30:20)}));
@@ -3884,7 +3889,8 @@ function dailyWorkbook(d){
   const rt=7+(rubric.components||[]).length;setCell(wv,`${dailyCol(rubricStart)}${rt}`,'VALOR TOTAL',bandStyle);setCell(wv,`${dailyCol(rubricStart+1)}${rt}`,Number(rubric.total||0)/100,{...center,numFmt:'0.00%'});setCell(wv,`${dailyCol(rubricStart+2)}${rt}`,10,{...center,numFmt:'0.00'});
   wv['!merges']=[{s:{r:0,c:0},e:{r:0,c:2}},{s:{r:1,c:0},e:{r:1,c:2}},{s:{r:2,c:0},e:{r:2,c:2}},{s:{r:4,c:rubricStart-1},e:{r:4,c:rubricStart+2}}];
   wv['!cols']=[{wch:5},{wch:38},{wch:20},...visibleEvents.map(()=>({wch:18})),{wch:3},{wch:24},{wch:15},{wch:14}];
-  headerRows(wv,rubricStart+2,7+rosterRows,'D8');XLSX.utils.book_append_sheet(wb,wv,'ACTIVIDADES');
+  const activityLastRow=Math.max(7+rosterRows,8+(rubric.components||[]).length);
+  headerRows(wv,rubricStart+2,activityLastRow,'D8');XLSX.utils.book_append_sheet(wb,wv,'ACTIVIDADES');
 
   // VALORES PONDERACION
   const ww={};setCell(ww,'A1',school,titleStyle);setCell(ww,'A2',`CICLO ${cycle} · GRUPO ${groupLabel} · ${subject}`,bandStyle);setCell(ww,'A3',`DOCENTE: ${teacher} · PERIODO: ${d.periodo?.nombre||'—'}`,subStyle);
