@@ -1,0 +1,13 @@
+{
+  "name": "ithla-v2",
+  "private": true,
+  "version": "2.3.5",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.50.0",
+    "pdf-lib": "^1.17.1"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}
