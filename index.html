@@ -1224,8 +1224,72 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});initA
 async function apiQuery(resource,params={}){const {data:{session}}=await supabaseClient.auth.getSession();if(!session)throw Error('Sesión inválida.');const qs=new URLSearchParams({resource,...Object.fromEntries(Object.entries(params).map(([k,v])=>[k,String(v)]))});const r=await fetch('/api/data?'+qs.toString(),{headers:{Authorization:'Bearer '+session.access_token}});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Error de servidor.');return d.data}
 async function apiPost(resource,body={}){return api(resource,{method:'POST',body:{resource,...body}})}
 function sortStudents(rows){return [...(rows||[])].sort((a,b)=>String(a.nombre_completo||'').localeCompare(String(b.nombre_completo||''),'es',{sensitivity:'base'}))}
-function printPdf(title,html){const w=window.open('','_blank','width=1000,height=800');if(!w){toast('El navegador bloqueó la ventana de PDF. Permite ventanas emergentes.');return}w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#111}h1,h2{margin:0 0 8px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #ccc;padding:7px;text-align:left;font-size:12px}th{background:#eee}.meta{color:#555;margin:6px 0 15px}@media print{button{display:none}}</style></head><body>${html}<script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
+function printPdf(title,html){const w=window.open('','_blank','width=1000,height=800');if(!w){toast('El navegador bloqueó la ventana de PDF. Permite ventanas emergentes.');return}w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#111}h1,h2{margin:0 0 8px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #bbb;padding:7px;text-align:left;font-size:12px}th{background:#eef1f4}.meta{color:#555;margin:6px 0 15px}@media print{button{display:none}}</style></head><body>${html}<script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
 `);w.document.close()}
+
+function jaguarFormalListPdf(group,students,opts={}){
+  const inst=S.institution||ITHLA_DEFAULT_INSTITUTION,cycle=S.activeCycle||'2026-2027';
+  const ss=v22Sort(students), now=new Date().toLocaleDateString('es-MX');
+  const mode=opts.mode||'oficial';
+  const teacher=opts.teacher||'';
+  const title=mode==='docente'?'LISTA DE CONTROL DOCENTE':mode==='administrativa'?'LISTA ADMINISTRATIVA DE ALUMNADO':'LISTA OFICIAL DE ALUMNADO';
+  const rows=ss.map((st,i)=>{
+    const sexo=st.sexo||st.genero||'—';
+    const estado=st.activo===false?'INACTIVO':'ACTIVO';
+    if(mode==='administrativa')return `<tr><td>${i+1}</td><td>${esc(st.matricula||'')}</td><td class="name">${esc(st.nombre_completo||'')}</td><td>${esc(st.correo||'—')}</td><td>${estado}</td></tr>`;
+    return `<tr><td>${i+1}</td><td>${esc(st.matricula||'')}</td><td class="name">${esc(st.nombre_completo||'')}</td><td>${esc(sexo)}</td><td>${estado}</td></tr>`;
+  }).join('');
+  const head=mode==='administrativa'
+    ? '<tr><th>No.</th><th>Matrícula</th><th>Nombre del alumno</th><th>Correo institucional</th><th>Estado</th></tr>'
+    : '<tr><th>No. prog.</th><th>Matrícula</th><th>Nombre del alumno</th><th>Sexo</th><th>Estado</th></tr>';
+  const teacherLine=teacher?`<div class="field"><b>PROFESOR(A):</b> ${esc(teacher)}</div>`:'';
+  const html=`<style>
+    @page{size:letter portrait;margin:12mm}
+    body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:0}
+    .doc{border:1px solid #1B365D;padding:18px 20px 22px;min-height:250mm;box-sizing:border-box}
+    .head{display:grid;grid-template-columns:78px 1fr 78px;gap:10px;align-items:center;border-bottom:2px solid #1B365D;padding-bottom:10px}
+    .head img{max-width:68px;max-height:68px;object-fit:contain}
+    .center{text-align:center}.gov{font-size:12px;letter-spacing:.2px}.school{font-size:15px;font-weight:800;text-transform:uppercase;margin-top:4px}.data{font-size:10px;line-height:1.45;margin-top:3px}.title{font-size:18px;font-weight:800;letter-spacing:.5px;margin:14px 0 10px;text-align:center}
+    .subhead{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:1px solid #777;padding:9px;margin-bottom:12px;font-size:11px}.field{padding:2px 4px}
+    table{width:100%;border-collapse:collapse;margin-top:5px}th{background:#1B365D;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.2px}td{font-size:10px}th,td{border:1px solid #555;padding:5px 6px;text-align:center;vertical-align:middle}td.name{text-align:left;font-weight:600}
+    .footer{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:45px}.sig{text-align:center;padding-top:28px;border-top:1px solid #333;font-size:10px}.note{font-size:9px;color:#444;margin-top:12px;line-height:1.4}.folio{text-align:right;font-size:9px;color:#555;margin-top:8px}
+    @media print{button{display:none}}
+  </style>
+  <div class="doc">
+    <div class="head">
+      <div><img src="/assets/ithla-logo.png" onerror="this.style.display='none'"></div>
+      <div class="center">
+        <div class="gov">INSTITUCIÓN EDUCATIVA PRIVADA</div>
+        <div class="school">${esc(inst.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano')}</div>
+        <div class="data"><b>C.C.T.:</b> ${esc(inst.cct||'—')} &nbsp; · &nbsp; <b>RVOE:</b> ${esc(inst.clave_rvoe||'—')}</div>
+        <div class="data">${esc(inst.direccion||'')} · ${esc(inst.entidad||'')}</div>
+      </div>
+      <div></div>
+    </div>
+    <div class="title">${title}</div>
+    <div class="subhead">
+      <div class="field"><b>GRADO Y GRUPO:</b> ${esc(group?.clave||'—')}</div>
+      <div class="field"><b>CICLO ESCOLAR:</b> ${esc(cycle)}</div>
+      ${teacherLine}
+      <div class="field"><b>TURNO:</b> ${esc(group?.turno||'—')}</div>
+      <div class="field"><b>TOTAL DE ALUMNOS:</b> ${ss.length}</div>
+      <div class="field"><b>FECHA DE EMISIÓN:</b> ${now}</div>
+    </div>
+    <table><thead>${head}</thead><tbody>${rows||`<tr><td colspan="5">No hay alumnos registrados en este grupo.</td></tr>`}</tbody></table>
+    <div class="note"><b>Documento de control escolar.</b> La información corresponde al grupo registrado en la Plataforma Jaguar para el ciclo ${esc(cycle)}. Cualquier corrección deberá realizarse mediante el procedimiento institucional correspondiente.</div>
+    <div class="footer"><div class="sig">ELABORÓ / RESPONSABLE</div><div class="sig">Vo. Bo. CONTROL ESCOLAR</div></div>
+    <div class="folio">${esc(inst.siglas||'ITHLA')} · ${esc(inst.lema||'Scientia, Humanitas et Progressum')}</div>
+  </div>`;
+  printPdf(title,html);
+}
+function jaguarFormalListMenu(group,students,teacher=''){
+  modal('📄 Generar lista formal',`<div class="space-y-4">
+    <div class="card"><b>Formato institucional</b><p class="text-sm text-[#8FA3B5] mt-1">Selecciona el tipo de lista. Todos usan el mismo encabezado formal de ITHLA.</p></div>
+    <button class="btn primary w-full" onclick='closeModal();jaguarFormalListPdf(${JSON.stringify(group)},${JSON.stringify(students)},{mode:"oficial",teacher:${JSON.stringify(teacher)}})'>📄 Lista oficial de alumnado</button>
+    <button class="btn w-full" onclick='closeModal();jaguarFormalListPdf(${JSON.stringify(group)},${JSON.stringify(students)},{mode:"docente",teacher:${JSON.stringify(teacher)}})'>👨‍🏫 Lista de control docente</button>
+    <button class="btn w-full" onclick='closeModal();jaguarFormalListPdf(${JSON.stringify(group)},${JSON.stringify(students)},{mode:"administrativa",teacher:${JSON.stringify(teacher)}})'>🏫 Lista administrativa</button>
+  </div>`);
+}
 function excelFile(name,headers,rows,sheet='Datos'){
  if(!window.XLSX)throw Error('No se pudo cargar Excel.');
  const aoa=[headers,...rows];const ws=XLSX.utils.aoa_to_sheet(aoa);const lastRow=Math.max(1,aoa.length),lastCol=Math.max(1,headers.length);
@@ -1293,7 +1357,7 @@ async function teacherGroupsModule(){
     return `<div class="card border-red-500/30"><b>No se pudo cargar tus grupos.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`;
   }
 }
-async function teacherRosterModal(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const students=sortStudents(d.students);modal(`${d.grupo_materia?.grupos?.clave||''} · ${d.grupo_materia?.materias?.nombre||''}`,`<div class="flex justify-between gap-3 items-center mb-4"><div><p class="text-sm text-[#A9BAC8]">${students.length} alumnos</p></div><button class="btn primary" onclick='downloadRosterExcel(${gmId})'>📥 Excel</button></div><div class="scroll"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.nombre_completo)}</td><td>${esc(x.matricula||'—')}</td></tr>`).join('')||'<tr><td colspan="3">Sin alumnos.</td></tr>'}</tbody></table></div>`)}catch(e){toast(e.message)}}
+async function teacherRosterModal(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const students=sortStudents(d.students),g=d.grupo_materia?.grupos||{},teacher=d.teacher?.nombre_completo||S.profile?.nombre_completo||'';modal(`${g.clave||''} · ${d.grupo_materia?.materias?.nombre||''}`,`<div class="flex flex-wrap justify-between gap-3 items-center mb-4"><div><p class="text-sm text-[#A9BAC8]">${students.length} alumnos</p></div><div class="flex flex-wrap gap-2"><button class="btn" onclick='jaguarFormalListMenu(${JSON.stringify(g)},${JSON.stringify(students)},${JSON.stringify(teacher)})'>📄 PDF formal</button><button class="btn primary" onclick='downloadRosterExcel(${gmId})'>📥 Excel</button></div></div><div class="scroll"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.nombre_completo)}</td><td>${esc(x.matricula||'—')}</td></tr>`).join('')||'<tr><td colspan="3">Sin alumnos.</td></tr>'}</tbody></table></div>`)}catch(e){toast(e.message)}}
 async function downloadRosterExcel(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const st=sortStudents(d.students);excelFile(`ITHLA-${d.grupo_materia?.grupos?.clave||'grupo'}-lista.xlsx`,['No.','Alumno','Matrícula'],st.map((x,i)=>[i+1,x.nombre_completo,x.matricula||'']),d.grupo_materia?.grupos?.clave||'Lista');toast('Lista Excel generada.')}catch(e){toast(e.message)}}
 async function teacherGradesModule(){const groups=await api('teacherGroups'), periods=await api('periods');const unique=[];const seen=new Set();for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}const p=periods.filter(x=>x.activo!==false);return `<div class="card"><div><h3>Calificaciones</h3><p class="text-sm text-[#8FA3B5] mt-1">Selecciona un grupo. La lista ya aparece completa y ordenada por apellido/nombre.</p></div><div class="grid md:grid-cols-2 gap-3 mt-5"><div><label class="text-xs text-[#8FA3B5]">Grupo / materia</label><select id="tg_group" class="select mt-1"><option value="">Selecciona…</option>${unique.map(g=>`<option value="${g.id}">${esc(g.grupos?.clave||'')} — ${esc(g.materias?.nombre||'')}</option>`).join('')}</select></div><div><label class="text-xs text-[#8FA3B5]">Periodo</label><select id="tg_period" class="select mt-1"><option value="">Selecciona…</option>${p.map(x=>`<option value="${x.id}">${esc(x.nombre||x.ciclo_escolar||'Periodo')}</option>`).join('')}</select></div></div><button class="btn primary mt-4" onclick="loadTeacherGradesTable()">Abrir lista</button></div><div id="teacherGradesTable" class="mt-5"></div>`}
 async function loadTeacherGradesTable(){try{const gmId=Number(document.getElementById('tg_group').value),periodoId=Number(document.getElementById('tg_period').value);if(!gmId||!periodoId)return toast('Selecciona grupo y periodo.');const d=await apiQuery('teacherGrades',{grupo_materia_id:gmId,periodo_id:periodoId});const students=sortStudents(d.students);document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm text-[#8FA3B5]">${students.length} alumnos</p></div><button class="btn primary" onclick="saveTeacherGradesTable(${gmId},${periodoId})">💾 Guardar todo</button></div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(x.nombre_completo)}</b></td><td>${esc(x.matricula||'')}</td><td><input id="grade_${x.id}" class="input" type="number" min="0" max="10" step="0.1" value="${x.grade?.calificacion??''}"></td><td><input id="gobs_${x.id}" class="input" value="${esc(x.grade?.observaciones||'')}"></td></tr>`).join('')}</tbody></table></div></div>`}catch(e){toast(e.message)}}
@@ -1347,7 +1411,7 @@ function v22Name(){return S.profile?.nombre_completo||S.user?.user_metadata?.nom
 function v22Sort(rows){return [...(rows||[])].sort((a,b)=>String(a.nombre_completo||'').localeCompare(String(b.nombre_completo||''),'es',{sensitivity:'base'}));}
 function v22GroupSort(rows){return [...(rows||[])].sort((a,b)=>String(a.clave||'').localeCompare(String(b.clave||''),'es',{numeric:true}));}
 function v22DownloadList(group,students){const rows=v22Sort(students).map((s,i)=>[i+1,s.matricula||'',s.nombre_completo||'',s.activo===false?'Inactivo':'Activo']);excelFile(`ITHLA-Lista-${group?.clave||'grupo'}.xlsx`,['#','Matrícula','Alumno','Estado'],rows,'Lista');}
-function v22PdfList(group,students){const rows=v22Sort(students).map((s,i)=>`<tr><td>${i+1}</td><td>${esc(s.matricula||'')}</td><td>${esc(s.nombre_completo||'')}</td><td>${s.activo===false?'Inactivo':'Activo'}</td></tr>`).join('');printPdf(`Lista ${group?.clave||''}`,`<h1>ITHLA</h1><div class="meta">Lista de alumnos · ${esc(group?.clave||'')}</div><table><thead><tr><th>#</th><th>Matrícula</th><th>Alumno</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`);}
+function v22PdfList(group,students){jaguarFormalListMenu(group,students,'');}
 async function v22GroupsModule(){const groups=v22GroupSort(await api('groups'));const students= v22Sort(await api('students'));const by={};students.forEach(s=>(by[s.grupo_id]??=[]).push(s));return `<div class="space-y-5"><div class="card"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><h3>Grupos y alumnos</h3><p class="text-sm text-[#8FA3B5]">Los alumnos se administran dentro de su grupo, siempre en orden alfabético.</p></div>${S.role==='control_escolar'?'<button class="btn primary" onclick="v3NewStudent()">➕ Agregar alumno</button>':''}</div></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${groups.map(g=>{const ss=v22Sort(by[g.id]||[]);return `<div class="card"><div class="flex justify-between"><div><div class="text-2xl font-bold">${esc(g.clave)}</div><div class="text-xs text-[#8FA3B5]">${g.grado}° · ${esc(g.turno||'')}</div></div><span class="chip">${ss.length} alumnos</span></div><div class="flex gap-2 flex-wrap mt-4"><button class="btn primary" onclick='v22GroupList(${g.id})'>👥 Ver lista</button><button class="btn" onclick='v22DownloadList(${JSON.stringify(g)},${JSON.stringify(ss)})'>📊 Excel</button><button class="btn" onclick='v22PdfList(${JSON.stringify(g)},${JSON.stringify(ss)})'>📄 PDF</button>${S.role==='control_escolar'&&ss.length===0?`<button class="btn danger" onclick='v22DeactivateGroup(${g.id})'>🗑️ Eliminar</button>`:''}</div></div>`}).join('')}</div></div>`}
 async function v22GroupList(id){const groups=await api('groups');const students=(await api('students')).filter(s=>Number(s.grupo_id)===Number(id));const g=groups.find(x=>Number(x.id)===Number(id));const ss=v22Sort(students);const canManageAccess=S.role==='servicios_estudiantiles'||S.role==='control_escolar'||S.role==='control';modal(`Lista ${g?.clave||''}`,`<div class="flex gap-2 flex-wrap mb-4"><button class="btn" onclick='v22DownloadList(${JSON.stringify(g)},${JSON.stringify(ss)})'>📊 Excel</button><button class="btn" onclick='v22PdfList(${JSON.stringify(g)},${JSON.stringify(ss)})'>📄 PDF</button></div><div class="scroll"><table class="table"><thead><tr><th>#</th><th>Matrícula</th><th>Alumno</th><th>Correo</th><th>Estado</th>${canManageAccess?'<th>Acceso</th>':''}</tr></thead><tbody>${ss.map((s,i)=>{const access=s.auth_user_id?`<button class="btn" onclick="resetPassword('${s.auth_user_id}')">🔑 Restablecer</button>`:`<button class="btn primary" onclick="provisionAndShow(${s.id})">🔐 Crear acceso</button>`;return `<tr><td>${i+1}</td><td>${esc(s.matricula||'')}</td><td>${esc(s.nombre_completo)}</td><td>${esc(s.correo||'Pendiente')}</td><td>${s.activo===false?'Inactivo':'Activo'}</td>${canManageAccess?`<td>${access}</td>`:''}</tr>`}).join('')||`<tr><td colspan="${canManageAccess?6:5}">Sin alumnos.</td></tr>`}</tbody></table></div>`)}
 async function v22DeactivateGroup(id){if(!confirm('¿Desactivar este grupo?'))return;try{await api('groups',{id,method:'PUT',body:{activo:false}});toast('Grupo desactivado.');await loadPage('grupos')}catch(e){toast(e.message)}}
@@ -3747,9 +3811,8 @@ function dailyStateFromWorkbook(wb,d){
   const activities=[];
   const attendance={};
 
-  // ACTIVIDADES: D en adelante (índice 3 del arreglo XLSX). A partir de v4
-  // puede contener columnas de asistencia intercaladas, igual que la lista
-  // docente de referencia. Las columnas se distinguen por el prefijo ASISTENCIA.
+  // ACTIVIDADES: D en adelante. La hoja contiene únicamente actividades.
+  // La asistencia se importa exclusivamente desde ASISTENCIAS.
   const actSheet=wb.Sheets['ACTIVIDADES'];if(!actSheet)throw Error('Falta la hoja ACTIVIDADES.');
   const ar=XLSX.utils.sheet_to_json(actSheet,{header:1,raw:true,defval:''});
   const activityHeaderRow=4;
@@ -3869,19 +3932,18 @@ function dailyWorkbook(d){
   wa['!cols']=[{wch:5},{wch:38},{wch:20},{wch:34},...attDates.map(()=>({wch:15}))];
   headerRows(wa,4+attDates.length,5+rosterRows,'A6');XLSX.utils.book_append_sheet(wb,wa,'ASISTENCIAS');
 
-  // ACTIVIDADES: asistencia intercalada + actividades + rúbrica a la derecha.
+  // ACTIVIDADES: exclusivamente actividades/evidencias y la rúbrica.
+  // La asistencia vive únicamente en la hoja ASISTENCIAS.
   const wv={};
   setCell(wv,'A1',school,titleStyle);setCell(wv,'A2',`CICLO ${cycle} · GRUPO ${groupLabel} · ${subject}`,bandStyle);setCell(wv,'A3',`DOCENTE: ${teacher} · PERIODO: ${d.periodo?.nombre||'—'}`,subStyle);
   setCell(wv,'A5','No.',bandStyle);setCell(wv,'B5','NOMBRE COMPLETO',bandStyle);setCell(wv,'C5','MATRÍCULA',bandStyle);
-  const eventDates=new Set([...(d.attendanceDates||[]),d.fecha]);for(const a of acts)if(a.fecha)eventDates.add(a.fecha);
-  const events=[];for(const dt of [...eventDates].filter(Boolean).sort()){events.push({type:'attendance',date:dt});for(const a of acts.filter(x=>x.fecha===dt))events.push({type:'activity',activity:a});}
-  acts.filter(a=>!a.fecha).forEach(a=>events.push({type:'activity',activity:a}));
-  // Dos columnas de reserva para que el docente pueda agregar actividades nuevas sin rediseñar la hoja.
-  events.push({type:'newActivity',key:dailyActivityKey('nueva-actividad-1',acts.length),name:'NUEVA ACTIVIDAD 1'});
-  events.push({type:'newActivity',key:dailyActivityKey('nueva-actividad-2',acts.length+1),name:'NUEVA ACTIVIDAD 2'});
-  const visibleEvents=events.slice(0,36);
-  visibleEvents.forEach((ev,i)=>{const c=4+i;if(ev.type==='attendance'){setCell(wv,`${dailyCol(c)}5`,`ASISTENCIA ${ev.date}`,bandStyle);setCell(wv,`${dailyCol(c)}6`,`ASISTENCIA|${ev.date}`,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});setCell(wv,`${dailyCol(c)}7`,ev.date,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});}else{const a=ev.activity||ev;setCell(wv,`${dailyCol(c)}5`,a.nombre||a.name,bandStyle);setCell(wv,`${dailyCol(c)}6`,a.key,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});setCell(wv,`${dailyCol(c)}7`,a.fecha||d.fecha,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});}});
-  students.forEach((st,i)=>{const r=8+i;setCell(wv,`A${r}`,i+1,center);setCell(wv,`B${r}`,st.nombre_completo||'',left);setCell(wv,`C${r}`,st.matricula||'',center);visibleEvents.forEach((ev,j)=>{const c=4+j;if(ev.type==='attendance'){setCell(wv,`${dailyCol(c)}${r}`,state.attendance?.[`${st.id}|${ev.date}`]??st.attendanceHistory?.[ev.date]??'',center);}else if(ev.type==='newActivity'){setCell(wv,`${dailyCol(c)}${r}`,'',center);}else{const a=ev.activity;setCell(wv,`${dailyCol(c)}${r}`,state.activityScores?.[`${st.id}|${a.key}`]??'',{...center,numFmt:'0.00'});}});});
+  const activityEvents=acts.filter(a=>a&&a.nombre).map(a=>({type:'activity',activity:a}));
+  // Dos columnas de reserva para capturar actividades nuevas sin rediseñar la hoja.
+  activityEvents.push({type:'newActivity',key:dailyActivityKey('nueva-actividad-1',acts.length),name:'NUEVA ACTIVIDAD 1'});
+  activityEvents.push({type:'newActivity',key:dailyActivityKey('nueva-actividad-2',acts.length+1),name:'NUEVA ACTIVIDAD 2'});
+  const visibleEvents=activityEvents.slice(0,36);
+  visibleEvents.forEach((ev,i)=>{const c=4+i;const a=ev.activity||ev;setCell(wv,`${dailyCol(c)}5`,a.nombre||a.name,bandStyle);setCell(wv,`${dailyCol(c)}6`,a.key,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});setCell(wv,`${dailyCol(c)}7`,a.fecha||d.fecha,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});});
+  students.forEach((st,i)=>{const r=8+i;setCell(wv,`A${r}`,i+1,center);setCell(wv,`B${r}`,st.nombre_completo||'',left);setCell(wv,`C${r}`,st.matricula||'',center);visibleEvents.forEach((ev,j)=>{const c=4+j;if(ev.type==='newActivity'){setCell(wv,`${dailyCol(c)}${r}`,'',center);}else{const a=ev.activity;setCell(wv,`${dailyCol(c)}${r}`,state.activityScores?.[`${st.id}|${a.key}`]??'',{...center,numFmt:'0.00'});}});});
   const rubricStart=5+visibleEvents.length+2;
   setCell(wv,`${dailyCol(rubricStart)}5`,'RÚBRICA / PONDERACIÓN OFICIAL',bandStyle);
   setCell(wv,`${dailyCol(rubricStart)}6`,'ASPECTO',subStyle);setCell(wv,`${dailyCol(rubricStart+1)}6`,'PONDERACIÓN',subStyle);setCell(wv,`${dailyCol(rubricStart+2)}6`,'VALOR',subStyle);
