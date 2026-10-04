@@ -1009,7 +1009,7 @@ async function generateOfficialDocument(admin,user,profile,body,req){
     const expedienteTipo=alumno?'alumno':docente?'docente':'institucional', expedienteId=alumno?Number(alumno.id):docente?Number(docente.id):Number(institution.id||0);
     const payload={tipo_codigo:code,alumno_id:alumno?.id||null,docente_id:docente?.id||null,destinatario:String(body.destinatario||'').trim(),asunto:String(body.asunto||'').trim(),cuerpo:String(body.cuerpo||'').trim(),departamentos_firma:defaultSigners,solicitado_por:user.id,fecha_solicitud:today};
     const {data:request,error:re}=await admin.from('solicitudes_documentos_oficiales').insert({folio:`SOL-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`,tipo_codigo:code,expediente_tipo:expedienteTipo,expediente_id:expedienteId,alumno_id:alumno?.id||null,docente_id:docente?.id||null,destinatario:payload.destinatario||null,asunto:payload.asunto||null,cuerpo:payload.cuerpo||null,payload,departamentos_firma:defaultSigners,aprobaciones:{},estado:defaultSigners.length?'pendiente':'aprobada',solicitado_por:user.id}).select('*').single();if(re)throw re;
-    for(const dept of defaultSigners){const role=officialRoleFromDepartment(dept);if(role)try{await notifyInetchRole(admin,role,{titulo:`Oficio pendiente de revisión · ${request.folio}`,contenido:`Archivo Escolar solicita que revises, aceptes/rechaces y firmes el documento ${catalog.nombre}.`,tipo:'oficio_firma',solicitudId:request.id});}catch(e){console.warn('No se pudo notificar firma interdepartamental:',e.message)}}
+    for(const dept of defaultSigners){const role=officialRoleFromDepartment(dept);if(role)try{await notifyJaguarRole(admin,role,{titulo:`Oficio pendiente de revisión · ${request.folio}`,contenido:`Archivo Escolar solicita que revises, aceptes/rechaces y firmes el documento ${catalog.nombre}.`,tipo:'oficio_firma',solicitudId:request.id});}catch(e){console.warn('No se pudo notificar firma interdepartamental:',e.message)}}
     await audit(admin,{userId:user.id,role:profile.rol,action:'request_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:request.id,description:`Solicitud ${request.folio} para ${catalog.nombre}.`,after:request,req});
     if(defaultSigners.length) return {request_created:true,request_id:request.id,folio:request.folio,estado:request.estado,departamentos_firma:defaultSigners,message:'Documento preparado y enviado a revisión/firma interdepartamental.'};
     body={...body,internal_emit:true,approval_request_id:request.id};
@@ -1111,11 +1111,11 @@ async function resolveOfficialDocumentApproval(admin,user,profile,body,req){
   const dept=departmentKeyForRole(profile?.rol);if(!dept||dept==='AE')throw Object.assign(new Error('Este perfil no puede firmar oficios interdepartamentales.'),{status:403});
   const id=Number(body.id||0),decision=body.decision==='aprobada'?'aprobada':body.decision==='rechazada'?'rechazada':null;if(!id||!decision)throw Object.assign(new Error('Decisión no válida.'),{status:400});
   const {data:row,error}=await admin.from('solicitudes_documentos_oficiales').select('*').eq('id',id).maybeSingle();if(error)throw error;if(!row)throw Object.assign(new Error('Solicitud de oficio no encontrada.'),{status:404});if(!(row.departamentos_firma||[]).includes(dept))throw Object.assign(new Error('Este oficio no requiere la firma de tu departamento.'),{status:403});if(['emitida','cancelada'].includes(row.estado))throw Object.assign(new Error('El oficio ya fue resuelto.'),{status:409});
-  if(decision==='rechazada'){const motivo=String(body.motivo||'').trim();if(!motivo)throw Object.assign(new Error('El rechazo requiere un motivo.'),{status:400});const approvals={...(row.aprobaciones||{}),[dept]:{estado:'rechazada',usuario_id:user.id,motivo,at:new Date().toISOString()}};const {data:updated,error:ue}=await admin.from('solicitudes_documentos_oficiales').update({estado:'rechazada',aprobaciones:approvals,motivo_rechazo:motivo,actualizado_at:new Date().toISOString()}).eq('id',id).select('*').single();if(ue)throw ue;await audit(admin,{userId:user.id,role:profile.rol,action:'reject_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:id,description:`Firma ${dept} rechazada para ${row.folio}.`,after:updated,req});try{await createInetchNotification(admin,row.solicitado_por,{titulo:`Oficio ${row.folio} rechazado`,contenido:`${dept} rechazó el oficio. Motivo: ${motivo}`,tipo:'oficio_firma',solicitudId:id});}catch{}return updated;}
+  if(decision==='rechazada'){const motivo=String(body.motivo||'').trim();if(!motivo)throw Object.assign(new Error('El rechazo requiere un motivo.'),{status:400});const approvals={...(row.aprobaciones||{}),[dept]:{estado:'rechazada',usuario_id:user.id,motivo,at:new Date().toISOString()}};const {data:updated,error:ue}=await admin.from('solicitudes_documentos_oficiales').update({estado:'rechazada',aprobaciones:approvals,motivo_rechazo:motivo,actualizado_at:new Date().toISOString()}).eq('id',id).select('*').single();if(ue)throw ue;await audit(admin,{userId:user.id,role:profile.rol,action:'reject_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:id,description:`Firma ${dept} rechazada para ${row.folio}.`,after:updated,req});try{await createJaguarNotification(admin,row.solicitado_por,{titulo:`Oficio ${row.folio} rechazado`,contenido:`${dept} rechazó el oficio. Motivo: ${motivo}`,tipo:'oficio_firma',solicitudId:id});}catch{}return updated;}
   const responsible=await requireOfficialResponsible(admin,dept);const approvals={...(row.aprobaciones||{}),[dept]:{estado:'aprobada',usuario_id:user.id,nombre:profile?.nombre_completo||responsible?.nombre_completo,cargo:responsible?.cargo||`Responsable de ${dept}`,firma_path:profile?.firma_path||responsible?.perfil?.firma_path||responsible?.firma_path||null,firma_sha256:profile?.firma_sha256||responsible?.perfil?.firma_sha256||responsible?.firma_sha256||null,at:new Date().toISOString()}};
   const needed=row.departamentos_firma||[];const all=needed.every(x=>approvals?.[x]?.estado==='aprobada');const next=all?'aprobada':'en_revision';const {data:updated,error:ue}=await admin.from('solicitudes_documentos_oficiales').update({estado:next,aprobaciones:approvals,actualizado_at:new Date().toISOString(),resuelto_at:all?new Date().toISOString():null}).eq('id',id).select('*').single();if(ue)throw ue;
   await audit(admin,{userId:user.id,role:profile.rol,action:'approve_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:id,description:`Firma ${dept} registrada para ${row.folio}.`,after:updated,req});
-  if(all){const payload=row.payload||{};await generateOfficialDocument(admin,{id:row.solicitado_por}, {rol:'archivo_escolar'}, {...payload,internal_emit:true,approval_request_id:id,departamentos_firma:needed},req);try{await notifyInetchRole(admin,'archivo_escolar',{titulo:`Oficio ${row.folio} listo`,contenido:`Todas las firmas requeridas fueron registradas y el documento fue emitido.`,tipo:'oficio_firma',solicitudId:id});}catch{}}else{try{await createInetchNotification(admin,row.solicitado_por,{titulo:`Firma registrada · ${row.folio}`,contenido:`El departamento ${dept} aceptó y firmó el oficio. Aún faltan otras firmas.`,tipo:'oficio_firma',solicitudId:id});}catch{}}
+  if(all){const payload=row.payload||{};await generateOfficialDocument(admin,{id:row.solicitado_por}, {rol:'archivo_escolar'}, {...payload,internal_emit:true,approval_request_id:id,departamentos_firma:needed},req);try{await notifyJaguarRole(admin,'archivo_escolar',{titulo:`Oficio ${row.folio} listo`,contenido:`Todas las firmas requeridas fueron registradas y el documento fue emitido.`,tipo:'oficio_firma',solicitudId:id});}catch{}}else{try{await createJaguarNotification(admin,row.solicitado_por,{titulo:`Firma registrada · ${row.folio}`,contenido:`El departamento ${dept} aceptó y firmó el oficio. Aún faltan otras firmas.`,tipo:'oficio_firma',solicitudId:id});}catch{}}
   return updated;
 }
 
@@ -1473,7 +1473,7 @@ async function submitGradeClaim(admin,user,profile,body,req){
   const row={alumno_id:sid,calificacion_id:grade.id,grupo_materia_id:grade.grupo_materia_id,periodo_id:grade.periodo_id,motivo,evidencia:body.evidencia&&typeof body.evidencia==='object'?body.evidencia:{},estado:'pendiente',creado_por:user.id};
   const {data,error}=await admin.from('reclamos_calificacion').insert(row).select('*').single();if(error)throw error;
   const teacher=grade.docente_id?await admin.from('docentes').select('id,auth_user_id').eq('id',grade.docente_id).maybeSingle():{data:null,error:null};if(teacher.error)throw teacher.error;
-  if(teacher.data?.auth_user_id)try{await createInetchNotification(admin,teacher.data.auth_user_id,{titulo:'Nuevo reclamo de calificación',contenido:`Un alumno presentó un reclamo sobre una calificación (#${grade.id}).`,tipo:'reclamo_calificacion'});}catch(e){console.warn(e.message)}
+  if(teacher.data?.auth_user_id)try{await createJaguarNotification(admin,teacher.data.auth_user_id,{titulo:'Nuevo reclamo de calificación',contenido:`Un alumno presentó un reclamo sobre una calificación (#${grade.id}).`,tipo:'reclamo_calificacion'});}catch(e){console.warn(e.message)}
   await audit(admin,{userId:user.id,role:profile.rol,action:'submit_grade_claim',module:'archivo_escolar',entity:'reclamos_calificacion',entityId:data.id,description:`Reclamo de calificación #${grade.id}`,after:data,req});
   return data;
 }
@@ -3382,7 +3382,7 @@ function randomDistinctDigits(){
   return `${a}${b}`;
 }
 function randomUpperLetter(){return String.fromCharCode(65+Math.floor(Math.random()*26));}
-async function generateInetchMatricula(admin,{nombre,sexo,grupo,turno}){
+async function generateJaguarMatricula(admin,{nombre,sexo,grupo,turno}){
   const {prefix}=normalizeNameParts(nombre);
   const sexCode=String(sexo||'').toLowerCase().startsWith('muj')?'M':String(sexo||'').toLowerCase().startsWith('hom')?'H':String(sexo||'').toUpperCase()==='M'?'M':'H';
   const groupLetter=String(grupo?.letra||String(grupo?.clave||'').match(/[A-Z]$/i)?.[0]||'').toUpperCase();
@@ -3424,7 +3424,7 @@ async function renewActiveMatriculas(admin,user,profile,{dryRun=true}={}){
     if(!['Hombre','Mujer'].includes(sexo)){pending.push({id:st.id,nombre:st.nombre_completo,matricula_anterior:st.matricula||'—',motivo:'Falta sexo registrado y no se pudo identificar de forma segura.'});continue;}
     let nuevo=null;
     for(let tries=0;tries<20;tries++){
-      const candidate=await generateInetchMatricula(admin,{nombre:st.nombre_completo,sexo,grupo:g,turno:g.turno||st.turno});
+      const candidate=await generateJaguarMatricula(admin,{nombre:st.nombre_completo,sexo,grupo:g,turno:g.turno||st.turno});
       if(!used.has(candidate.toUpperCase())){nuevo=candidate;break;}
     }
     if(!nuevo){pending.push({id:st.id,nombre:st.nombre_completo,matricula_anterior:st.matricula||'—',motivo:'No se pudo generar una matrícula única.'});continue;}
@@ -3535,7 +3535,7 @@ async function createLateStudent(admin,user,profile,body){
     // (por ejemplo dos clics simultáneos), se genera otra antes de reintentar el alumno.
     let created=null,lastError=null;
     for(let attempt=0;attempt<20;attempt++){
-      cleanMat=await generateInetchMatricula(admin,{nombre,sexo,grupo:group,turno});
+      cleanMat=await generateJaguarMatricula(admin,{nombre,sexo,grupo:group,turno});
       const ins=await admin.from('alumnos').insert({matricula:cleanMat,nombre_completo:nombre,curp:base.curp,fecha_nacimiento:base.fecha_nacimiento,grupo_id:group.id,grado_ingreso:grado,turno,sexo,activo:true}).select('*').single();
       if(!ins.error){created=ins.data;break;}
       lastError=ins.error;
@@ -3639,7 +3639,7 @@ async function createLateStudentsBulk(admin,user,profile,rows){
       const turno=String(group.turno||'').trim();
       let cleanMat=null,created=null,lastError=null;
       for(let attempt=0;attempt<20;attempt++){
-        cleanMat=await generateInetchMatricula(admin,{nombre,sexo,grupo:group,turno});
+        cleanMat=await generateJaguarMatricula(admin,{nombre,sexo,grupo:group,turno});
         const ins=await admin.from('alumnos').insert({matricula:cleanMat,nombre_completo:nombre,curp,fecha_nacimiento:birth,grupo_id:group.id,grado_ingreso:grado,turno,sexo,activo:true}).select('*').single();
         if(!ins.error){created=ins.data;break;}
         lastError=ins.error;
@@ -3784,7 +3784,7 @@ async function acceptTeacherSchedule(admin,user,profile){
   const payload={docente_id:tid,ciclo_escolar:cycle,estado:'aceptado',firma_path:pf.firma_path,firma_sha256:pf.firma_sha256||null,aceptado_at:new Date().toISOString()};
   const {data,error}=await admin.from('aceptaciones_horario_docente').upsert(payload,{onConflict:'docente_id,ciclo_escolar'}).select('*').single(); if(error)throw error;
   const departments=['servicios_docentes','coordinacion_academica','direccion_escolar'];
-  for(const role of departments){try{await notifyInetchRole(admin,role,{titulo:'Horario docente aceptado',contenido:`${profile.nombre_completo||user.email||'Un docente'} aceptó formalmente su horario del ciclo ${cycle}.`,tipo:'aceptacion_horario',docenteId:tid});}catch(e){console.warn('No se pudo notificar aceptación de horario:',e.message)}}
+  for(const role of departments){try{await notifyJaguarRole(admin,role,{titulo:'Horario docente aceptado',contenido:`${profile.nombre_completo||user.email||'Un docente'} aceptó formalmente su horario del ciclo ${cycle}.`,tipo:'aceptacion_horario',docenteId:tid});}catch(e){console.warn('No se pudo notificar aceptación de horario:',e.message)}}
   return {acceptance:data,cycle};
 }
 
@@ -3800,7 +3800,7 @@ async function createGroupExchangeRequest(admin,user,body){
   if(Number(me.grupo_id)===Number(other.grupo_id))throw Object.assign(new Error('Los alumnos ya pertenecen al mismo grupo.'),{status:409});
   const {data:pending,error:pe}=await admin.from('solicitudes_intercambio_grupo').select('id').eq('alumno_solicitante_id',me.id).eq('estado','pendiente').limit(1); if(pe)throw pe; if((pending||[]).length)throw Object.assign(new Error('Ya tienes un intercambio pendiente.'),{status:409});
   const {data:created,error:ce}=await admin.from('solicitudes_intercambio_grupo').insert({alumno_solicitante_id:me.id,alumno_destino_id:other.id,grupo_solicitante_id:me.grupo_id,grupo_destino_id:other.grupo_id,motivo:String(body.motivo||'').trim()||null,solicitado_por:user.id}).select('*').single(); if(ce)throw ce;
-  try{await createInetchNotification(admin,other.auth_user_id,{titulo:'Solicitud de intercambio de grupo',contenido:`${me.nombre_completo} solicita intercambiar su grupo ${me.grupos?.clave||''} contigo para ocupar tu lugar en ${other.grupos?.clave||''}. Puedes aceptar o rechazar la solicitud.`,tipo:'intercambio_grupo',solicitudId:created.id});}catch(e){console.warn('No se pudo notificar intercambio:',e.message)}
+  try{await createJaguarNotification(admin,other.auth_user_id,{titulo:'Solicitud de intercambio de grupo',contenido:`${me.nombre_completo} solicita intercambiar su grupo ${me.grupos?.clave||''} contigo para ocupar tu lugar en ${other.grupos?.clave||''}. Puedes aceptar o rechazar la solicitud.`,tipo:'intercambio_grupo',solicitudId:created.id});}catch(e){console.warn('No se pudo notificar intercambio:',e.message)}
   return created;
 }
 
@@ -3812,7 +3812,7 @@ async function respondGroupExchangeRequest(admin,user,body){
   if(reqRow.estado!=='pendiente')throw Object.assign(new Error('La solicitud ya fue respondida.'),{status:409});
   if(decision==='rechazada'){
     const {data,error}=await admin.from('solicitudes_intercambio_grupo').update({estado:'rechazada',respuesta_motivo:String(body.motivo||'').trim()||null,respondido_at:new Date().toISOString(),resuelto_at:new Date().toISOString()}).eq('id',id).eq('estado','pendiente').select('*').single(); if(error)throw error;
-    try{await createInetchNotification(admin,reqRow.alumno_solicitante?.auth_user_id,{titulo:'Intercambio de grupo rechazado',contenido:`${student.nombre_completo} rechazó la solicitud de intercambio.`,tipo:'intercambio_grupo',solicitudId:id});}catch(e){console.warn(e.message)}
+    try{await createJaguarNotification(admin,reqRow.alumno_solicitante?.auth_user_id,{titulo:'Intercambio de grupo rechazado',contenido:`${student.nombre_completo} rechazó la solicitud de intercambio.`,tipo:'intercambio_grupo',solicitudId:id});}catch(e){console.warn(e.message)}
     return data;
   }
   const a=reqRow.alumno_solicitante,b=reqRow.alumno_destino;
@@ -3827,7 +3827,7 @@ async function respondGroupExchangeRequest(admin,user,body){
   const {error:u2}=await admin.from('alumnos').update({matricula:newMatB}).eq('id',b.id); if(u2)throw u2;
   for(const row of [{id:a.auth_user_id,mat:newMatA},{id:b.auth_user_id,mat:newMatB}]) if(row.id){const email=await institutionalEmail(admin,row.mat);await admin.auth.admin.updateUserById(row.id,{email,email_confirm:true,user_metadata:{matricula:row.mat,login_email:email}});await admin.from('perfiles').update({correo:email,correo_auth:email,matricula:row.mat}).eq('id',row.id);}
   const {data,error}=await admin.from('solicitudes_intercambio_grupo').update({estado:'aceptada',respondido_at:new Date().toISOString(),resuelto_at:new Date().toISOString()}).eq('id',id).eq('estado','pendiente').select('*').single(); if(error)throw error;
-  try{await createInetchNotification(admin,a.auth_user_id,{titulo:'Intercambio de grupo aceptado',contenido:`${b.nombre_completo} aceptó el intercambio. Tu nuevo grupo es ${newA.grupos?.clave||'—'}.`,tipo:'intercambio_grupo',solicitudId:id});}catch(e){console.warn(e.message)}
+  try{await createJaguarNotification(admin,a.auth_user_id,{titulo:'Intercambio de grupo aceptado',contenido:`${b.nombre_completo} aceptó el intercambio. Tu nuevo grupo es ${newA.grupos?.clave||'—'}.`,tipo:'intercambio_grupo',solicitudId:id});}catch(e){console.warn(e.message)}
   return {request:data,students:[newA,newB]};
 }
 
@@ -3971,7 +3971,7 @@ export default async function handler(
         const {data:existing,error:ee}=await adminClient.from('solicitudes_revision_acceso').select('id,estado').eq('usuario_id',user.id).eq('estado','pendiente').maybeSingle();if(ee)throw ee;if(existing)return res.status(409).json({ok:false,error:'Ya tienes una solicitud de revisión pendiente.'});
         const {data:reqRow,error:ie}=await adminClient.from('solicitudes_revision_acceso').insert({usuario_id:user.id,alumno_id:profile.rol==='alumno'?person.id:null,docente_id:profile.rol==='docente'?person.id:null,motivo:String(body.motivo||'Solicitud de revisión de suspensión').trim().slice(0,1000)||'Solicitud de revisión de suspensión',estado:'pendiente'}).select('*').single();if(ie)throw ie;
         const {error:ue}=await adminClient.from(table).update({revision_acceso_estado:'pendiente'}).eq('id',person.id);if(ue)throw ue;
-        const {data:admins,error:ae}=await adminClient.from('perfiles').select('id').in('rol',['direccion_escolar','control_escolar']).eq('activo',true);if(ae)throw ae;for(const p of admins||[]){try{await createInetchNotification(adminClient,p.id,{titulo:'Solicitud de revisión de acceso',contenido:`${profile.nombre_completo||user.email} solicitó revisión de su suspensión.`,tipo:'revision_acceso'});}catch(e){console.warn(e.message)}}
+        const {data:admins,error:ae}=await adminClient.from('perfiles').select('id').in('rol',['direccion_escolar','control_escolar']).eq('activo',true);if(ae)throw ae;for(const p of admins||[]){try{await createJaguarNotification(adminClient,p.id,{titulo:'Solicitud de revisión de acceso',contenido:`${profile.nombre_completo||user.email} solicitó revisión de su suspensión.`,tipo:'revision_acceso'});}catch(e){console.warn(e.message)}}
         return res.status(200).json({ok:true,data:reqRow,message:'Solicitud de revisión enviada. Tu acceso pasó a revisión.'});
       }
       if(body.action==='resolve'){
@@ -3980,7 +3980,7 @@ export default async function handler(
         const {data:r,error:re}=await adminClient.from('solicitudes_revision_acceso').select('*').eq('id',id).eq('estado','pendiente').maybeSingle();if(re)throw re;if(!r)return res.status(404).json({ok:false,error:'La solicitud ya fue resuelta o no existe.'});
         const estado=decision==='approve'?'aprobada':'rechazada';const now=new Date().toISOString();const {error:ru}=await adminClient.from('solicitudes_revision_acceso').update({estado,observaciones_resolucion:String(body.observaciones||'').trim()||null,resuelto_por:user.id,resuelto_at:now}).eq('id',id);if(ru)throw ru;
         const table=r.alumno_id?'alumnos':'docentes',pid=r.alumno_id||r.docente_id;const patch=decision==='approve'?{suspension_fecha:null,suspension_hasta:null,suspension_motivo:null,suspension_observaciones:null,revision_acceso_estado:'aprobada'}:{revision_acceso_estado:'rechazada'};const {error:pu}=await adminClient.from(table).update(patch).eq('id',pid);if(pu)throw pu;
-        try{await createInetchNotification(adminClient,r.usuario_id,{titulo:decision==='approve'?'Revisión de acceso aprobada':'Revisión de acceso rechazada',contenido:decision==='approve'?'Tu acceso fue reactivado después de la revisión.':'La revisión fue rechazada y la suspensión permanece activa.',tipo:'revision_acceso'});}catch(e){console.warn(e.message)}
+        try{await createJaguarNotification(adminClient,r.usuario_id,{titulo:decision==='approve'?'Revisión de acceso aprobada':'Revisión de acceso rechazada',contenido:decision==='approve'?'Tu acceso fue reactivado después de la revisión.':'La revisión fue rechazada y la suspensión permanece activa.',tipo:'revision_acceso'});}catch(e){console.warn(e.message)}
         return res.status(200).json({ok:true,message:decision==='approve'?'Revisión aprobada. El acceso fue reactivado.':'Revisión rechazada. La suspensión permanece activa.'});
       }
     }
@@ -4215,7 +4215,7 @@ export default async function handler(
         if(!['Hombre','Mujer'].includes(sexo)){pending.push({id:st.id,nombre:st.nombre_completo,matricula_anterior:old||'—',motivo:'Falta sexo y no pudo inferirse de CURP/matrícula.'});continue;}
         let newMat=null;
         for(let attempt=0;attempt<100;attempt++){
-          const candidate=await generateInetchMatricula(adminClient,{nombre:st.nombre_completo,sexo,grupo:st.grupos,turno:st.grupos?.turno||st.turno});
+          const candidate=await generateJaguarMatricula(adminClient,{nombre:st.nombre_completo,sexo,grupo:st.grupos,turno:st.grupos?.turno||st.turno});
           if(!used.has(candidate)){newMat=candidate;break;}
         }
         if(!newMat){conflicts++;pending.push({id:st.id,nombre:st.nombre_completo,matricula_anterior:old||'—',motivo:'No se pudo obtener una matrícula única.'});continue;}
@@ -6059,16 +6059,16 @@ async function generateAcademicSchedules(
 /* =========================================================
    NOTIFICACIONES Y CAMBIO DE GRUPO
    ========================================================= */
-async function createInetchNotification(admin, usuarioId, {titulo,contenido,tipo='solicitud',solicitudId=null}){
+async function createJaguarNotification(admin, usuarioId, {titulo,contenido,tipo='solicitud',solicitudId=null}){
   if(!usuarioId)return;
   const {error}=await admin.from('notificaciones').insert({usuario_id:usuarioId,titulo,contenido,tipo,solicitud_id:solicitudId,leida:false});
   if(error)throw error;
 }
 
-async function notifyInetchRole(admin, role, payload){
+async function notifyJaguarRole(admin, role, payload){
   const {data,error}=await admin.from('perfiles').select('id').eq('rol',role).eq('activo',true);
   if(error)throw error;
-  for(const p of data||[]) await createInetchNotification(admin,p.id,payload);
+  for(const p of data||[]) await createJaguarNotification(admin,p.id,payload);
 }
 
 async function buildNewGroupMatricula(admin, alumno, newGroup){
@@ -6090,7 +6090,7 @@ async function buildNewGroupMatricula(admin, alumno, newGroup){
   if(!['Hombre','Mujer'].includes(sexo)){
     throw Object.assign(new Error('No se puede actualizar la matrícula de este alumno automáticamente: falta sexo y tampoco se pudo identificar de forma segura desde su matrícula o CURP. Registra el sexo en su expediente y vuelve a aceptar el cambio.'),{status:409});
   }
-  return generateInetchMatricula(admin,{nombre:alumno.nombre_completo,sexo,grupo:newGroup,turno:newGroup.turno});
+  return generateJaguarMatricula(admin,{nombre:alumno.nombre_completo,sexo,grupo:newGroup,turno:newGroup.turno});
 }
 
 async function changeStudentGroup(admin, user, profile, request, mode){
@@ -6172,7 +6172,7 @@ async function changeStudentGroupDirect(admin,user,profile,body){
   if(ue)throw ue;
   if(oldMat){const {data:mr,error:me}=await admin.from('matricula_alumnos').select('id').eq('numero_matricula',oldMat).maybeSingle();if(!me&&mr){const {error:mu}=await admin.from('matricula_alumnos').update({numero_matricula:newMat,matricula_anterior:oldMat}).eq('id',mr.id);if(mu&&/column .*matricula_anterior.*does not exist/i.test(mu.message||''))await admin.from('matricula_alumnos').update({numero_matricula:newMat}).eq('id',mr.id);else if(mu)throw mu;}}
   if(student.auth_user_id){const {error:ae}=await admin.auth.admin.updateUserById(student.auth_user_id,{email:newEmail,email_confirm:true,user_metadata:{...(body.user_metadata||{}),login_email:newEmail,matricula:newMat}});if(ae)throw ae;const {error:pe}=await admin.from('perfiles').update({correo:newEmail,correo_auth:newEmail,matricula:newMat}).eq('id',student.auth_user_id);if(pe)throw pe;}
-  try{await createInetchNotification(admin,student.auth_user_id,{titulo:'Cambio de grupo realizado',contenido:`Control Escolar realizó un cambio de grupo. Grupo anterior: ${current.clave}. Nuevo grupo: ${target.clave}.`,tipo:'cambio_grupo'});}catch(e){console.warn('No se pudo notificar el cambio directo:',e.message)}
+  try{await createJaguarNotification(admin,student.auth_user_id,{titulo:'Cambio de grupo realizado',contenido:`Control Escolar realizó un cambio de grupo. Grupo anterior: ${current.clave}. Nuevo grupo: ${target.clave}.`,tipo:'cambio_grupo'});}catch(e){console.warn('No se pudo notificar el cambio directo:',e.message)}
   return {student:updated,current,target,oldMat,newMat,newEmail};
 }
 
@@ -6189,7 +6189,7 @@ async function createSpecialGradeRequest(admin,user,profile,body){
   const {data:reqRow,error:re}=await admin.from('solicitudes_cambio_grado').insert({alumno_id:alumnoId,grupo_actual_id:current.id,grupo_destino_id:target?.id||null,grado_actual:Number(current.grado),grado_solicitado:gradoSolicitado,motivo,estado:'pendiente',solicitado_por:user.id}).select('*').single();if(re)throw re;
   const approvals=ITHLA_DEPARTMENTS.map(departamento=>({solicitud_id:reqRow.id,departamento,estado:'pendiente'}));
   const {error:ae}=await admin.from('aprobaciones_cambio_grado').insert(approvals);if(ae){await admin.from('solicitudes_cambio_grado').delete().eq('id',reqRow.id);throw ae;}
-  for(const role of ITHLA_DEPARTMENTS){try{await notifyInetchRole(admin,role,{titulo:'Cambio especial de grado pendiente',contenido:`Se solicita autorización para cambiar a ${student.nombre_completo||'un alumno'} de ${current.grado}° a ${gradoSolicitado}°. Una sola negativa rechazará la solicitud.`,tipo:'cambio_grado_especial'});}catch(e){console.warn('No se pudo notificar a '+role,e.message)}}
+  for(const role of ITHLA_DEPARTMENTS){try{await notifyJaguarRole(admin,role,{titulo:'Cambio especial de grado pendiente',contenido:`Se solicita autorización para cambiar a ${student.nombre_completo||'un alumno'} de ${current.grado}° a ${gradoSolicitado}°. Una sola negativa rechazará la solicitud.`,tipo:'cambio_grado_especial'});}catch(e){console.warn('No se pudo notificar a '+role,e.message)}}
   return {request:reqRow,target,departments:ITHLA_DEPARTMENTS};
 }
 
@@ -6204,13 +6204,13 @@ async function resolveSpecialGradeApproval(admin,user,profile,body){
   const {error:ue}=await admin.from('aprobaciones_cambio_grado').update({estado:decision,autorizado_por:user.id,observaciones:String(body.observaciones||'').trim()||null,atendida_at:new Date().toISOString()}).eq('id',ap.id);if(ue)throw ue;
   if(decision==='rechazada'){
     await admin.from('solicitudes_cambio_grado').update({estado:'rechazada',atendida_at:new Date().toISOString()}).eq('id',id);
-    for(const role of ITHLA_DEPARTMENTS){try{await notifyInetchRole(admin,role,{titulo:'Cambio especial de grado rechazado',contenido:`La solicitud de cambio de ${reqRow.alumnos?.nombre_completo||'alumno'} fue rechazada por ${labelsRole(role)}.`,tipo:'cambio_grado_especial'});}catch(e){}}
-    if(reqRow.alumnos?.auth_user_id)try{await createInetchNotification(admin,reqRow.alumnos.auth_user_id,{titulo:'Cambio especial de grado rechazado',contenido:`La solicitud de cambio especial de grado fue rechazada por ${labelsRole(profile.rol)}.`,tipo:'cambio_grado_especial'});}catch(e){}
+    for(const role of ITHLA_DEPARTMENTS){try{await notifyJaguarRole(admin,role,{titulo:'Cambio especial de grado rechazado',contenido:`La solicitud de cambio de ${reqRow.alumnos?.nombre_completo||'alumno'} fue rechazada por ${labelsRole(role)}.`,tipo:'cambio_grado_especial'});}catch(e){}}
+    if(reqRow.alumnos?.auth_user_id)try{await createJaguarNotification(admin,reqRow.alumnos.auth_user_id,{titulo:'Cambio especial de grado rechazado',contenido:`La solicitud de cambio especial de grado fue rechazada por ${labelsRole(profile.rol)}.`,tipo:'cambio_grado_especial'});}catch(e){}
     return {estado:'rechazada',message:'La solicitud fue rechazada. Una sola negativa cancela el cambio especial.'};
   }
   const {data:all,error:allError}=await admin.from('aprobaciones_cambio_grado').select('departamento,estado').eq('solicitud_id',id);if(allError)throw allError;
   const allApproved=ITHLA_DEPARTMENTS.every(role=>(all||[]).some(a=>a.departamento===role&&a.estado==='aprobada'));
-  if(allApproved){const {error:su}=await admin.from('solicitudes_cambio_grado').update({estado:'aprobada',atendida_at:new Date().toISOString()}).eq('id',id);if(su)throw su;for(const role of ITHLA_DEPARTMENTS){try{await notifyInetchRole(admin,role,{titulo:'Cambio especial autorizado',contenido:`Todos los departamentos autorizaron el cambio especial de ${reqRow.alumnos?.nombre_completo||'alumno'}. Control Escolar puede ejecutar el cambio.`,tipo:'cambio_grado_especial'});}catch(e){}}}
+  if(allApproved){const {error:su}=await admin.from('solicitudes_cambio_grado').update({estado:'aprobada',atendida_at:new Date().toISOString()}).eq('id',id);if(su)throw su;for(const role of ITHLA_DEPARTMENTS){try{await notifyJaguarRole(admin,role,{titulo:'Cambio especial autorizado',contenido:`Todos los departamentos autorizaron el cambio especial de ${reqRow.alumnos?.nombre_completo||'alumno'}. Control Escolar puede ejecutar el cambio.`,tipo:'cambio_grado_especial'});}catch(e){}}}
   return {estado:allApproved?'aprobada':'pendiente',message:allApproved?'Todos los departamentos autorizaron el cambio. Control Escolar puede ejecutarlo.':'Autorización registrada. Aún faltan departamentos.'};
 }
 
@@ -6223,7 +6223,7 @@ async function reopenSpecialGradeRequest(admin,user,profile,body){
   if(reqRow.estado!=='rechazada')throw Object.assign(new Error('Solo se pueden reabrir solicitudes rechazadas.'),{status:409});
   const {error:ar}=await admin.from('aprobaciones_cambio_grado').update({estado:'pendiente',autorizado_por:null,observaciones:null,atendida_at:null}).eq('solicitud_id',id);if(ar)throw ar;
   const {error:sr}=await admin.from('solicitudes_cambio_grado').update({estado:'pendiente',atendida_at:null}).eq('id',id);if(sr)throw sr;
-  for(const role of ITHLA_DEPARTMENTS){try{await notifyInetchRole(admin,role,{titulo:'Solicitud reabierta por Dirección Escolar',contenido:'Dirección Escolar reabrió una solicitud de cambio especial de grado para una nueva revisión.',tipo:'cambio_grado_especial'});}catch(e){}}
+  for(const role of ITHLA_DEPARTMENTS){try{await notifyJaguarRole(admin,role,{titulo:'Solicitud reabierta por Dirección Escolar',contenido:'Dirección Escolar reabrió una solicitud de cambio especial de grado para una nueva revisión.',tipo:'cambio_grado_especial'});}catch(e){}}
   return {estado:'pendiente',message:'La solicitud fue reabierta y volvió a enviarse a los departamentos.'};
 }
 
@@ -6234,12 +6234,12 @@ async function executeSpecialGradeChange(admin,user,profile,body){
   const {data:aps,error:ae}=await admin.from('aprobaciones_cambio_grado').select('departamento,estado').eq('solicitud_id',id);if(ae)throw ae;if(!ITHLA_DEPARTMENTS.every(role=>(aps||[]).some(a=>a.departamento===role&&a.estado==='aprobada')))throw Object.assign(new Error('Falta la autorización de uno o más departamentos.'),{status:409});
   const student=reqRow.alumnos;const {data:groups,error:ge}=await admin.from('grupos').select('id,clave,grado,letra,turno,activo').eq('activo',true).eq('grado',Number(reqRow.grado_solicitado));if(ge)throw ge;const caps=await groupCapacity(admin,(groups||[]).map(g=>g.id));let target=(groups||[]).find(g=>Number(g.id)===Number(reqRow.grupo_destino_id))||null;if(!target){const available=(groups||[]).filter(g=>!caps[String(g.id)]?.lleno);if(!available.length)throw Object.assign(new Error(`No hay grupos con cupo disponible para ${reqRow.grado_solicitado}°.`),{status:409});target=available[Math.floor(Math.random()*available.length)];}else if(caps[String(target.id)]?.lleno)throw Object.assign(new Error(`El grupo ${target.clave||''} está lleno (40 alumnos).`),{status:409});
   const current=student.grupo_id?await admin.from('grupos').select('id,clave,grado,letra,turno').eq('id',student.grupo_id).maybeSingle():{data:null};
-  const oldGroup=current.data;const newMat=await generateInetchMatricula(admin,{nombre:student.nombre_completo,sexo:student.sexo,grupo:target,turno:target.turno});const oldMat=String(student.matricula||'').trim();const newEmail=student.auth_user_id?await institutionalEmail(admin,newMat):null;
+  const oldGroup=current.data;const newMat=await generateJaguarMatricula(admin,{nombre:student.nombre_completo,sexo:student.sexo,grupo:target,turno:target.turno});const oldMat=String(student.matricula||'').trim();const newEmail=student.auth_user_id?await institutionalEmail(admin,newMat):null;
   const {data:updated,error:ue}=await admin.from('alumnos').update({grupo_id:target.id,grado_ingreso:Number(target.grado),turno:target.turno||null,matricula:newMat}).eq('id',student.id).select('*,grupos(id,clave,grado,letra,turno)').single();if(ue)throw ue;
   if(oldMat){const {data:mr,error:me}=await admin.from('matricula_alumnos').select('id').eq('numero_matricula',oldMat).maybeSingle();if(!me&&mr){const {error:mu}=await admin.from('matricula_alumnos').update({numero_matricula:newMat,matricula_anterior:oldMat}).eq('id',mr.id);if(mu&&/column .*matricula_anterior.*does not exist/i.test(mu.message||''))await admin.from('matricula_alumnos').update({numero_matricula:newMat}).eq('id',mr.id);else if(mu)throw mu;}}
   if(student.auth_user_id){const {error:ae2}=await admin.auth.admin.updateUserById(student.auth_user_id,{email:newEmail,email_confirm:true,user_metadata:{login_email:newEmail,matricula:newMat}});if(ae2)throw ae2;const {error:pe}=await admin.from('perfiles').update({correo:newEmail,correo_auth:newEmail,matricula:newMat}).eq('id',student.auth_user_id);if(pe)throw pe;}
   const {error:mark}=await admin.from('solicitudes_cambio_grado').update({estado:'ejecutada',ejecutada_at:new Date().toISOString(),atendida_at:new Date().toISOString()}).eq('id',id);if(mark)throw mark;
-  if(student.auth_user_id)try{await createInetchNotification(admin,student.auth_user_id,{titulo:'Cambio especial de grado realizado',contenido:`Tu cambio de grado fue autorizado por todos los departamentos y ejecutado por Control Escolar. ${oldGroup?.clave||''} → ${target.clave}.`,tipo:'cambio_grado_especial'});}catch(e){}
+  if(student.auth_user_id)try{await createJaguarNotification(admin,student.auth_user_id,{titulo:'Cambio especial de grado realizado',contenido:`Tu cambio de grado fue autorizado por todos los departamentos y ejecutado por Control Escolar. ${oldGroup?.clave||''} → ${target.clave}.`,tipo:'cambio_grado_especial'});}catch(e){}
   return {student:updated,current:oldGroup,target,oldMat,newMat};
 }
 
@@ -6377,9 +6377,9 @@ async function handleStudentRequest(
     }
 
     if(type==='grupo') {
-      try{await notifyInetchRole(admin,'control_escolar',{titulo:'Nueva solicitud de cambio de grupo',contenido:`${student.nombre_completo||'Un alumno'} solicitó cambio de grupo. Revisa la solicitud para aceptar el grupo solicitado o asignar uno aleatorio del mismo grado.`,tipo:'cambio_grupo',solicitudId:created.id});}catch(e){console.warn('No se pudo crear la notificación de Control Escolar:',e.message)}
+      try{await notifyJaguarRole(admin,'control_escolar',{titulo:'Nueva solicitud de cambio de grupo',contenido:`${student.nombre_completo||'Un alumno'} solicitó cambio de grupo. Revisa la solicitud para aceptar el grupo solicitado o asignar uno aleatorio del mismo grado.`,tipo:'cambio_grupo',solicitudId:created.id});}catch(e){console.warn('No se pudo crear la notificación de Control Escolar:',e.message)}
     } else if(type==='taller') {
-      try{await notifyInetchRole(admin,'servicios_estudiantiles',{titulo:'Nueva solicitud de taller',contenido:`${student.nombre_completo||'Un alumno'} envió una solicitud relacionada con su taller extracurricular.`,tipo:'taller',solicitudId:created.id});}catch(e){console.warn('No se pudo crear la notificación de Servicios Estudiantiles:',e.message)}
+      try{await notifyJaguarRole(admin,'servicios_estudiantiles',{titulo:'Nueva solicitud de taller',contenido:`${student.nombre_completo||'Un alumno'} envió una solicitud relacionada con su taller extracurricular.`,tipo:'taller',solicitudId:created.id});}catch(e){console.warn('No se pudo crear la notificación de Servicios Estudiantiles:',e.message)}
     }
 
     return res
@@ -6476,7 +6476,7 @@ async function handleStudentRequest(
         const mode=body.grupo_modo==='random'?'random':'solicitado';
         const result=await changeStudentGroup(admin,user,profile,request,mode);
         const quien=profile.nombre_completo||user.email||'Control Escolar';
-        try{await createInetchNotification(admin,result.student.auth_user_id,{
+        try{await createJaguarNotification(admin,result.student.auth_user_id,{
           titulo:'Solicitud de cambio de grupo resuelta',
           contenido:`Tu solicitud fue aceptada por ${quien}. Grupo anterior: ${result.current.clave}. Nuevo grupo: ${result.target.clave}. ${mode==='random'?'La reasignación se realizó aleatoriamente dentro de tu mismo grado.':'Se asignó el grupo que solicitaste.'}`,
           tipo:'cambio_grupo',
@@ -6609,7 +6609,7 @@ async function handleStudentRequest(
     if(request.tipo==='grupo' && estado==='rechazada') {
       const {data:st}=await admin.from('alumnos').select('auth_user_id').eq('id',request.alumno_id).maybeSingle();
       const quien=profile.nombre_completo||user.email||'Control Escolar';
-      try{await createInetchNotification(admin,st?.auth_user_id,{titulo:'Solicitud de cambio de grupo rechazada',contenido:`Tu solicitud fue rechazada por ${quien}. Consulta la resolución en Solicitudes para conocer las observaciones.`,tipo:'cambio_grupo',solicitudId:id});}catch(e){console.warn('No se pudo notificar al alumno:',e.message)}
+      try{await createJaguarNotification(admin,st?.auth_user_id,{titulo:'Solicitud de cambio de grupo rechazada',contenido:`Tu solicitud fue rechazada por ${quien}. Consulta la resolución en Solicitudes para conocer las observaciones.`,tipo:'cambio_grupo',solicitudId:id});}catch(e){console.warn('No se pudo notificar al alumno:',e.message)}
     }
 
     const {
