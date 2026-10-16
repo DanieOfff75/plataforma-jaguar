@@ -618,7 +618,7 @@ async function boletaPdf(admin,id,req=null){
     admin.from('periodos_escolares').select('id,nombre,ciclo_escolar,activo,numero_periodo,es_periodo_actual').eq('ciclo_escolar',cycle).order('numero_periodo',{ascending:true}).order('id',{ascending:true}),
     admin.from('asistencias').select('id,fecha,estado,observaciones,grupo_materia_id').eq('alumno_id',id).order('fecha',{ascending:true}).limit(5000),
     admin.from('incidencias_prefectura').select('id,tipo,titulo,descripcion,fecha,estado,observaciones').eq('alumno_id',id).order('fecha',{ascending:false}).limit(500),
-    admin.from('horarios').select('grupo_materias!inner(grupo_id),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',s.grupo_id).eq('ciclo_escolar',cycle)
+    admin.from('horarios').select('grupo_materias!inner(id,grupo_id,materia_id,materias(id,nombre)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',s.grupo_id).eq('ciclo_escolar',cycle)
   ]);
   for(const q of [gradesQ,periodsQ,attendanceQ,incidentsQ,scheduleTeachersQ]) if(q.error) throw q.error;
 
@@ -633,14 +633,7 @@ async function boletaPdf(admin,id,req=null){
       departmentSigners.push({name:dep.nombre||dep.clave||'Departamento',profile:r?.perfil||r||null,department:dep});
     }
   }catch{}
-  if(!departmentSigners.length){
-    for(const [name,role] of [['Control Escolar','control_escolar'],['Coordinación Académica','coordinacion_academica'],['Dirección Escolar','direccion_escolar']]){
-      let prof=null;try{prof=await profileSignatureByRole(admin,role);}catch{}
-      departmentSigners.push({name,profile:prof,department:{clave:role}});
-    }
-  }
-  // Resolver docentes antes de calcular páginas; evita acceder a teacherIds antes de inicializarlo.
-  const teacherIds=[...new Set([...(gradesQ.data||[]).filter(r=>r.periodos_escolares?.ciclo_escolar===cycle).map(r=>r.docente_id).filter(Boolean).map(String), ...(scheduleTeachersQ.data||[]).map(r=>r.docente?.id).filter(Boolean).map(String)])];
+  // Sin departamentos configurados no se imprimen firmas departamentales ficticias.
   let periods=(periodsQ.data||[]).filter(p=>p.ciclo_escolar===cycle);
   if(!periods.length){
     const seen=new Map();
@@ -658,13 +651,30 @@ async function boletaPdf(admin,id,req=null){
     const name=g.grupo_materias?.materias?.nombre||'Materia';
     // Reglas del formato aprobado: estas áreas no se imprimen en la boleta oficial.
     if(/\bartes\b|lengua\s+ind[ií]gena/i.test(String(name))) continue;
-    if(!subjectMap.has(String(sid))) subjectMap.set(String(sid),{materia_id:sid,name,grades:{},teachers:new Set(),observations:[]});
+    if(!subjectMap.has(String(sid))) subjectMap.set(String(sid),{materia_id:sid,name,grades:{},teachers:new Set(),gradeTeachersFromGroup:new Set(),observations:[]});
     const x=subjectMap.get(String(sid));
     const pi=periodIndex.get(String(g.periodo_id));
     if(pi!==undefined) x.grades[pi]=(g.calificacion!==null&&g.calificacion!==''&&Number.isFinite(Number(g.calificacion)))?Number(g.calificacion):null;
-    if(g.docente_id) x.teachers.add(String(g.docente_id));
+    // Una nota de recursamiento puede haberla capturado otro docente: no lo hace titular del grupo.
+    if(g.docente_id&&String(g.grupo_materias?.grupos?.id)===String(s.grupo_id)) x.gradeTeachersFromGroup.add(String(g.docente_id));
     if(g.observaciones) x.observations.push(String(g.observaciones));
   }
+  // Los docentes oficiales proceden del horario del grupo y las materias de esta boleta.
+  // Un docente que sólo participó en una recuperación no debe aparecer por esa calificación.
+  const assignedTeachersBySubject=new Map();
+  for(const row of scheduleTeachersQ.data||[]){
+    const gm=row.grupo_materias;
+    const mid=gm?.materia_id;
+    const tid=row.docente?.id;
+    if(!mid||!tid||String(gm.grupo_id)!==String(s.grupo_id)||!subjectMap.has(String(mid)))continue;
+    if(!assignedTeachersBySubject.has(String(mid)))assignedTeachersBySubject.set(String(mid),new Set());
+    assignedTeachersBySubject.get(String(mid)).add(String(tid));
+  }
+  for(const x of subjectMap.values()){
+    // Sólo si no hay horario para esta materia se usa la evidencia del propio grupo.
+    x.teachers=assignedTeachersBySubject.get(String(x.materia_id))||x.gradeTeachersFromGroup;
+  }
+  const teacherIds=[...new Set([...subjectMap.values()].flatMap(x=>[...x.teachers]))];
   let teacherNames=new Map();
   if(teacherIds.length){
     const {data:ts,error:te}=await admin.from('docentes').select('id,nombre_completo,correo,auth_user_id').in('id',teacherIds);
@@ -713,7 +723,8 @@ async function boletaPdf(admin,id,req=null){
       if(acc.data?.firma_path)prof={id:t?.auth_user_id||null,nombre_completo:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',rol:'docente',firma_path:acc.data.firma_path,firma_sha256:acc.data.firma_sha256||null};
     }
     const related=subjects.filter(x=>x.teachers.has(String(tid))).map(x=>x.name);
-    teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:related.join(', ')||'Asignatura asignada'});
+    if(!related.length)continue; // Nunca imprimir 'Asignatura asignada' ni perfiles ajenos al grupo.
+    teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:related.join(', ')});
   }
   let bytes;
   try{bytes=await renderBoletaVisual15({
