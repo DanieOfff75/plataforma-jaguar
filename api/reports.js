@@ -716,7 +716,12 @@ async function boletaPdf(admin,id,req=null){
   const rule=(page,x1,y1,x2,y2,color=C.line,width=.5)=>page.drawLine({start:{x:x1,y:y1},end:{x:x2,y:y2},thickness:width,color});
   const fillRect=(page,x,y,w,h,color,border=null,bw=.5,opacity=1)=>page.drawRectangle({x,y,width:w,height:h,color,opacity,...(border?{borderColor:border,borderWidth:bw}:{})});
   const bg=(page)=>{fillRect(page,0,0,W,H,C.white);if(pattern){const pw=820,ph=pw*360/519;page.drawImage(pattern,{x:(W-pw)/2,y:0,width:pw,height:ph,opacity:.10});}fillRect(page,0,H-4,W,4,C.gold);fillRect(page,0,H-6,W,1.4,C.gold2);};
-  const crest=(page,x,y,size=37)=>{fillRect(page,x,y,size,size,C.goldp,C.gold,.9);centered(page,'J',x,y+8,size,21,bold,C.gold);};
+  // La cabecera conserva la identidad institucional real; no se sustituye el logotipo por una letra genérica.
+  const crest=(page,x,y,size=37)=>{
+    fillRect(page,x,y,size,size,C.white,C.gold,.7);
+    if(logo){const ratio=Math.min((size-4)/logo.width,(size-4)/logo.height);page.drawImage(logo,{x:x+(size-logo.width*ratio)/2,y:y+(size-logo.height*ratio)/2,width:logo.width*ratio,height:logo.height*ratio});}
+    else {centered(page,String(institution.siglas||'ITHLA'),x,y+size/2-4,size,7,bold,C.gold);}
+  };
   const header=(page,tag='Sistema institucional de evaluación escolar')=>{crest(page,34,H-66,34);text(page,String(institution.nombre_institucion||'INSTITUTO EDUCATIVO').toUpperCase(),78,H-43,10.2,bold,C.ink,340);text(page,String(institution.lema||institution.eslogan||institution.slogan||'Formación · Conocimiento · Futuro'),78,H-56,6.3,regular,C.muted,335);text(page,tag.toUpperCase(),78,H-33,5.4,bold,C.muted,330);text(page,'CICLO',505,H-34,5.5,bold,C.muted,68);text(page,cycle,505,H-48,7.5,bold,C.gold,70);rule(page,34,H-75,W-34,H-75,C.gold,.8);};
   const section=(page,label,y)=>{text(page,label.toUpperCase(),35,y,7.2,bold,C.gold);rule(page,35,y-5,W-35,y-5,C.gold,.55);return y-15;};
   const footer=(page,label,pageNo,total)=>{rule(page,35,25,W-35,25,C.gold,.55);text(page,String(institution.siglas||'JAGUAR').toUpperCase()+' · '+String(institution.nombre_institucion||'Institución educativa'),35,14,5.1,bold,C.muted,360);text(page,`${label} · ${pageNo} / ${total}`,W-170,14,5.1,bold,C.muted,135);};
@@ -753,7 +758,19 @@ async function boletaPdf(admin,id,req=null){
     const sumW=(W-70)/3;const summary=[['PROMEDIO FINAL',overall==null?'—':overall.toFixed(2)],['SITUACIÓN ACADÉMICA',failed?'En revisión':'Acreditado'],['INASISTENCIAS TOTALES',`${attCounts.falta} día(s)`]];
     summary.forEach((item,i)=>{const x=35+i*sumW;fillRect(page,x,sumY,sumW-8,37,i===0?C.goldp:C.goldp2,C.line,.5);text(page,item[0],x+8,sumY+24,4.8,bold,C.muted,sumW-22);text(page,item[1],x+8,sumY+9,10.2,bold,i===0?C.gold:C.ink,sumW-22);});
     fillRect(page,35,90,542,38,C.white,C.line,.5,.75);text(page,'OBSERVACIONES',43,115,5.1,bold,C.gold);const obsText=observations.join(' · ')||' ';wrap(regular,obsText,524,5.6,2).forEach((lineText,i)=>text(page,lineText,43,103-i*8,5.6,regular,C.ink,524));
-    drawSign(page,{x:47,y:39,w:230,h:42,name:'Madre, padre o tutor',role:'Nombre y firma'});drawSign(page,{x:334,y:39,w:230,h:42,name:'Dirección / autoridad del plantel',role:'Nombre, firma y sello'});
+    drawSign(page,{x:47,y:39,w:230,h:42,name:'Madre, padre o tutor',role:'Nombre y firma'});
+    // Sello visual de Dirección Escolar en la primera página, con espacio independiente para firma manuscrita.
+    text(page,'DIRECCIÓN ESCOLAR',334,76,6.1,bold,C.ink,118);
+    text(page,'Firma de la autoridad',334,65,5.1,regular,C.muted,100);
+    rule(page,334,53,421,53,C.muted,.55);
+    text(page,'Nombre y firma',334,43,4.7,regular,C.muted,88);
+    const sealX=474,sealY=59,sealR=22;
+    page.drawCircle({x:sealX,y:sealY,size:sealR,borderColor:C.gold,borderWidth:1.25,color:C.white,opacity:.92});
+    page.drawCircle({x:sealX,y:sealY,size:sealR-3,borderColor:C.gold2,borderWidth:.6});
+    centered(page,String(institution.siglas||'ITHLA').toUpperCase(),sealX-sealR+3,sealY-3,2*sealR-6,7.1,bold,C.gold);
+    centered(page,'DIRECCIÓN',sealX-sealR+3,sealY+6,2*sealR-6,4.5,bold,C.ink);
+    centered(page,'ESCOLAR',sealX-sealR+3,sealY-10,2*sealR-6,4.5,bold,C.ink);
+    text(page,'SELLO INSTITUCIONAL',447,34,4.1,bold,C.muted,55);
     footer(page,'Boleta',1,totalPages);
   }
 
