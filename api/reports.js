@@ -659,6 +659,8 @@ async function boletaPdf(admin,id,req=null){
     if(g.periodos_escolares?.ciclo_escolar!==cycle) continue;
     const sid=g.grupo_materias?.materia_id||g.grupo_materia_id;
     const name=g.grupo_materias?.materias?.nombre||'Materia';
+    // Reglas del formato aprobado: estas áreas no se imprimen en la boleta oficial.
+    if(/\bartes\b|lengua\s+ind[ií]gena/i.test(String(name))) continue;
     if(!subjectMap.has(String(sid))) subjectMap.set(String(sid),{materia_id:sid,name,grades:{},teachers:new Set(),observations:[]});
     const x=subjectMap.get(String(sid));
     const pi=periodIndex.get(String(g.periodo_id));
@@ -708,7 +710,7 @@ async function boletaPdf(admin,id,req=null){
   function bg(page,page2=false){
     // Fondo oficial: patrón geométrico original, proporcional y desvanecido hacia arriba.
     page.drawRectangle({x:0,y:0,width:W,height:H,color:rgb(1,1,1)});
-    if(pattern){const pw=1060,ph=pw*360/519;page.drawImage(pattern,{x:(W-pw)/2,y:0,width:pw,height:ph});}
+    if(pattern){const pw=1060,ph=pw*360/519;page.drawImage(pattern,{x:(W-pw)/2,y:0,width:pw,height:ph,opacity:.20});}
     page.drawRectangle({x:0,y:H-5,width:W,height:5,color:GREEN});
     page.drawRectangle({x:0,y:H-8,width:W,height:2,color:GOLD});
     page.drawLine({start:{x:28,y:24},end:{x:W-28,y:24},thickness:.45,color:LINE});
@@ -718,9 +720,9 @@ async function boletaPdf(admin,id,req=null){
   function fit(page,text,x,y,maxW,size,font=regular,color=INK){const f=fitText(font,text,maxW,size,size,5.2);txt(page,f.text,x,y,f.size,font,color);return f;}
   function box(page,x,y,w,h,fill=rgb(1,1,1,.86),border=LINE,bw=.6){page.drawRectangle({x,y,width:w,height:h,color:fill,borderColor:border,borderWidth:bw});}
   function centered(page,text,x,y,w,size,font=regular,color=INK){const f=fitText(font,text,w-6,size,size,5.1);txt(page,f.text,x+(w-textWidth(font,f.text,f.size))/2,y+(size-f.size)/2+2,f.size,font,color);}
-  function sectionBar(page,title,y){page.drawRectangle({x:28,y:y-16,width:W-56,height:16,color:GREEN});txt(page,title.toUpperCase(),35,y-11,7,bold,rgb(1,1,1));return y-16;}
-  function field(page,label,value,x,y,w,h){box(page,x,y,w,h,rgb(1,1,1,.82),LINE,.5);txt(page,label.toUpperCase(),x+6,y+h-11,5.1,bold,GRAY);fit(page,value,x+6,y+6,w-12,7.2,bold,INK);}
-  function tableCell(page,text,x,y,w,h,size=6.2,font=regular,color=INK,fill=null){if(fill)page.drawRectangle({x,y,width:w,height:h,color:fill,borderColor:LINE,borderWidth:.45,opacity:.78});else page.drawRectangle({x,y,width:w,height:h,color:rgb(1,1,1),borderColor:LINE,borderWidth:.45,opacity:.68});centered(page,text,x,y,w,size,font,color);}
+  function sectionBar(page,title,y){page.drawLine({start:{x:28,y:y-14},end:{x:W-28,y:y-14},thickness:.65,color:GOLD});txt(page,title.toUpperCase(),30,y-10,7,bold,GOLD_DARK);return y-17;}
+  function field(page,label,value,x,y,w,h){txt(page,label.toUpperCase(),x+2,y+h-7,4.9,bold,GRAY);fit(page,value,x+2,y+3,w-7,7.0,bold,INK);page.drawLine({start:{x,y:y+0.5},end:{x:x+w-4,y:y+0.5},thickness:.45,color:LINE});}
+  function tableCell(page,text,x,y,w,h,size=6.2,font=regular,color=INK,fill=null){if(fill)page.drawRectangle({x,y,width:w,height:h,color:fill,opacity:.52});page.drawLine({start:{x,y},end:{x:x+w,y},thickness:.32,color:LINE});centered(page,text,x,y,w,size,font,color);}
 
   // PAGE 1 — plantilla visual recuperada, ahora alimentada por datos reales.
   {const page=p.addPage([W,H]);bg(page);
@@ -767,7 +769,7 @@ async function boletaPdf(admin,id,req=null){
     const lowerY=75;
     box(page,28,lowerY,250,78,rgb(1,1,1,.84),LINE,.6);sectionBar(page,'Resumen académico',lowerY+78);tableCell(page,'Promedio general',35,lowerY+39,145,20,6.2,bold,GREEN,GOLD_SOFT);tableCell(page,overall==null?'—':overall.toFixed(2),180,lowerY+39,90,20,7,bold,GREEN);tableCell(page,'Materias aprobadas',35,lowerY+19,145,20,6.2,bold,GREEN,GOLD_SOFT);tableCell(page,`${approved} / ${subjects.length}`,180,lowerY+19,90,20,7,bold,GREEN);tableCell(page,'Materias reprobadas',35,lowerY,145,19,6.2,bold,GREEN,GOLD_SOFT);tableCell(page,String(failed),180,lowerY,90,19,7,bold,GREEN);
     box(page,286,lowerY,281,78,rgb(1,1,1,.84),GREEN,.8);sectionBar(page,'Promedio final',lowerY+78);txt(page,overall==null?'—':overall.toFixed(2),315,lowerY+28,25,bold,GREEN);txt(page,'PROMEDIO GENERAL DEL CICLO',315,lowerY+12,6.2,bold,GRAY);txt(page,`Asistencia registrada: ${attRate==null?'—':attRate+'%'}`,435,lowerY+27,7,bold,INK);txt(page,`Faltas: ${attCounts.falta}`,435,lowerY+15,6.2,regular,GRAY);
-    const footerY=35;page.drawRectangle({x:28,y:footerY,width:W-56,height:17,color:GREEN});txt(page,'DISCIPLINA · ESFUERZO · EXCELENCIA',35,footerY+6,5.2,bold,rgb(1,1,1));txt(page,`Página 1 de ${totalBoletaPages}`,W-100,footerY+6,5.2,bold,rgb(1,1,1));
+    const footerY=32;page.drawLine({start:{x:28,y:footerY+8},end:{x:W-28,y:footerY+8},thickness:.55,color:GOLD});txt(page,institution.lema||'DISCIPLINA · ESFUERZO · EXCELENCIA',28,footerY-1,5.0,regular,GRAY);txt(page,`Página 1 de ${totalBoletaPages}`,W-88,footerY-1,5.0,bold,GRAY);
   }
 
   // PAGE 2 — asistencia, incidencias, observaciones y firmas.
@@ -806,7 +808,7 @@ async function boletaPdf(admin,id,req=null){
     page.drawLine({start:{x:310,y:106},end:{x:535,y:106},thickness:.65,color:GRAY});
     txt(page,'Nombre y firma del alumno (si aplica)',333,96,5.2,bold,GRAY);
     const bottomY=38;box(page,28,bottomY,48,48,rgb(1,1,1,.9),LINE,.7);centered(page,'VALIDACIÓN',28,bottomY+17,48,5.1,bold,GREEN);centered(page,folio.slice(-8),28,bottomY+8,48,5.2,bold,GREEN);fit(page,`Documento generado desde el expediente académico de ${institution.siglas||'ITHLA'}. La validación institucional debe realizarse con el folio indicado.`,86,bottomY+24,390,5.2,regular,GRAY);const qr2=await p.embedPng(verificationQr);page.drawRectangle({x:505,y:bottomY-2,width:58,height:58,color:rgb(1,1,1),borderColor:GREEN,borderWidth:.7});page.drawImage(qr2,{x:510,y:bottomY+3,width:48,height:48});txt(page,'ESCANEA',513,bottomY-8,4.8,bold,GREEN);
-    page.drawRectangle({x:28,y:15,width:W-56,height:17,color:GREEN});txt(page,`PLATAFORMA JAGUAR · ${institution.siglas||'ITHLA'}`,35,21,5.2,bold,rgb(1,1,1));txt(page,`Página 2 de ${totalBoletaPages}`,W-100,21,5.2,bold,rgb(1,1,1));
+    page.drawLine({start:{x:28,y:24},end:{x:W-28,y:24},thickness:.55,color:GOLD});txt(page,`PLATAFORMA JAGUAR · ${institution.siglas||'ITHLA'}`,28,14,5.0,bold,GRAY);txt(page,`Página 2 de ${totalBoletaPages}`,W-88,14,5.0,bold,GRAY);
   }
 
   // Páginas adicionales para que todos los departamentos configurados tengan firma y no se omitan.
