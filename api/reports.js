@@ -642,7 +642,7 @@ async function boletaPdf(admin,id,req=null){
   const teacherIds=[...new Set([...(gradesQ.data||[]).map(r=>r.docente_id).filter(Boolean).map(String), ...(scheduleTeachersQ.data||[]).map(r=>r.docente?.id).filter(Boolean).map(String)])];
   const extraDepartmentPages=Math.ceil(Math.max(0,departmentSigners.length-6)/12);
   const teacherPageCount=Math.max(1,Math.ceil(teacherIds.length/10));
-  const totalBoletaPages=2+extraDepartmentPages+teacherPageCount;
+  const totalBoletaPages=1+Math.max(1,Math.ceil(teacherIds.length/10))+Math.max(1,Math.ceil(departmentSigners.length/6));
 
   let periods=(periodsQ.data||[]).filter(p=>p.ciclo_escolar===cycle);
   if(!periods.length){
@@ -699,172 +699,89 @@ async function boletaPdf(admin,id,req=null){
   let verificationQr=null;
   try{verificationQr=await qrPng(verification.verificationUrl,{size:180});}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
 
+  // Renderizador oficial basado en la composición aprobada de Propuesta Visual 15.
+  // Se usa tamaño carta, composición de tres bloques principales y estilo dorado editorial.
   const p=await PDFDocument.create();
   const regular=await p.embedFont(StandardFonts.Helvetica);
   const bold=await p.embedFont(StandardFonts.HelveticaBold);
-  const W=595.28,H=841.89;
-  const logoBytes=await loadLogo();
-  let logo=null;if(logoBytes) logo=await p.embedPng(logoBytes);
-  let pattern=null;try{pattern=await p.embedPng(await readFile(new URL('../assets/boleta-patron-geometrico.png',import.meta.url)));}catch{}
+  const italic=await p.embedFont(StandardFonts.HelveticaOblique);
+  const W=612,H=792;
+  const C={gold:rgb(177/255,138/255,50/255),gold2:rgb(212/255,185/255,111/255),goldp:rgb(246/255,240/255,223/255),goldp2:rgb(251/255,248/255,239/255),ink:rgb(41/255,40/255,32/255),muted:rgb(105/255,102/255,91/255),line:rgb(217/255,208/255,184/255),white:rgb(1,1,1),soft:rgb(247/255,244/255,235/255)};
+  const logoBytes=await loadLogo();let logo=null;if(logoBytes){try{logo=await p.embedPng(logoBytes)}catch{try{logo=await p.embedJpg(logoBytes)}catch{}}}
+  let pattern=null;try{pattern=await p.embedPng(await readFile(new URL('../assets/boleta-propuesta15-pattern.png',import.meta.url)));}catch{}
+  const fontW=(font,text,size)=>font.widthOfTextAtSize(String(text??''),size);
+  const wrap=(font,text,maxWidth,size,maxLines=3)=>{const words=String(text??'').split(/\s+/).filter(Boolean),lines=[];let cur='';for(const word of words){const next=cur?cur+' '+word:word;if(cur&&fontW(font,next,size)>maxWidth){lines.push(cur);cur=word;}else cur=next;}if(cur)lines.push(cur);if(lines.length>maxLines){const a=lines.slice(0,maxLines-1);let last=lines.slice(maxLines-1).join(' ');while(fontW(font,last+'…',size)>maxWidth&&last.length>3)last=last.slice(0,-1);a.push(last+'…');return a;}return lines;};
+  const text=(page,value,x,y,size=7,font=regular,color=C.ink,maxWidth=null)=>{let v=String(value??'—');if(maxWidth){while(v.length>1&&fontW(font,v,size)>maxWidth)v=v.slice(0,-2)+'…';}page.drawText(v,{x,y,size,font,color});};
+  const centered=(page,value,x,y,w,size=7,font=regular,color=C.ink)=>{const v=String(value??'—');let z=size;while(z>4.2&&fontW(font,v,z)>w-8)z-=.25;page.drawText(v,{x:x+(w-fontW(font,v,z))/2,y:y+(size-z)/2+1,size:z,font,color});};
+  const rule=(page,x1,y1,x2,y2,color=C.line,width=.5)=>page.drawLine({start:{x:x1,y:y1},end:{x:x2,y:y2},thickness:width,color});
+  const fillRect=(page,x,y,w,h,color,border=null,bw=.5,opacity=1)=>page.drawRectangle({x,y,width:w,height:h,color,opacity,...(border?{borderColor:border,borderWidth:bw}:{})});
+  const bg=(page)=>{fillRect(page,0,0,W,H,C.white);if(pattern){const pw=820,ph=pw*360/519;page.drawImage(pattern,{x:(W-pw)/2,y:0,width:pw,height:ph,opacity:.10});}fillRect(page,0,H-4,W,4,C.gold);fillRect(page,0,H-6,W,1.4,C.gold2);};
+  const crest=(page,x,y,size=37)=>{fillRect(page,x,y,size,size,C.goldp,C.gold,.9);centered(page,'J',x,y+8,size,21,bold,C.gold);};
+  const header=(page,tag='Sistema institucional de evaluación escolar')=>{crest(page,34,H-66,34);text(page,String(institution.nombre_institucion||'INSTITUTO EDUCATIVO').toUpperCase(),78,H-43,10.2,bold,C.ink,340);text(page,String(institution.lema||institution.eslogan||institution.slogan||'Formación · Conocimiento · Futuro'),78,H-56,6.3,regular,C.muted,335);text(page,tag.toUpperCase(),78,H-33,5.4,bold,C.muted,330);text(page,'CICLO',505,H-34,5.5,bold,C.muted,68);text(page,cycle,505,H-48,7.5,bold,C.gold,70);rule(page,34,H-75,W-34,H-75,C.gold,.8);};
+  const section=(page,label,y)=>{text(page,label.toUpperCase(),35,y,7.2,bold,C.gold);rule(page,35,y-5,W-35,y-5,C.gold,.55);return y-15;};
+  const footer=(page,label,pageNo,total)=>{rule(page,35,25,W-35,25,C.gold,.55);text(page,String(institution.siglas||'JAGUAR').toUpperCase()+' · '+String(institution.nombre_institucion||'Institución educativa'),35,14,5.1,bold,C.muted,360);text(page,`${label} · ${pageNo} / ${total}`,W-170,14,5.1,bold,C.muted,135);};
+  const field=(page,label,value,x,y,w,h=21)=>{text(page,label.toUpperCase()+':',x,y+h-7,4.8,bold,C.muted,Math.min(w*.38,80));const labelW=Math.min(fontW(bold,label.toUpperCase()+':',4.8)+4,w*.40);text(page,value,x+labelW,y+h-7,6.4,bold,C.ink,w-labelW-3);rule(page,x,y+1,x+w,y+1,C.line,.5);};
+  const tableCell=(page,value,x,y,w,h,{head=false,align='left',size=6.2,emphasis=false}={})=>{if(head)fillRect(page,x,y,w,h,C.goldp);else fillRect(page,x,y,w,h,C.white,null,0,.62);rule(page,x,y,x+w,y,C.line,.35);rule(page,x,y,x,y+h,C.line,.3);if(align==='center')centered(page,value,x,y+h/2-3,w,size,head||emphasis?bold:regular,emphasis?C.gold:C.ink);else{text(page,value,x+5,y+h/2-2.4,size,head?bold:regular,head?C.gold:C.ink,w-9);}};
+  const drawSign=async (page,{x,y,w,h,name='',role='',profile=null})=>{text(page,name,x,y+h-12,6.4,bold,C.ink,w-8);text(page,role,x,y+h-23,5.2,regular,C.muted,w-8);let sig=null;try{if(profile?.firma_path)sig=await loadSignatureImage(p,admin,profile.firma_path);}catch{}if(sig){const maxW=w-24,maxH=Math.min(29,h-40),ratio=Math.min(maxW/sig.image.width,maxH/sig.image.height);page.drawImage(sig.image,{x:x+(w-sig.image.width*ratio)/2,y:y+16,width:sig.image.width*ratio,height:sig.image.height*ratio});}rule(page,x+10,y+14,x+w-10,y+14,C.muted,.55);text(page,profile?.nombre_completo||'Nombre y firma',x+6,y+4,4.7,regular,C.muted,w-12);};
+  const totalTeachers=Math.max(1,Math.ceil(teacherIds.length/10));
+  const totalDepts=Math.max(1,Math.ceil(departmentSigners.length/6));
+  const totalPages=1+totalTeachers+totalDepts;
 
-  function bg(page,page2=false){
-    // Fondo oficial: patrón geométrico original, proporcional y desvanecido hacia arriba.
-    page.drawRectangle({x:0,y:0,width:W,height:H,color:rgb(1,1,1)});
-    if(pattern){const pw=1060,ph=pw*360/519;page.drawImage(pattern,{x:(W-pw)/2,y:0,width:pw,height:ph,opacity:.20});}
-    page.drawRectangle({x:0,y:H-5,width:W,height:5,color:GREEN});
-    page.drawRectangle({x:0,y:H-8,width:W,height:2,color:GOLD});
-    page.drawLine({start:{x:28,y:24},end:{x:W-28,y:24},thickness:.45,color:LINE});
-    if(page2) page.drawRectangle({x:W-3,y:0,width:3,height:H,color:GOLD,opacity:.45});
-  }
-  function txt(page,text,x,y,size,font=regular,color=INK){page.drawText(String(text??''),{x,y,size,font,color});}
-  function fit(page,text,x,y,maxW,size,font=regular,color=INK){const f=fitText(font,text,maxW,size,size,5.2);txt(page,f.text,x,y,f.size,font,color);return f;}
-  function box(page,x,y,w,h,fill=rgb(1,1,1,.86),border=LINE,bw=.6){page.drawRectangle({x,y,width:w,height:h,color:fill,borderColor:border,borderWidth:bw});}
-  function centered(page,text,x,y,w,size,font=regular,color=INK){const f=fitText(font,text,w-6,size,size,5.1);txt(page,f.text,x+(w-textWidth(font,f.text,f.size))/2,y+(size-f.size)/2+2,f.size,font,color);}
-  function sectionBar(page,title,y){page.drawLine({start:{x:28,y:y-14},end:{x:W-28,y:y-14},thickness:.65,color:GOLD});txt(page,title.toUpperCase(),30,y-10,7,bold,GOLD_DARK);return y-17;}
-  function field(page,label,value,x,y,w,h){txt(page,label.toUpperCase(),x+2,y+h-7,4.9,bold,GRAY);fit(page,value,x+2,y+3,w-7,7.0,bold,INK);page.drawLine({start:{x,y:y+0.5},end:{x:x+w-4,y:y+0.5},thickness:.45,color:LINE});}
-  function tableCell(page,text,x,y,w,h,size=6.2,font=regular,color=INK,fill=null){if(fill)page.drawRectangle({x,y,width:w,height:h,color:fill,opacity:.52});page.drawLine({start:{x,y},end:{x:x+w,y},thickness:.32,color:LINE});centered(page,text,x,y,w,size,font,color);}
-
-  // PAGE 1 — plantilla visual recuperada, ahora alimentada por datos reales.
-  {const page=p.addPage([W,H]);bg(page);
-    if(logo) page.drawImage(logo,{x:28,y:H-78,width:48,height:51});
-    else {box(page,28,H-78,48,51,rgb(1,1,1,.85),GREEN,1);centered(page,'IN\nETCH',28,H-78,48,9,bold,GREEN);}
-    txt(page,institution.siglas||'ITHLA',88,H-39,6.5,bold,GREEN);
-    fit(page,institution.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano',88,H-55,330,11.5,bold,INK);
-    txt(page,'SISTEMA DE CONTROL ESCOLAR',88,H-68,6.5,bold,GRAY);
-    const boletaMotto=mottoLines(institution,4,14);
-    boletaMotto.forEach((lineText,i)=>fit(page,lineText,470,H-42-i*10,97,7.2,regular,GREEN));
-    page.drawLine({start:{x:28,y:H-94},end:{x:W-28,y:H-94},thickness:1.1,color:GREEN});
-    txt(page,'BOLETA DE CALIFICACIONES',28,H-112,16,bold,GREEN);
-    txt(page,`Ciclo escolar ${cycle}  |  ${periodLabels.length?`Periodos: ${periodLabels.map(x=>x.label).join(' · ')}`:'Sin periodos registrados'}`,28,H-126,6.6,bold,GRAY);
-    box(page,442,H-133,125,34,rgb(1,1,1,.86),GREEN,.8);txt(page,'FOLIO',451,H-111,5.2,bold,GRAY);fit(page,folio,451,H-126,108,7.2,bold,GREEN);
-    let fy=H-176; const gap=4; const fw=(W-56-gap*2)/3;
-    const fields=[['Nombre completo',s.nombre_completo||'—'],['Matrícula',s.matricula||'—'],['Grupo',s.grupos?.clave||'—'],['Grado',s.grupos?.grado?`${s.grupos.grado}°`:'—'],['Turno',s.grupos?.turno||s.turno||'—'],['Taller asignado',workshopName]];
-    for(let i=0;i<fields.length;i++){const col=i%3,row=Math.floor(i/3);field(page,fields[i][0],fields[i][1],28+col*(fw+gap),fy-row*31,fw,28);}
-    let y=fy-70; y=sectionBar(page,'Evaluación académica',y);
-    const headerY=y-19;
-    const availableW=W-56;
-    const noW=20, averageW=48;
-    const teacherW=periodLabels.length>=4?70:84;
-    const subjectW=Math.max(112,Math.min(174,availableW-noW-teacherW-averageW-36*Math.max(1,periodLabels.length)));
-    const periodW=Math.max(25,Math.min(54,(availableW-noW-subjectW-teacherW-averageW)/Math.max(1,periodLabels.length)));
-    const tableW=noW+subjectW+(periodW*periodLabels.length)+averageW+teacherW;
-    const cols=[28,28+noW,28+noW+subjectW];
-    for(let i=0;i<periodLabels.length;i++) cols.push(cols[cols.length-1]+periodW);
-    cols.push(cols[cols.length-1]+averageW,28+tableW);
-    const labels=['No.','Asignatura / materia',...periodLabels.map(x=>x.label),'Promedio','Docente'];
-    for(let i=0;i<labels.length;i++) tableCell(page,labels[i],cols[i],headerY,cols[i+1]-cols[i],18,Math.max(4.5,Math.min(5.3,38/Math.max(1,periodLabels.length))),bold,GREEN,GOLD_SOFT);
-    const rowH=Math.max(17,Math.min(22, (headerY-55)/Math.max(1,subjects.length)));
-    let yy=headerY-rowH;
-    subjects.slice(0,Math.max(1,Math.floor((headerY-55)/rowH))).forEach((x,i)=>{
-      tableCell(page,String(i+1),cols[0],yy,noW,rowH,5.8,bold,GREEN);
-      tableCell(page,x.name,cols[1],yy,subjectW,rowH,6.0,bold,INK);
-      periodLabels.forEach((_,pi)=>tableCell(page,x.grades[pi]==null?'—':Number(x.grades[pi]).toFixed(1),cols[2+pi],yy,periodW,rowH,6.0,bold,INK));
-      const avgIndex=2+periodLabels.length;
-      tableCell(page,x.avg==null?'—':x.avg.toFixed(2),cols[avgIndex],yy,averageW,rowH,6.0,bold,GREEN);
-      tableCell(page,x.teacher,cols[avgIndex+1],yy,teacherW,rowH,5.1,regular,INK);
-      yy-=rowH;
-    });
-    if(!subjects.length){tableCell(page,'Sin calificaciones registradas para este ciclo.',cols[0],yy,tableW,24,6.3,regular,GRAY);yy-=24;}
-    if(subjects.length>Math.floor((headerY-55)/rowH)){txt(page,`Se muestran las primeras ${Math.floor((headerY-55)/rowH)} materias; el expediente conserva el resto.`,28,yy+4,5.2,regular,GRAY);}
-    const lowerY=75;
-    box(page,28,lowerY,250,78,rgb(1,1,1,.84),LINE,.6);sectionBar(page,'Resumen académico',lowerY+78);tableCell(page,'Promedio general',35,lowerY+39,145,20,6.2,bold,GREEN,GOLD_SOFT);tableCell(page,overall==null?'—':overall.toFixed(2),180,lowerY+39,90,20,7,bold,GREEN);tableCell(page,'Materias aprobadas',35,lowerY+19,145,20,6.2,bold,GREEN,GOLD_SOFT);tableCell(page,`${approved} / ${subjects.length}`,180,lowerY+19,90,20,7,bold,GREEN);tableCell(page,'Materias reprobadas',35,lowerY,145,19,6.2,bold,GREEN,GOLD_SOFT);tableCell(page,String(failed),180,lowerY,90,19,7,bold,GREEN);
-    box(page,286,lowerY,281,78,rgb(1,1,1,.84),GREEN,.8);sectionBar(page,'Promedio final',lowerY+78);txt(page,overall==null?'—':overall.toFixed(2),315,lowerY+28,25,bold,GREEN);txt(page,'PROMEDIO GENERAL DEL CICLO',315,lowerY+12,6.2,bold,GRAY);txt(page,`Asistencia registrada: ${attRate==null?'—':attRate+'%'}`,435,lowerY+27,7,bold,INK);txt(page,`Faltas: ${attCounts.falta}`,435,lowerY+15,6.2,regular,GRAY);
-    const footerY=32;page.drawLine({start:{x:28,y:footerY+8},end:{x:W-28,y:footerY+8},thickness:.55,color:GOLD});txt(page,institution.lema||'DISCIPLINA · ESFUERZO · EXCELENCIA',28,footerY-1,5.0,regular,GRAY);txt(page,`Página 1 de ${totalBoletaPages}`,W-88,footerY-1,5.0,bold,GRAY);
-  }
-
-  // PAGE 2 — asistencia, incidencias, observaciones y firmas.
-  {const page=p.addPage([W,H]);bg(page,true);
-    if(logo) page.drawImage(logo,{x:28,y:H-78,width:48,height:51});
-    txt(page,institution.siglas||'ITHLA',88,H-39,6.5,bold,GREEN);fit(page,institution.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano',88,H-55,330,11.5,bold,INK);txt(page,'SISTEMA DE CONTROL ESCOLAR · INFORMACIÓN COMPLEMENTARIA',88,H-68,6.2,bold,GRAY);
-    txt(page,'BOLETA · INFORMACIÓN COMPLEMENTARIA',28,H-112,15,bold,GREEN);txt(page,`${s.nombre_completo||'—'}  ·  ${s.matricula||'—'}  ·  ${s.grupos?.clave||'—'}`,28,H-126,6.6,bold,GRAY);
-    const page2Subjects=subjects.slice(0,10);
-    let y=H-148; y=sectionBar(page,'Concentrado de calificaciones por periodo',y);const top=y-18;
-    const cW=W-56, avgW2=68, subW=Math.max(145,Math.min(205,cW-avgW2-30*Math.max(1,periodLabels.length))), pw2=Math.max(24,Math.min(56,(cW-subW-avgW2)/Math.max(1,periodLabels.length)));
-    const c=[28,28+subW,...Array.from({length:periodLabels.length},(_,i)=>28+subW+(i*pw2)),28+subW+(periodLabels.length*pw2)];
-    const avgX=c[c.length-1];
-    tableCell(page,'Asignatura / materia',c[0],top,subW,18,5.3,bold,GREEN,GOLD_SOFT);
-    periodLabels.forEach((p,i)=>tableCell(page,p.label,c[i+1],top,pw2,18,5.1,bold,GREEN,GOLD_SOFT));
-    tableCell(page,'Promedio final',avgX,top,avgW2,18,5.1,bold,GREEN,GOLD_SOFT);
-    let gy=top-20;
-    page2Subjects.forEach((x)=>{tableCell(page,x.name,c[0],gy,subW,20,6.0,bold,INK);for(let pi=0;pi<periodLabels.length;pi++)tableCell(page,x.grades[pi]==null?'—':Number(x.grades[pi]).toFixed(1),c[1+pi],gy,pw2,20,6.0,bold,INK);tableCell(page,x.avg==null?'—':x.avg.toFixed(2),avgX,gy,avgW2,20,6.0,bold,GREEN);gy-=20;});
-    const midY=470;box(page,28,midY,260,120,rgb(1,1,1,.84),LINE,.6);sectionBar(page,'Asistencia',midY+120);const aRows=[['Presentes',attCounts.presente],['Retardos',attCounts.retardo],['Faltas',attCounts.falta],['Justificadas',attCounts.justificada],['Total registros',attTotal],['Porcentaje',attRate==null?'—':`${attRate}%`]];aRows.forEach((r,i)=>{tableCell(page,r[0],35,midY+91-i*18,155,18,5.8,bold,GREEN,GOLD_SOFT);tableCell(page,String(r[1]),190,midY+91-i*18,90,18,6.2,bold,GREEN);});
-    box(page,296,midY,271,120,rgb(1,1,1,.84),LINE,.6);sectionBar(page,'Incidencias',midY+120);const incRows=Object.entries(incidentCounts);if(!incRows.length){tableCell(page,'Sin incidencias registradas.',303,midY+72,257,22,6.2,regular,GRAY);}else incRows.slice(0,5).forEach((r,i)=>{tableCell(page,r[0].replace(/_/g,' '),303,midY+91-i*18,170,18,5.6,bold,INK,GOLD_SOFT);tableCell(page,String(r[1]),473,midY+91-i*18,87,18,6.2,bold,GREEN);});
-    const obsY=320;box(page,28,obsY,539,78,rgb(1,1,1,.84),LINE,.6);sectionBar(page,'Observaciones',obsY+78);let obs=observations.join(' · ');if(!obs)obs=incidents[0]?.observaciones||incidents[0]?.descripcion||'Sin observaciones académicas registradas.';fit(page,obs,38,obsY+37,519,7,regular,INK);
-    const signY=118;sectionBar(page,'Firmas de departamentos y autoridades',signY+112);
-    const deptVisible=departmentSigners.slice(0,6), deptCols=3, deptGap=7, deptW=(W-56-deptGap*(deptCols-1))/deptCols, deptH=47;
-    for(let i=0;i<deptVisible.length;i++){
-      const d=deptVisible[i],col=i%deptCols,row=Math.floor(i/deptCols),x=28+col*(deptW+deptGap),y=signY+54-row*(deptH+5);
-      page.drawRectangle({x,y,width:deptW,height:deptH,color:rgb(1,1,1),borderColor:LINE,borderWidth:.5,opacity:.72});
-      fit(page,d.name,x+5,y+deptH-11,deptW-10,5.2,bold,GRAY);
-      const prof=d.profile;let sig=null;try{if(prof?.firma_path)sig=await loadSignatureImage(p,admin,prof.firma_path);}catch{}
-      if(sig){const ratio=Math.min((deptW-24)/sig.image.width,18/sig.image.height);page.drawImage(sig.image,{x:x+(deptW-sig.image.width*ratio)/2,y:y+18,width:sig.image.width*ratio,height:sig.image.height*ratio});}
-      page.drawLine({start:{x:x+10,y:y+16},end:{x:x+deptW-10,y:y+16},thickness:.5,color:GRAY});
-      fit(page,prof?.nombre_completo||'Espacio para firma física',x+5,y+5,deptW-10,4.5,regular,GRAY);
-    }
-
-    // La firma de madre, padre o tutor siempre conserva espacio para firma manuscrita.
-    page.drawLine({start:{x:45,y:106},end:{x:265,y:106},thickness:.65,color:GRAY});
-    txt(page,'Firma de madre, padre o tutor',70,96,5.4,bold,GRAY);
-    page.drawLine({start:{x:310,y:106},end:{x:535,y:106},thickness:.65,color:GRAY});
-    txt(page,'Nombre y firma del alumno (si aplica)',333,96,5.2,bold,GRAY);
-    const bottomY=38;box(page,28,bottomY,48,48,rgb(1,1,1,.9),LINE,.7);centered(page,'VALIDACIÓN',28,bottomY+17,48,5.1,bold,GREEN);centered(page,folio.slice(-8),28,bottomY+8,48,5.2,bold,GREEN);fit(page,`Documento generado desde el expediente académico de ${institution.siglas||'ITHLA'}. La validación institucional debe realizarse con el folio indicado.`,86,bottomY+24,390,5.2,regular,GRAY);const qr2=await p.embedPng(verificationQr);page.drawRectangle({x:505,y:bottomY-2,width:58,height:58,color:rgb(1,1,1),borderColor:GREEN,borderWidth:.7});page.drawImage(qr2,{x:510,y:bottomY+3,width:48,height:48});txt(page,'ESCANEA',513,bottomY-8,4.8,bold,GREEN);
-    page.drawLine({start:{x:28,y:24},end:{x:W-28,y:24},thickness:.55,color:GOLD});txt(page,`PLATAFORMA JAGUAR · ${institution.siglas||'ITHLA'}`,28,14,5.0,bold,GRAY);txt(page,`Página 2 de ${totalBoletaPages}`,W-88,14,5.0,bold,GRAY);
-  }
-
-  // Páginas adicionales para que todos los departamentos configurados tengan firma y no se omitan.
-  if(departmentSigners.length>6){
-    const remaining=departmentSigners.slice(6), perPage=12, deptPages=Math.ceil(remaining.length/perPage);
-    for(let pg=0;pg<deptPages;pg++){
-      const page=p.addPage([W,H]);bg(page,true);
-      if(logo)page.drawImage(logo,{x:28,y:H-78,width:48,height:51});
-      txt(page,institution.siglas||'ITHLA',88,H-39,6.5,bold,GREEN);
-      fit(page,institution.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano',88,H-55,330,11.5,bold,INK);
-      txt(page,'FIRMAS DE DEPARTAMENTOS · CONTINUACIÓN',88,H-68,6.2,bold,GRAY);
-      txt(page,'RESPONSABLES DEPARTAMENTALES',28,H-112,15,bold,GREEN);
-      const items=remaining.slice(pg*perPage,(pg+1)*perPage), cols=3, gap=9, cardW=(W-56-gap*(cols-1))/cols, cardH=112;
-      for(let i=0;i<items.length;i++){
-        const d=items[i],col=i%cols,row=Math.floor(i/cols),x=28+col*(cardW+gap),y=H-145-(row*(cardH+10))-cardH;
-        page.drawRectangle({x,y,width:cardW,height:cardH,color:rgb(1,1,1),borderColor:LINE,borderWidth:.6,opacity:.72});
-        fit(page,d.name,x+7,y+cardH-16,cardW-14,6,bold,GRAY);
-        let sig=null;try{if(d.profile?.firma_path)sig=await loadSignatureImage(p,admin,d.profile.firma_path);}catch{}
-        if(sig){const ratio=Math.min((cardW-26)/sig.image.width,42/sig.image.height);page.drawImage(sig.image,{x:x+(cardW-sig.image.width*ratio)/2,y:y+38,width:sig.image.width*ratio,height:sig.image.height*ratio});}
-        page.drawLine({start:{x:x+15,y:y+31},end:{x:x+cardW-15,y:y+31},thickness:.6,color:GRAY});
-        fit(page,d.profile?.nombre_completo||'Espacio para firma física',x+7,y+17,cardW-14,5.2,regular,GRAY);
-        fit(page,d.profile?.cargo||d.department?.descripcion||'Responsable de departamento',x+7,y+6,cardW-14,4.5,regular,GRAY);
-      }
-      page.drawRectangle({x:28,y:15,width:W-56,height:17,color:GREEN});txt(page,`PLATAFORMA JAGUAR · ${institution.siglas||'ITHLA'}`,35,21,5.2,bold,rgb(1,1,1));txt(page,`Departamentos · ${pg+1}/${deptPages}`,W-115,21,5.2,bold,rgb(1,1,1));
-    }
-  }
-
-  // Páginas de firmas individuales: se agregan tantas como sean necesarias para no omitir docentes.
+  // HOJA 1: la boleta académica con datos en líneas, tabla ligera y resumen visual.
   {
-    const teacherProfiles=[]; const seenTeachers=new Set();
-    const teacherData=new Map((await admin.from('docentes').select('id,nombre_completo,correo,auth_user_id').in('id',teacherIds)).data?.map(t=>[String(t.id),t])||[]);
-    for(const tid of teacherIds){
-      if(seenTeachers.has(String(tid)))continue;seenTeachers.add(String(tid));
-      const t=teacherData.get(String(tid));let prof=await profileSignatureByAuth(admin,t?.auth_user_id,t?.nombre_completo||teacherNames.get(String(tid)),'docente',t?.correo);
-      if(!prof?.firma_path){const acc=await admin.from('aceptaciones_horario_docente').select('firma_path,firma_sha256,aceptado_at').eq('docente_id',tid).eq('estado','aceptado').order('aceptado_at',{ascending:false}).limit(1).maybeSingle();if(acc.data?.firma_path)prof={id:t?.auth_user_id||null,nombre_completo:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',rol:'docente',firma_path:acc.data.firma_path,firma_sha256:acc.data.firma_sha256||null};}
-      teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof});
+    const page=p.addPage([W,H]);bg(page);header(page,'Sistema institucional de evaluación escolar');
+    text(page,'BOLETA DE CALIFICACIONES',35,H-103,18,bold,C.ink,360);text(page,'Registro de evaluación académica',35,H-117,6.4,regular,C.muted,330);
+    text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
+    try{const q=await p.embedPng(verificationQr);fillRect(page,523,H-128,53,53,C.white,C.gold,.6);page.drawImage(q,{x:528,y:H-123,width:43,height:43});text(page,'QR DE VALIDACIÓN',520,H-136,4.4,bold,C.muted,62);}catch{}
+    let sy=H-151;sy=section(page,'01 · Datos del alumno',sy);
+    field(page,'Nombre completo',s.nombre_completo||'—',35,sy-22,540,21);
+    field(page,'Matrícula',s.matricula||'—',35,sy-46,250,21);field(page,'Grado',s.grupos?.grado?`${s.grupos.grado}°`:'—',294,sy-46,100,21);field(page,'Grupo',s.grupos?.clave||'—',402,sy-46,173,21);
+    field(page,'Nivel',s.grupos?.nivel||'—',35,sy-70,170,21);field(page,'Turno',s.grupos?.turno||s.turno||'—',214,sy-70,170,21);field(page,'Ciclo',cycle,393,sy-70,182,21);
+    field(page,'Taller asignado',workshopName,35,sy-94,310,21);field(page,'Modalidad','Formativo · sin calificación numérica',354,sy-94,221,21);
+    field(page,'Plantel',institution.nombre_institucion||'—',35,sy-118,540,21);
+    let ty=sy-146;ty=section(page,'02 · Evaluación por asignatura',ty);
+    const cols=[35,244,311,378,445,512,577], headers=['ASIGNATURA',...periodLabels.slice(0,3).map(x=>x.label.toUpperCase()),'PROMEDIO'];
+    // Ajustar columnas según los periodos existentes manteniendo la misma jerarquía visual.
+    const shownPeriods=periodLabels.slice(0,3), leftW=209, avgW=65, periodW=(W-70-leftW-avgW)/Math.max(1,shownPeriods.length);
+    const xs=[35,35+leftW];for(let i=0;i<shownPeriods.length;i++)xs.push(xs[xs.length-1]+periodW);xs.push(W-35);
+    const labels=['ASIGNATURA',...shownPeriods.map(x=>x.label.toUpperCase()),'PROMEDIO'];
+    const colXs=xs;for(let i=0;i<labels.length;i++)tableCell(page,labels[i],colXs[i],ty-17,colXs[i+1]-colXs[i],17,{head:true,align:i===0?'left':'center',size:5.5});
+    const availableRows=Math.max(1,Math.min(12,Math.floor((ty-190-68)/22)));const rowH=20;let ry=ty-17-rowH;
+    subjects.slice(0,availableRows).forEach((sub,i)=>{tableCell(page,sub.name,colXs[0],ry,colXs[1]-colXs[0],rowH,{size:6.2});shownPeriods.forEach((_,pi)=>tableCell(page,sub.grades[pi]==null?'—':Number(sub.grades[pi]).toFixed(1),colXs[pi+1],ry,colXs[pi+2]-colXs[pi+1],rowH,{align:'center',size:6.1}));tableCell(page,sub.avg==null?'—':sub.avg.toFixed(1),colXs[colXs.length-2],ry,colXs[colXs.length-1]-colXs[colXs.length-2],rowH,{align:'center',size:6.2,emphasis:true});ry-=rowH;});
+    if(subjects.length>availableRows){text(page,`Se muestran ${availableRows} asignaturas en esta hoja; las restantes se detallan en el concentrado complementario.`,35,ry-1,5.1,regular,C.muted,530);}
+    const sumY=154;section(page,'03 · Resultado general',sumY+43);
+    const sumW=(W-70)/3;const summary=[['PROMEDIO FINAL',overall==null?'—':overall.toFixed(2)],['SITUACIÓN ACADÉMICA',failed?'En revisión':'Acreditado'],['INASISTENCIAS TOTALES',`${attCounts.falta} día(s)`]];
+    summary.forEach((item,i)=>{const x=35+i*sumW;fillRect(page,x,sumY,sumW-8,37,i===0?C.goldp:C.goldp2,C.line,.5);text(page,item[0],x+8,sumY+24,4.8,bold,C.muted,sumW-22);text(page,item[1],x+8,sumY+9,10.2,bold,i===0?C.gold:C.ink,sumW-22);});
+    fillRect(page,35,90,542,38,C.white,C.line,.5,.75);text(page,'OBSERVACIONES',43,115,5.1,bold,C.gold);const obsText=observations.join(' · ')||' ';wrap(regular,obsText,524,5.6,2).forEach((lineText,i)=>text(page,lineText,43,103-i*8,5.6,regular,C.ink,524));
+    drawSign(page,{x:47,y:39,w:230,h:42,name:'Madre, padre o tutor',role:'Nombre y firma'});drawSign(page,{x:334,y:39,w:230,h:42,name:'Dirección / autoridad del plantel',role:'Nombre, firma y sello'});
+    footer(page,'Boleta',1,totalPages);
+  }
+
+  // HOJAS 2+: tabla de docentes con un espacio físico real si no existe firma digital.
+  {
+    const teacherProfiles=[];const teacherData=new Map((await admin.from('docentes').select('id,nombre_completo,correo,auth_user_id').in('id',teacherIds)).data?.map(t=>[String(t.id),t])||[]);
+    for(const tid of teacherIds){const t=teacherData.get(String(tid));let prof=await profileSignatureByAuth(admin,t?.auth_user_id,t?.nombre_completo||teacherNames.get(String(tid)),'docente',t?.correo);if(!prof?.firma_path){const acc=await admin.from('aceptaciones_horario_docente').select('firma_path,firma_sha256,aceptado_at').eq('docente_id',tid).eq('estado','aceptado').order('aceptado_at',{ascending:false}).limit(1).maybeSingle();if(acc.data?.firma_path)prof={id:t?.auth_user_id||null,nombre_completo:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',rol:'docente',firma_path:acc.data.firma_path,firma_sha256:acc.data.firma_sha256||null};}const subjectNames=subjects.filter(x=>x.teachers.has(String(tid))).map(x=>x.name);teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:subjectNames.join(', ')||'Asignatura asignada'});}
+    if(!teacherProfiles.length)teacherProfiles.push({name:'Sin docentes vinculados',profile:null,subject:'No hay docente asignado'});
+    for(let pg=0;pg<totalTeachers;pg++){
+      const page=p.addPage([W,H]);bg(page);header(page,'Hoja complementaria');text(page,pg===0?'REGISTRO DE FIRMAS DOCENTES':'REGISTRO DE FIRMAS DOCENTES · CONTINUACIÓN',35,H-103,15,bold,C.ink,400);text(page,'Validación de las asignaturas y talleres evaluados',35,H-117,6.2,regular,C.muted,380);text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
+      let y=H-147;y=section(page,'04 · Docentes responsables',y);wrap(regular,'Cada docente asignado firma en el espacio correspondiente. El taller se registra como información formativa y no como materia con calificación.',540,5.6,2).forEach((l,i)=>text(page,l,35,y-i*8,5.6,regular,C.muted,540));
+      const tableTop=y-24, colsX=[35,62,207,360,577], rowH=47;['N.º','ASIGNATURA','NOMBRE DEL DOCENTE','FIRMA'].forEach((h,i)=>tableCell(page,h,colsX[i],tableTop-18,colsX[i+1]-colsX[i],18,{head:true,align:i===1||i===2?'left':'center',size:5.5}));
+      const rows=teacherProfiles.slice(pg*10,(pg+1)*10);let yy=tableTop-18-rowH;
+      for(let i=0;i<rows.length;i++){const t=rows[i];tableCell(page,String(pg*10+i+1).padStart(2,'0'),colsX[0],yy,colsX[1]-colsX[0],rowH,{align:'center',size:5.8});tableCell(page,t.subject,colsX[1],yy,colsX[2]-colsX[1],rowH,{size:5.6});tableCell(page,t.name,colsX[2],yy,colsX[3]-colsX[2],rowH,{size:5.6});fillRect(page,colsX[3],yy,colsX[4]-colsX[3],rowH,C.white,null,0,.55);let sig=null;try{if(t.profile?.firma_path)sig=await loadSignatureImage(p,admin,t.profile.firma_path);}catch{}if(sig){const ratio=Math.min((colsX[4]-colsX[3]-18)/sig.image.width,24/sig.image.height);page.drawImage(sig.image,{x:colsX[3]+((colsX[4]-colsX[3])-sig.image.width*ratio)/2,y:yy+16,width:sig.image.width*ratio,height:sig.image.height*ratio});}rule(page,colsX[3]+9,yy+14,colsX[4]-9,yy+14,C.muted,.5);yy-=rowH;}
+      const sigY=90;section(page,'05 · Validación académica',sigY+82);const signW=(W-84)/2;await drawSign(page,{x:35,y:sigY+35,w:signW,h:42,name:'Coordinación académica',role:'Nombre y firma'});await drawSign(page,{x:49+signW,y:sigY+35,w:signW,h:42,name:'Control escolar',role:'Nombre y firma'});await drawSign(page,{x:35,y:sigY-9,w:signW,h:42,name:'Subdirección / coordinación de nivel',role:'Nombre y firma'});await drawSign(page,{x:49+signW,y:sigY-9,w:signW,h:42,name:'Dirección del plantel',role:'Nombre, firma y sello'});
+      footer(page,'Firmas docentes',2+pg,totalPages);
     }
-    const perPage=10, pages=Math.max(1,Math.ceil(teacherProfiles.length/perPage)), firstTeacherPage=3+extraDepartmentPages;
-    for(let pg=0;pg<pages;pg++){
-      const page=p.addPage([W,H]);bg(page,true);
-      if(logo) page.drawImage(logo,{x:28,y:H-78,width:48,height:51});
-      txt(page,institution.siglas||'ITHLA',88,H-39,6.5,bold,GREEN);
-      fit(page,institution.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano',88,H-55,330,11.5,bold,INK);
-      txt(page,'BOLETA · FIRMAS DEL CUERPO DOCENTE',88,H-68,6.2,bold,GRAY);
-      txt(page,pg===0?'FIRMAS DE LOS DOCENTES QUE ATIENDEN AL ALUMNO':'FIRMAS DOCENTES · CONTINUACIÓN',28,H-112,15,bold,GREEN);
-      txt(page,`${s.nombre_completo||'—'} · ${s.matricula||'—'} · ${s.grupos?.clave||'—'}`,28,H-126,6.6,bold,GRAY);
-      const cols=2,gap=10,bw=(W-56-gap)/cols,bh=112;
-      const visible=teacherProfiles.slice(pg*perPage,(pg+1)*perPage);
-      for(let i=0;i<visible.length;i++){
-        const t=visible[i],col=i%cols,row=Math.floor(i/cols);
-        await drawSignatureBox(page,p,admin,{x:28+col*(bw+gap),y:H-250-row*(bh+8),w:bw,h:bh,label:t.name,profile:t.profile,showName:false,missingText:'ESPACIO PARA FIRMA FÍSICA'});
-      }
-      if(!teacherProfiles.length) txt(page,'No se encontraron docentes vinculados a las calificaciones del ciclo.',28,H-175,7,regular,GRAY);
-      page.drawRectangle({x:28,y:15,width:W-56,height:17,color:GREEN});
-      txt(page,`PLATAFORMA JAGUAR · ${institution.siglas||'ITHLA'}`,35,21,5.2,bold,rgb(1,1,1));
-      txt(page,`Página ${firstTeacherPage+pg} de ${totalBoletaPages}`,W-100,21,5.2,bold,rgb(1,1,1));
+  }
+
+  // Últimas hojas: seis departamentos por página, nombres reales y firma manuscrita si falta archivo.
+  {
+    const deptList=departmentSigners.length?departmentSigners:[{name:'Dirección del plantel',profile:null,department:{descripcion:'Autorización institucional'}}];
+    for(let pg=0;pg<totalDepts;pg++){
+      const page=p.addPage([W,H]);bg(page);header(page,'Hoja complementaria');text(page,pg===0?'FIRMAS DE DEPARTAMENTOS':'FIRMAS DE DEPARTAMENTOS · CONTINUACIÓN',35,H-103,15,bold,C.ink,410);text(page,'Responsables de áreas y servicios académicos asignados',35,H-117,6.2,regular,C.muted,380);text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
+      let y=H-147;y=section(page,'06 · Departamentos y áreas asignadas',y);wrap(regular,'Cada bloque identifica al responsable del área y conserva espacio para firma manuscrita cuando no existe firma digital registrada.',540,5.6,2).forEach((l,i)=>text(page,l,35,y-i*8,5.6,regular,C.muted,540));
+      const cards=deptList.slice(pg*6,(pg+1)*6), cols=2, gapX=16, gapY=13, cardW=(W-70-gapX)/2, cardH=126, startY=H-207;
+      for(let i=0;i<cards.length;i++){const d=cards[i],col=i%2,row=Math.floor(i/2),x=35+col*(cardW+gapX),cy=startY-row*(cardH+gapY)-cardH;fillRect(page,x,cy,cardW,cardH,C.goldp2,C.line,.6);text(page,String(d.name||'Departamento').toUpperCase(),x+12,cy+cardH-20,7,bold,C.gold,cardW-24);const note=d.department?.descripcion||d.department?.descripcion_corta||'Seguimiento y validación institucional';wrap(regular,note,cardW-24,5.4,2).forEach((l,j)=>text(page,l,x+12,cy+cardH-33-j*8,5.4,regular,C.muted,cardW-24));let sig=null;try{if(d.profile?.firma_path)sig=await loadSignatureImage(p,admin,d.profile.firma_path);}catch{}if(sig){const ratio=Math.min((cardW-38)/sig.image.width,32/sig.image.height);page.drawImage(sig.image,{x:x+(cardW-sig.image.width*ratio)/2,y:cy+39,width:sig.image.width*ratio,height:sig.image.height*ratio});}rule(page,x+18,cy+32,x+cardW-18,cy+32,C.muted,.55);text(page,d.profile?.nombre_completo||'Nombre y firma del responsable',x+12,cy+19,5.3,regular,C.ink,cardW-24);text(page,d.profile?.cargo||d.department?.clave||'Cargo / sello si corresponde',x+12,cy+8,4.9,regular,C.muted,cardW-24);}
+      footer(page,'Departamentos',2+totalTeachers+pg,totalPages);
     }
   }
   return {pdf_base64:Buffer.from(await p.save()).toString('base64'),filename:`${institution.siglas||'ITHLA'}-Boleta-${safe(s.matricula||s.nombre_completo)}.pdf`};

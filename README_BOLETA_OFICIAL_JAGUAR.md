@@ -1,26 +1,16 @@
-# Integración de boleta oficial · Plataforma Jaguar
+# Boleta Jaguar — integración de Propuesta Visual 15
 
-La generación de boletas se actualizó en `api/reports.js` para usar el diseño institucional aprobado y datos dinámicos del expediente.
+La generación PDF de la boleta está implementada en `api/reports.js` con una composición editorial basada en la Propuesta Visual 15: escudo J dorado, encabezado institucional, patrón geométrico suave extraído del HTML aprobado, campos del alumno en líneas, tabla de evaluación de baja opacidad, resumen general, observaciones y bloques amplios de firma.
 
-## Cambios
+## Datos dinámicos
+- Institución, lema, ciclo, alumno, matrícula, grupo, grado y turno.
+- Periodos y calificaciones reales; materias Artes y Lengua Indígena se excluyen según las reglas acordadas.
+- Taller informativo sin nota numérica.
+- Folio y QR de validación generados por Jaguar.
+- Docentes y responsables departamentales consultados desde los datos reales; si no hay firma digital legible, se conserva espacio de firma manuscrita.
+- Las páginas complementarias crecen según el número de docentes y departamentos.
 
-- Fondo geométrico original, recoloreado en dorado suave con transparencia progresiva y proporción conservada: `assets/boleta-patron-geometrico.png`.
-- Lema/eslogan institucional leído de la configuración (`eslogan`, `slogan`, `lema` o `lema_traduccion`).
-- Taller del alumno leído desde `inscripciones_talleres`; aparece como dato informativo y no como asignatura evaluada.
-- Asignaturas y periodos se construyen desde las calificaciones registradas para el ciclo escolar activo.
-- Departamentos activos y responsables se obtienen de `departamentos` y `responsables_departamento`, con compatibilidad para roles institucionales existentes.
-- Se conserva espacio de firma física para madre/padre/tutor y para responsables o docentes sin firma digital registrada.
-- Las firmas docentes se distribuyen en páginas adicionales si hacen falta; los departamentos adicionales también reciben páginas propias.
-- Se conservan folio verificable y QR.
-- Los fondos de las celdas de tabla usan opacidad para permitir que el patrón se transparente sutilmente por debajo.
+El HTML aprobado se conserva en `assets/Boleta-Jaguar-Propuesta-Visual-15.html` como referencia visual, y su patrón exacto está en `assets/boleta-propuesta15-pattern.png`.
 
-## Archivos modificados
-
-- `api/reports.js`
-- `assets/boleta-patron-geometrico.png` (nuevo recurso local derivado del patrón proporcionado para la boleta)
-
-No se agregaron tablas ni migraciones de base de datos. La boleta utiliza las tablas existentes de institución, alumnos, grupos, calificaciones, periodos, talleres, departamentos, responsables y perfiles.
-
-## Verificación
-
-Se comprobó la sintaxis de `api/reports.js` con `node --check`. La generación final del PDF debe validarse en el entorno conectado a Supabase con un alumno de prueba que tenga materias, taller, responsables y docentes con/sin firma registrada.
+## Validación
+`node --check api/reports.js` debe pasar. La generación integral requiere probar el endpoint en el entorno con variables de entorno y Supabase configurados; no se afirma una validación contra la base de datos de producción desde este paquete.
