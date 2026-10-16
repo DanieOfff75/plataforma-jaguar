@@ -638,6 +638,8 @@ async function boletaPdf(admin,id,req=null){
       departmentSigners.push({name,profile:prof,department:{clave:role}});
     }
   }
+  // Resolver docentes antes de calcular páginas; evita acceder a teacherIds antes de inicializarlo.
+  const teacherIds=[...new Set([...(gradesQ.data||[]).map(r=>r.docente_id).filter(Boolean).map(String), ...(scheduleTeachersQ.data||[]).map(r=>r.docente?.id).filter(Boolean).map(String)])];
   const extraDepartmentPages=Math.ceil(Math.max(0,departmentSigners.length-6)/12);
   const teacherPageCount=Math.max(1,Math.ceil(teacherIds.length/10));
   const totalBoletaPages=2+extraDepartmentPages+teacherPageCount;
@@ -664,7 +666,6 @@ async function boletaPdf(admin,id,req=null){
     if(g.docente_id) x.teachers.add(String(g.docente_id));
     if(g.observaciones) x.observations.push(String(g.observaciones));
   }
-  const teacherIds=[...new Set([...subjectMap.values()].flatMap(x=>[...x.teachers]).concat((scheduleTeachersQ.data||[]).map(r=>r.docente?.id).filter(Boolean).map(String)))];
   let teacherNames=new Map();
   if(teacherIds.length){
     const {data:ts,error:te}=await admin.from('docentes').select('id,nombre_completo,correo,auth_user_id').in('id',teacherIds);
