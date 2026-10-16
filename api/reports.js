@@ -705,6 +705,8 @@ async function boletaPdf(admin,id,req=null){
   const regular=await p.embedFont(StandardFonts.Helvetica);
   const bold=await p.embedFont(StandardFonts.HelveticaBold);
   const italic=await p.embedFont(StandardFonts.HelveticaOblique);
+  const titleFont=await p.embedFont(StandardFonts.TimesRomanBold);
+  const titleItalic=await p.embedFont(StandardFonts.TimesRomanItalic);
   const W=612,H=792;
   const C={gold:rgb(177/255,138/255,50/255),gold2:rgb(212/255,185/255,111/255),goldp:rgb(246/255,240/255,223/255),goldp2:rgb(251/255,248/255,239/255),ink:rgb(41/255,40/255,32/255),muted:rgb(105/255,102/255,91/255),line:rgb(217/255,208/255,184/255),white:rgb(1,1,1),soft:rgb(247/255,244/255,235/255)};
   const logoBytes=await loadLogo();let logo=null;if(logoBytes){try{logo=await p.embedPng(logoBytes)}catch{try{logo=await p.embedJpg(logoBytes)}catch{}}}
@@ -716,15 +718,7 @@ async function boletaPdf(admin,id,req=null){
   const rule=(page,x1,y1,x2,y2,color=C.line,width=.5)=>page.drawLine({start:{x:x1,y:y1},end:{x:x2,y:y2},thickness:width,color});
   const fillRect=(page,x,y,w,h,color,border=null,bw=.5,opacity=1)=>page.drawRectangle({x,y,width:w,height:h,color,opacity,...(border?{borderColor:border,borderWidth:bw}:{})});
   const bg=(page)=>{fillRect(page,0,0,W,H,C.white);if(pattern){const pw=820,ph=pw*360/519;page.drawImage(pattern,{x:(W-pw)/2,y:0,width:pw,height:ph,opacity:.10});}fillRect(page,0,H-4,W,4,C.gold);fillRect(page,0,H-6,W,1.4,C.gold2);};
-  // Mantener el emblema de la cabecera limpio: usar el logotipo institucional real,
-  // sin añadir sellos, iniciales ni marcos que no existen en la Propuesta Visual 15.
-  const crest=(page,x,y,size=37)=>{
-    if(!logo)return;
-    const pad=1.5;
-    const scale=Math.min((size-pad*2)/logo.width,(size-pad*2)/logo.height);
-    const w=logo.width*scale,h=logo.height*scale;
-    page.drawImage(logo,{x:x+(size-w)/2,y:y+(size-h)/2,width:w,height:h});
-  };
+  const crest=(page,x,y,size=37)=>{if(logo){const ratio=Math.min(size/logo.width,size/logo.height);page.drawImage(logo,{x:x+(size-logo.width*ratio)/2,y:y+(size-logo.height*ratio)/2,width:logo.width*ratio,height:logo.height*ratio});}else{fillRect(page,x,y,size,size,C.goldp,C.gold,.9);centered(page,'J',x,y+8,size,21,bold,C.gold);}};
   const header=(page,tag='Sistema institucional de evaluación escolar')=>{crest(page,34,H-66,34);text(page,String(institution.nombre_institucion||'INSTITUTO EDUCATIVO').toUpperCase(),78,H-43,10.2,bold,C.ink,340);text(page,String(institution.lema||institution.eslogan||institution.slogan||'Formación · Conocimiento · Futuro'),78,H-56,6.3,regular,C.muted,335);text(page,tag.toUpperCase(),78,H-33,5.4,bold,C.muted,330);text(page,'CICLO',505,H-34,5.5,bold,C.muted,68);text(page,cycle,505,H-48,7.5,bold,C.gold,70);rule(page,34,H-75,W-34,H-75,C.gold,.8);};
   const section=(page,label,y)=>{text(page,label.toUpperCase(),35,y,7.2,bold,C.gold);rule(page,35,y-5,W-35,y-5,C.gold,.55);return y-15;};
   const footer=(page,label,pageNo,total)=>{rule(page,35,25,W-35,25,C.gold,.55);text(page,String(institution.siglas||'JAGUAR').toUpperCase()+' · '+String(institution.nombre_institucion||'Institución educativa'),35,14,5.1,bold,C.muted,360);text(page,`${label} · ${pageNo} / ${total}`,W-170,14,5.1,bold,C.muted,135);};
@@ -738,7 +732,7 @@ async function boletaPdf(admin,id,req=null){
   // HOJA 1: la boleta académica con datos en líneas, tabla ligera y resumen visual.
   {
     const page=p.addPage([W,H]);bg(page);header(page,'Sistema institucional de evaluación escolar');
-    text(page,'BOLETA DE CALIFICACIONES',35,H-103,18,bold,C.ink,360);text(page,'Registro de evaluación académica',35,H-117,6.4,regular,C.muted,330);
+    centered(page,'BOLETA DE CALIFICACIONES',35,H-105,370,17,titleFont,C.ink);centered(page,'Registro de evaluación académica · Propuesta de diseño',35,H-119,370,6.4,regular,C.muted);
     text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
     try{const q=await p.embedPng(verificationQr);fillRect(page,523,H-128,53,53,C.white,C.gold,.6);page.drawImage(q,{x:528,y:H-123,width:43,height:43});text(page,'QR DE VALIDACIÓN',520,H-136,4.4,bold,C.muted,62);}catch{}
     let sy=H-151;sy=section(page,'01 · Datos del alumno',sy);
@@ -771,7 +765,7 @@ async function boletaPdf(admin,id,req=null){
     for(const tid of teacherIds){const t=teacherData.get(String(tid));let prof=await profileSignatureByAuth(admin,t?.auth_user_id,t?.nombre_completo||teacherNames.get(String(tid)),'docente',t?.correo);if(!prof?.firma_path){const acc=await admin.from('aceptaciones_horario_docente').select('firma_path,firma_sha256,aceptado_at').eq('docente_id',tid).eq('estado','aceptado').order('aceptado_at',{ascending:false}).limit(1).maybeSingle();if(acc.data?.firma_path)prof={id:t?.auth_user_id||null,nombre_completo:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',rol:'docente',firma_path:acc.data.firma_path,firma_sha256:acc.data.firma_sha256||null};}const subjectNames=subjects.filter(x=>x.teachers.has(String(tid))).map(x=>x.name);teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:subjectNames.join(', ')||'Asignatura asignada'});}
     if(!teacherProfiles.length)teacherProfiles.push({name:'Sin docentes vinculados',profile:null,subject:'No hay docente asignado'});
     for(let pg=0;pg<totalTeachers;pg++){
-      const page=p.addPage([W,H]);bg(page);header(page,'Hoja complementaria');text(page,pg===0?'REGISTRO DE FIRMAS DOCENTES':'REGISTRO DE FIRMAS DOCENTES · CONTINUACIÓN',35,H-103,15,bold,C.ink,400);text(page,'Validación de las asignaturas y talleres evaluados',35,H-117,6.2,regular,C.muted,380);text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
+      const page=p.addPage([W,H]);bg(page);header(page,'Hoja complementaria');centered(page,pg===0?'REGISTRO DE FIRMAS DOCENTES':'REGISTRO DE FIRMAS DOCENTES · CONTINUACIÓN',35,H-105,380,14,titleFont,C.ink);centered(page,'Validación de las asignaturas y talleres evaluados',35,H-119,380,6.2,regular,C.muted);text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
       let y=H-147;y=section(page,'04 · Docentes responsables',y);wrap(regular,'Cada docente asignado firma en el espacio correspondiente. El taller se registra como información formativa y no como materia con calificación.',540,5.6,2).forEach((l,i)=>text(page,l,35,y-i*8,5.6,regular,C.muted,540));
       const tableTop=y-24, colsX=[35,62,207,360,577], rowH=47;['N.º','ASIGNATURA','NOMBRE DEL DOCENTE','FIRMA'].forEach((h,i)=>tableCell(page,h,colsX[i],tableTop-18,colsX[i+1]-colsX[i],18,{head:true,align:i===1||i===2?'left':'center',size:5.5}));
       const rows=teacherProfiles.slice(pg*10,(pg+1)*10);let yy=tableTop-18-rowH;
@@ -785,7 +779,7 @@ async function boletaPdf(admin,id,req=null){
   {
     const deptList=departmentSigners.length?departmentSigners:[{name:'Dirección del plantel',profile:null,department:{descripcion:'Autorización institucional'}}];
     for(let pg=0;pg<totalDepts;pg++){
-      const page=p.addPage([W,H]);bg(page);header(page,'Hoja complementaria');text(page,pg===0?'FIRMAS DE DEPARTAMENTOS':'FIRMAS DE DEPARTAMENTOS · CONTINUACIÓN',35,H-103,15,bold,C.ink,410);text(page,'Responsables de áreas y servicios académicos asignados',35,H-117,6.2,regular,C.muted,380);text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
+      const page=p.addPage([W,H]);bg(page);header(page,'Hoja complementaria');centered(page,pg===0?'FIRMAS DE DEPARTAMENTOS':'FIRMAS DE DEPARTAMENTOS · CONTINUACIÓN',35,H-105,410,14,titleFont,C.ink);centered(page,'Responsables de áreas y servicios académicos asignados',35,H-119,410,6.2,regular,C.muted);text(page,'FOLIO DE CONTROL',432,H-93,5.2,bold,C.muted,140);text(page,folio,432,H-106,8,bold,C.gold,145);
       let y=H-147;y=section(page,'06 · Departamentos y áreas asignadas',y);wrap(regular,'Cada bloque identifica al responsable del área y conserva espacio para firma manuscrita cuando no existe firma digital registrada.',540,5.6,2).forEach((l,i)=>text(page,l,35,y-i*8,5.6,regular,C.muted,540));
       const cards=deptList.slice(pg*6,(pg+1)*6), cols=2, gapX=16, gapY=13, cardW=(W-70-gapX)/2, cardH=126, startY=H-207;
       for(let i=0;i<cards.length;i++){const d=cards[i],col=i%2,row=Math.floor(i/2),x=35+col*(cardW+gapX),cy=startY-row*(cardH+gapY)-cardH;fillRect(page,x,cy,cardW,cardH,C.goldp2,C.line,.6);text(page,String(d.name||'Departamento').toUpperCase(),x+12,cy+cardH-20,7,bold,C.gold,cardW-24);const note=d.department?.descripcion||d.department?.descripcion_corta||'Seguimiento y validación institucional';wrap(regular,note,cardW-24,5.4,2).forEach((l,j)=>text(page,l,x+12,cy+cardH-33-j*8,5.4,regular,C.muted,cardW-24));let sig=null;try{if(d.profile?.firma_path)sig=await loadSignatureImage(p,admin,d.profile.firma_path);}catch{}if(sig){const ratio=Math.min((cardW-38)/sig.image.width,32/sig.image.height);page.drawImage(sig.image,{x:x+(cardW-sig.image.width*ratio)/2,y:cy+39,width:sig.image.width*ratio,height:sig.image.height*ratio});}rule(page,x+18,cy+32,x+cardW-18,cy+32,C.muted,.55);text(page,d.profile?.nombre_completo||'Nombre y firma del responsable',x+12,cy+19,5.3,regular,C.ink,cardW-24);text(page,d.profile?.cargo||d.department?.clave||'Cargo / sello si corresponde',x+12,cy+8,4.9,regular,C.muted,cardW-24);}
