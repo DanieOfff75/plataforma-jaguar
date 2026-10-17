@@ -48,7 +48,12 @@ async function j57list(){
   el.innerHTML='<p class="text-sm">Consultando clases de Google…</p>';
   const data=await j57api('google-classroom','list');
   J57.googleCourses=data.classes||[];
-  el.innerHTML=`<p class="text-sm mb-2">Se encontraron ${J57.googleCourses.length} clases. La vinculación <b>no modifica Google Classroom</b>. Comprueba el grupo y la materia antes de guardar.</p><div class="scroll"><table class="table"><thead><tr><th>Clase Google</th><th>Código</th><th>Estado</th><th>Asociación en Jaguar</th></tr></thead><tbody>${j57googleRows()}</tbody></table></div>`;
+  const total=J57.googleCourses.length;
+  if(!total){
+   el.innerHTML=`<div class="card mt-3"><p><b>Google respondió correctamente, pero no devolvió clases accesibles.</b></p><p class="text-sm mt-2">Comprueba que el correo mostrado arriba sea el mismo con el que ves tus clases en <a href="https://classroom.google.com/" target="_blank" rel="noopener noreferrer">Google Classroom</a>. Revisa el perfil de Google activo y si las clases pertenecen a otra cuenta. Jaguar no ha modificado ni eliminado ninguna clase.</p><p class="text-xs mt-2">Si ese Gmail es el correcto y tienes clases visibles, consulta los registros de Vercel de la ruta /api/google-classroom y comparte únicamente el mensaje de error, nunca tokens ni credenciales.</p></div>`;
+   return;
+  }
+  el.innerHTML=`<p class="text-sm mb-2">Se encontraron ${total} clases accesibles para el Gmail conectado (incluidas las archivadas, si Google las devuelve). La vinculación <b>no modifica Google Classroom</b>. Comprueba el grupo y la materia antes de guardar.</p><div class="scroll"><table class="table"><thead><tr><th>Clase Google</th><th>Código</th><th>Estado</th><th>Asociación en Jaguar</th></tr></thead><tbody>${j57googleRows()}</tbody></table></div>`;
  }catch(e){const el=document.getElementById('j57list');if(el)el.textContent=e.message||'No se pudo consultar Google.';}
 }
 async function j57resync(courseId,gmId){
