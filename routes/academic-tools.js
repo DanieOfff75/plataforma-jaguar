@@ -1,5 +1,6 @@
 /** Jaguar V5.5: gestión de aulas, banco de exámenes y carga institucional segura. */
 import crypto from 'node:crypto';
+import {planRoomAllocation} from '../lib/room_auto_allocation.js';
 import {requireRoles} from '../lib/_admin.js';
 import {ROOM_MANAGERS,ROOM_READERS,GRADE_MANAGERS,EXAM_ROLES,fail,positiveId,normalizeRoom,normalizeQuestion,validateGradeRows,calculateGradePreview} from '../lib/academic_tools_rules.js';
 import {examToPdf,examToDocx,examToGoogleAppsScript} from '../lib/jaguar_examen_export.js';
@@ -31,13 +32,14 @@ async function bootstrap(db,user,role){
 }
 async function roomData(db){
  const cycle=await currentCycle(db);
- const [rooms,schedule,groupsCount]=await Promise.all([
+ const [rooms,schedule,groupsCount,groups]=await Promise.all([
    checked(db.from('jaguar_aulas').select('*').order('codigo')),
-   checked(db.from('horarios').select('id,grupo_materia_id,docente_id,dia_semana,hora_inicio,hora_fin,aula,grupo_materias(id,grupo_id,grupos(id,clave,turno),materias(id,nombre))').eq('ciclo_escolar',cycle).order('dia_semana').order('hora_inicio').limit(1500)),
-   checked(db.from('alumnos').select('id,grupo_id').eq('activo',true).limit(5000))
+   checked(db.from('horarios').select('id,grupo_materia_id,docente_id,dia_semana,hora_inicio,hora_fin,aula,grupo_materias(id,grupo_id,grupos(id,clave,turno),materias(id,nombre))').eq('ciclo_escolar',cycle).order('dia_semana').order('hora_inicio').order('id').limit(1500)),
+   checked(db.from('alumnos').select('id,grupo_id').eq('activo',true).limit(5000)),
+   checked(db.from('grupos').select('id,clave,turno,activo').eq('activo',true).order('id').limit(100))
  ]);
  const count={};for(const s of groupsCount||[])count[s.grupo_id]=(count[s.grupo_id]||0)+1;
- return {cycle,rooms,schedule,group_counts:count};
+ return {cycle,rooms,schedule,groups,group_counts:count};
 }
 async function teacherAssignmentForSubject(db,doc,materiaId,cycle){
  const rows=await teacherGroups(db,doc,cycle);
@@ -83,6 +85,25 @@ export default async function handler(req,res){
   const input=req.method==='GET'?req.query||{}:req.body||{};
   if(req.method==='GET'&&action==='bootstrap')return asResult(res,await bootstrap(db,user,role));
   if(req.method==='GET'&&action==='rooms'){allowed(role,ROOM_READERS);return asResult(res,await roomData(db));}
+  if((req.method==='GET'&&action==='previewAutoRooms')||(req.method==='POST'&&action==='commitAutoRooms')){
+    allowed(role,ROOM_MANAGERS);
+    const data=await roomData(db);
+    const seed=Number(input.seed);
+    if(!Number.isSafeInteger(seed)||seed<1||seed>2147483647)fail('Genera primero una vista previa de asignación.',400);
+    const preview=planRoomAllocation({...data,seed});
+    const privateKey=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
+    if(!privateKey)fail('Falta clave del servidor para comprobar la vista previa.',500);
+    const payload=JSON.stringify({actor:user.id,seed,cycle:data.cycle,rooms:data.rooms,schedule:data.schedule,groups:data.groups,counts:data.group_counts,pairs:preview.pairs});
+    const token=crypto.createHmac('sha256',privateKey).update(payload).digest('hex');
+    if(req.method==='GET')return asResult(res,{...preview,cycle:data.cycle,seed,token});
+    const clientToken=String(input.preview_token||'');
+    if(!/^[0-9a-f]{64}$/.test(clientToken)||!crypto.timingSafeEqual(Buffer.from(clientToken,'hex'),Buffer.from(token,'hex')))
+      fail('La vista previa ya caducó porque cambiaron las aulas u horarios. Actualiza y confirma otra vez.',409);
+    if(input.confirmar!==true)fail('Confirma expresamente la asignación de los 18 grupos.',400);
+    return asResult(res,await checked(db.rpc('jaguar_asignar_aulas_grupos_lote',{
+      p_actor:user.id,p_ciclo:data.cycle,p_asignaciones:preview.pairs.map(p=>({grupo_id:p.grupo_id,aula_id:p.aula_id}))
+    })));
+  }
   if(req.method==='POST'&&action==='saveRoom'){
     allowed(role,ROOM_MANAGERS);const payload=normalizeRoom(input.room||{});
     const id=input.room?.id?positiveId(input.room.id):null;

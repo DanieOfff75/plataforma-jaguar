@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {planRoomAllocation} from '../lib/room_auto_allocation.js';
+const groups=Array.from({length:18},(_,i)=>({id:i+1,clave:(i<9?'M':'V')+(i%9+1),turno:i<9?'matutino':'vespertino',activo:true}));
+const rooms=Array.from({length:9},(_,i)=>({id:i+1,nombre:'AULA '+(i+1),capacidad:42,activo:true}));
+const schedule=groups.map(g=>({id:g.id,grupo_materias:{grupo_id:g.id},dia_semana:1,hora_inicio:g.id<=9?'08:00':'14:00',hora_fin:g.id<=9?'12:00':'18:00',aula:null}));
+const group_counts=Object.fromEntries(groups.map(g=>[g.id,40]));
+const d={groups,rooms,schedule,group_counts};
+const p=planRoomAllocation({...d,seed:138}); assert.equal(p.pairs.length,18);assert.equal(p.actualizar,18);
+const occ={};for(const x of p.pairs)(occ[x.aula_id]??=[]).push(x);
+assert.equal(Object.keys(occ).length,9);assert.ok(Object.values(occ).every(x=>x.length===2&&x[0].turno!==x[1].turno));
+const again=planRoomAllocation({...d,seed:138});assert.deepEqual(again,p);
+assert.throws(()=>planRoomAllocation({...d,rooms:rooms.slice(1)}),/9 aulas/);
+assert.throws(()=>planRoomAllocation({...d,group_counts:{...group_counts,1:100}}),/No existe aula compatible/);
+const conflict=schedule.map(x=>({...x,aula:x.id<=3?'AULA 1':null}));assert.throws(()=>planRoomAllocation({...d,schedule:conflict}),/dos grupos/);
+const other=schedule.map(x=>({...x,aula:x.id===1?'AULA 1':null}));const preserved=planRoomAllocation({...d,schedule:other,seed:144});assert.equal(preserved.pairs.find(x=>x.grupo_id===1).aula,'AULA 1');
+console.log('Pruebas de aulas: aprobadas (18, 9+9, capacidad, grupos máximos, estabilidad, conservación).');

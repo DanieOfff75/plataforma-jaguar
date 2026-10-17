@@ -1,5 +1,5 @@
 /* Jaguar V5.5: interfaz adicional; no sustituye módulos heredados. */
-const _j55={init:null,rooms:null,questions:[],exams:[],gm:0,period:0,gradeRows:[],gradePreview:null,roster:null,selectedSubject:0};
+const _j55={autoPreview:null,init:null,rooms:null,questions:[],exams:[],gm:0,period:0,gradeRows:[],gradePreview:null,roster:null,selectedSubject:0};
 async function j55api(action,payload=null){
  if(!supabaseClient)throw Error('Inicia sesión antes de continuar.');
  const {data:{session}}=await supabaseClient.auth.getSession();if(!session)throw Error('La sesión expiró.');
@@ -23,11 +23,11 @@ function j55safeFilename(s){return String(s||'Jaguar').replace(/[^a-zA-Z0-9_-]/g
 // AULAS · Coordinación y Dirección gestionan; las demás áreas académicas consultan.
 async function jaguarAulasModule(){
  if(!j55require(['coordinacion_academica','direccion_escolar','control_escolar','control','servicios_docentes']))return '<div class="card">No autorizado.</div>';
- _j55.rooms=await j55get('rooms');const d=_j55.rooms,canEdit=['coordinacion_academica','direccion_escolar'].includes(S.role);
+ _j55.rooms=await j55get('rooms');const d=_j55.rooms,canEdit=['coordinacion_academica','direccion_escolar','servicios_docentes'].includes(S.role);
  const freeCount=(d.schedule||[]).filter(h=>!h.aula).length;
  return `<div class="space-y-5">${j55head('ORGANIZACIÓN ACADÉMICA','Aulas y espacios escolares','Inventario, capacidad real por grupo y reserva de salones sin choques de horarios.')}
  <div class="grid md:grid-cols-3 gap-4"><div class="card"><small>Aulas registradas</small><div class="metric">${d.rooms.length}</div></div><div class="card"><small>Clases con horario</small><div class="metric">${d.schedule.length}</div></div><div class="card"><small>Por asignar</small><div class="metric">${freeCount}</div></div></div>
- ${canEdit?`<div class="card"><h3>Registrar o actualizar aula</h3><div class="grid md:grid-cols-5 gap-3 mt-3"><input type="hidden" id="j55_roomid"><input class="input" id="j55_roomcode" maxlength="24" placeholder="Clave: A-101"><input class="input" id="j55_roomname" maxlength="70" placeholder="Nombre del salón"><input class="input" id="j55_roomcap" type="number" min="1" max="1000" placeholder="Capacidad"><input class="input" id="j55_roombuild" placeholder="Edificio (opcional)"><button class="btn primary" onclick="j55saveRoom()">Guardar aula</button></div><p class="text-xs mt-2 text-[#8FA3B5]">No se pueden renombrar aulas con clases asignadas; la capacidad se verifica al reservar.</p></div>`:''}
+ ${canEdit?`<div class="card"><h3>Asignación automática · 18 grupos</h3><p class="text-sm text-[#8FA3B5] mt-2">Registra las aulas una sola vez. Jaguar asignará por grupo (9 matutinos y 9 vespertinos), hasta dos grupos por aula, con capacidad y horarios compatibles. Primero muestra una vista previa; no cambia salones existentes.</p><div class="flex flex-wrap gap-2 mt-3"><button class="btn primary" onclick="j55previewAutoRooms()">🎲 Preparar reparto aleatorio</button><button class="btn" id="j55_autocommit" disabled onclick="j55commitAutoRooms()">Confirmar asignaciones</button></div><div id="j55_autopreview" class="mt-3"></div></div><div class="card"><h3>Registrar o actualizar aula</h3><div class="grid md:grid-cols-5 gap-3 mt-3"><input type="hidden" id="j55_roomid"><input class="input" id="j55_roomcode" maxlength="24" placeholder="Clave: A-101"><input class="input" id="j55_roomname" maxlength="70" placeholder="Nombre del salón"><input class="input" id="j55_roomcap" type="number" min="1" max="1000" placeholder="Capacidad"><input class="input" id="j55_roombuild" placeholder="Edificio (opcional)"><button class="btn primary" onclick="j55saveRoom()">Guardar aula</button></div><p class="text-xs mt-2 text-[#8FA3B5]">No se pueden renombrar aulas con clases asignadas; la capacidad se verifica al reservar.</p></div>`:''}
  <div class="card"><h3>Inventario de aulas</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Clave</th><th>Aula</th><th>Capacidad</th><th>Edificio</th><th>Estado</th>${canEdit?'<th>Acción</th>':''}</tr></thead><tbody>${d.rooms.map(r=>`<tr><td>${j55s(r.codigo)}</td><td>${j55s(r.nombre)}</td><td>${r.capacidad} lugares</td><td>${j55s(r.edificio||'—')}</td><td>${r.activo?'Activa':'Inactiva'}</td>${canEdit?`<td><button class="btn" onclick="j55editRoom(${r.id})">Editar</button></td>`:''}</tr>`).join('')||'<tr><td colspan="6">No hay aulas; registra la primera para asignar horarios.</td></tr>'}</tbody></table></div></div>
  <div class="card"><div class="flex flex-wrap justify-between gap-2"><div><h3>Asignaciones de salones · ${j55s(d.cycle)}</h3><p class="text-xs mt-1 text-[#8FA3B5]">Las aulas asignadas aparecerán también en los horarios PDF existentes.</p></div><input class="input" id="j55_roomfilter" placeholder="Buscar grupo, aula o materia" oninput="j55filterRooms()"></div>
  <div class="scroll mt-3"><table class="table"><thead><tr><th>Grupo</th><th>Materia</th><th>Día y hora</th><th>Alumnos</th><th>Aula actual</th>${canEdit?'<th>Asignar</th>':''}</tr></thead><tbody id="j55_roomrows">${d.schedule.map(h=>j55roomRow(h,canEdit)).join('')||'<tr><td colspan="6">No hay clases programadas.</td></tr>'}</tbody></table></div></div></div>`;
@@ -39,6 +39,20 @@ function j55filterRooms(){const q=document.getElementById('j55_roomfilter')?.val
 function j55editRoom(id){const r=_j55.rooms.rooms.find(x=>x.id===id);if(!r)return;[['roomid',r.id],['roomcode',r.codigo],['roomname',r.nombre],['roomcap',r.capacidad],['roombuild',r.edificio||'']].forEach(([k,v])=>{document.getElementById('j55_'+k).value=v;});document.getElementById('j55_roomname')?.focus();}
 async function j55saveRoom(){try{const id=document.getElementById('j55_roomid').value;const room={id:id||undefined,codigo:document.getElementById('j55_roomcode').value,nombre:document.getElementById('j55_roomname').value,capacidad:document.getElementById('j55_roomcap').value,edificio:document.getElementById('j55_roombuild').value};await j55api('saveRoom',{room});toast('Aula guardada.');await loadPage('aulas');}catch(e){j55err(e)}}
 async function j55assign(id){try{const val=document.getElementById('j55_assign_'+id).value;const room=_j55.rooms.rooms.find(r=>String(r.id)===String(val));if(!confirm(room?`¿Asignar ${room.nombre} a esta clase? Se comprobarán choques y capacidad.`:'¿Quitar el salón de esta clase?'))return;await j55api('assignRoom',{horario_id:id,aula_id:val||null});toast('Aula actualizada y validada.');await loadPage('aulas');}catch(e){j55err(e)}}
+
+async function j55previewAutoRooms(){try{
+ _j55.autoPreview=null;const button=document.getElementById('j55_autocommit');if(button)button.disabled=true;
+ const seed=1+Math.floor(Math.random()*2147483646);
+ const d=await j55get('previewAutoRooms',{seed});_j55.autoPreview=d;
+ const panel=document.getElementById('j55_autopreview');if(panel)panel.innerHTML=`<p class="text-sm mb-3">${d.pairs.length} grupos · ${d.actualizar} por asignar · ${d.conservadas} asignaciones conservadas. Revisa todos los salones antes de confirmar.</p><div class="scroll"><table class="table"><thead><tr><th>Grupo</th><th>Turno</th><th>Aula</th><th>Horarios</th><th>Estado</th></tr></thead><tbody>${d.pairs.map(p=>`<tr><td>${j55s(p.grupo)}</td><td>${j55s(p.turno)}</td><td>${j55s(p.aula)}</td><td>${p.horarios}</td><td>${p.conservada?'Conservada':'Nueva'}</td></tr>`).join('')}</tbody></table></div>`;
+ if(button)button.disabled=d.actualizar===0;
+}catch(e){j55err(e)}}
+async function j55commitAutoRooms(){try{
+ const p=_j55.autoPreview;if(!p)throw Error('Genera primero la vista previa.');
+ if(!confirm(`¿Confirmas el reparto de ${p.pairs.length} grupos? Se actualizarán ${p.actualizar} grupos. Si ocurre un conflicto, no se guardará ningún cambio.`))return;
+ const x=await j55api('commitAutoRooms',{seed:p.seed,preview_token:p.token,confirmar:true});
+ toast(`Asignados ${x.horarios_asignados} horarios. El reparto se guardó como una sola operación.`);_j55.autoPreview=null;await loadPage('aulas');
+}catch(e){j55err(e)}}
 
 // EXÁMENES · banco privado del docente por asignatura.
 async function jaguarExamenesModule(){
@@ -76,8 +90,35 @@ function j55resetGrades(){_j55.gradeRows=[];_j55.roster=null;j55clearPreview();c
 function j55gradeSelection(){const gm=Number(document.getElementById('j55_gradegm')?.value),period=Number(document.getElementById('j55_gradeperiod')?.value);if(!gm||!period)throw Error('Selecciona grupo-materia y periodo.');return {gm,period};}
 async function j55loadGradeRoster(){try{const {gm,period}=j55gradeSelection();_j55.roster=await j55get('gradeRoster',{grupo_materia_id:gm,periodo_id:period});document.getElementById('j55_grades_status').textContent=`${_j55.roster.students.length} alumnos activos en ${_j55.roster.gm?.grupos?.clave}. ${_j55.roster.existing.length} calificaciones existentes.`;return _j55.roster;}catch(e){j55err(e);return null}}
 async function j55downloadGradeTemplate(){try{if(!window.XLSX)throw Error('La biblioteca de Excel no está disponible.');const d=await j55loadGradeRoster();if(!d)return;const wb=XLSX.utils.book_new();const rows=[['MATRICULA','CALIFICACION','OBSERVACIONES'],...d.students.map(st=>[st.matricula,'',''])];const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[{wch:26},{wch:18},{wch:58}];ws['!freeze']='A2';XLSX.utils.book_append_sheet(wb,ws,'CALIFICACIONES');XLSX.writeFile(wb,'ITHLA-Carga-'+j55safeFilename(d.gm?.grupos?.clave)+'-'+j55safeFilename(d.gm?.materias?.nombre)+'.xlsx');toast('Plantilla descargada. Llena las notas sin modificar las matrículas.');}catch(e){j55err(e)}}
-async function j55readGradesFile(el){try{j55clearPreview();const file=el.files?.[0];if(!file)return;if(file.size>2*1024*1024)throw Error('El archivo debe pesar menos de 2 MB.');if(!window.XLSX)throw Error('No se cargó Excel.');j55gradeSelection();const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});const ws=wb.Sheets.CALIFICACIONES||wb.Sheets[wb.SheetNames[0]];const arrays=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});const header=(arrays[0]||[]).map(x=>String(x).trim().toUpperCase());const mi=header.indexOf('MATRICULA'),gi=header.indexOf('CALIFICACION'),oi=header.indexOf('OBSERVACIONES');if(mi<0||gi<0)throw Error('El Excel debe contener columnas MATRICULA y CALIFICACION.');
- const rows=arrays.slice(1).filter(r=>r.some(x=>String(x).trim())).map(r=>({matricula:String(r[mi]??'').trim(),calificacion:r[gi]??'',observaciones:oi>=0?String(r[oi]??''):''}));if(rows.length>250)throw Error('Máximo 250 filas por importación.');_j55.gradeRows=rows;j55renderGradeRows();document.getElementById('j55_grades_status').textContent=`${rows.length} filas leídas. Puedes corregir la nota directamente antes de validar.`;}catch(e){j55err(e)}}
+async function j55readGradesFile(el){try{
+ j55clearPreview();const file=el.files?.[0];if(!file)return;
+ if(file.size>5*1024*1024)throw Error('El archivo debe pesar menos de 5 MB.');
+ if(!window.XLSX)throw Error('No se cargó la biblioteca de Excel.');j55gradeSelection();
+ const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+ if(wb.Sheets.JAGUAR_META)throw Error('Este Excel es una bitácora diaria, no una carga de calificaciones finales. Súbelo en Bitácora docente; para Control Escolar descarga aquí la plantilla CALIFICACIONES.');
+ if(wb.Sheets.ITHLA_META)throw Error('Este Excel es de ponderaciones de rúbrica, no de notas finales. Impórtalo en Rúbricas y Evaluaciones o descarga la plantilla CALIFICACIONES de esta sección.');
+ const normalize=x=>String(x??'').trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+ let match=null;
+ for(const sheetName of ['CALIFICACIONES',...wb.SheetNames.filter(n=>n!=='CALIFICACIONES')]){
+   const ws=wb.Sheets[sheetName];if(!ws)continue;
+   const arr=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:true});
+   for(let i=0;i<Math.min(15,arr.length);i++){
+     const head=(arr[i]||[]).map(normalize),mi=head.indexOf('MATRICULA'),gi=head.indexOf('CALIFICACION'),oi=head.indexOf('OBSERVACIONES');
+     if(mi>=0&&gi>=0){match={arr,headerRow:i,mi,gi,oi,sheetName};break;}
+   }
+   if(match)break;
+ }
+ if(!match)throw Error('No se encontró una tabla con las columnas MATRÍCULA y CALIFICACIÓN. Descarga la plantilla institucional; no uses una bitácora o rúbrica como archivo de notas finales.');
+ const {arr,headerRow,mi,gi,oi}=match;
+ const rows=arr.slice(headerRow+1).filter(r=>String(r?.[mi]??'').trim()).map(r=>({
+   matricula:String(r[mi]??'').trim().toUpperCase(),
+   calificacion:r[gi]??'',observaciones:oi>=0?String(r[oi]??''):''
+ }));
+ if(!rows.length)throw Error('No se encontraron matrículas con datos en el archivo.');
+ if(rows.length>250)throw Error('Máximo 250 alumnos por lote.');
+ _j55.gradeRows=rows;j55renderGradeRows();
+ document.getElementById('j55_grades_status').textContent=`${rows.length} filas leídas de «${match.sheetName}». Puedes revisar y corregir antes de validar en el servidor.`;
+}catch(e){j55err(e)}}
 function j55renderGradeRows(results=null){const rows=results||_j55.gradeRows;document.getElementById('j55_grades_table').innerHTML=`<table class="table"><thead><tr><th>#</th><th>Matrícula</th><th>Alumno</th><th>Calificación</th><th>Observaciones</th><th>Validación</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${i+1}</td><td><input class="input" value="${j55s(r.matricula)}" oninput="j55editGrade(${i},'matricula',this.value)"></td><td>${j55s(r.nombre||'—')}</td><td><input class="input" type="number" step="0.1" min="0" max="10" value="${j55s(r.calificacion)}" oninput="j55editGrade(${i},'calificacion',this.value)"></td><td><input class="input" value="${j55s(r.observaciones||'')}" oninput="j55editGrade(${i},'observaciones',this.value)"></td><td><span class="chip">${j55s(r.status||'Sin validar')}</span><div class="text-xs">${j55s(r.detail||'')}</div></td></tr>`).join('')||'<tr><td colspan="6">No hay filas.</td></tr>'}</tbody></table>`;}
 function j55editGrade(i,k,value){if(_j55.gradeRows[i])_j55.gradeRows[i][k]=value;j55clearPreview();const status=document.getElementById('j55_grades_status');if(status)status.textContent='Hay cambios sin validar. Haz clic en «Validar lote» antes de confirmar.';}
 function j55GradeBody(){const {gm,period}=j55gradeSelection();return {grupo_materia_id:gm,periodo_id:period,rows:_j55.gradeRows,allow_updates:document.getElementById('j55_allow_updates')?.checked===true,motivo:document.getElementById('j55_grade_motivo')?.value||''};}

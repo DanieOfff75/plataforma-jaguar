@@ -1,6 +1,6 @@
 /** Sincronización supervisada y creación individual confirmada de clases PROVISIONED en Google. */
 import {requireRoles} from '../lib/_admin.js';
-import {googleConfig,googleAccess,googleCourses,googleCreateCourse,projectCourse,readConnection,googleTopics,googleMakeTopic,googleWork,googleSubmissions,googleStudents} from '../lib/google_classroom_oauth.js';
+import {googleConfig,googleAccess,googleCourses,googleCreateCourse,projectCourse,googleTopics,googleMakeTopic,googleWork,googleSubmissions,googleStudents} from '../lib/google_classroom_oauth.js';
 import {classCode,classroomLink} from '../lib/classroom_rules.js';
 import {classroomCoursePayload,normalizedClassroomName} from '../lib/classroom_naming.js';
 import {topicForPeriod,matchingTopic,gradeEntries} from '../lib/classroom_periods.js';
@@ -45,9 +45,7 @@ export default async function handler(req,res){
     fail('Los datos de la vista previa cambiaron. Actualízala antes de confirmar.',409);
    const existing=await q(db.from('jaguar_classroom_clases').select('id,google_course_id').eq('ciclo_escolar',cycle).eq('grupo_materia_id',gmId).maybeSingle());
    if(existing?.google_course_id)fail('Esta materia ya tiene un Google Classroom vinculado. No se creará otro.',409);
-   const connection=await readConnection(db);
-   if(!String(connection?.permisos||'').split(/\s+/).includes('https://www.googleapis.com/auth/classroom.courses'))
-    fail('Tu conexión actual es de solo lectura. Desconecta y vuelve a conectar Google para autorizar la creación de clases.',409);
+   // La autorización efectiva se comprueba al crear en Google, no comparando texto OAuth guardado.
    const {classes}=await googleData(db);
    const duplicate=classes.find(c=>normalizedClassroomName(c.nombre)===normalizedClassroomName(payload.name)&&!['ARCHIVED','DECLINED','SUSPENDED'].includes(c.estado));
    if(duplicate)fail(`Ya existe una clase con ese nombre en Google (${duplicate.estado}). Vincúlala desde la lista en vez de duplicarla.`,409);
@@ -79,8 +77,7 @@ export default async function handler(req,res){
    const gmId=numberId(req.body.grupo_materia_id),cycle=await activeCycle(db);
    const linked=await q(db.from('jaguar_classroom_clases').select('google_course_id').eq('ciclo_escolar',cycle).eq('grupo_materia_id',gmId).maybeSingle());
    if(!linked?.google_course_id)fail('Primero vincula la clase de Google con su materia.',409);
-   const access=await readConnection(db);
-   if(!String(access?.permisos||'').split(/\s+/).includes('https://www.googleapis.com/auth/classroom.topics'))fail('Falta autorizar el permiso Classroom Topics. Desconecta y vuelve a conectar Google.',409);
+   // Google valida el permiso de temas al consultar y crear; no bloquear por metadatos OAuth obsoletos.
    const all=(await q(db.from('periodos_escolares').select('id,nombre,numero_periodo,ciclo_escolar').eq('ciclo_escolar',cycle).order('numero_periodo')));
    if(!all.length||all.length>10)fail('Configura de 1 a 10 periodos escolares antes de crear los temas.',409);
    const cfg=googleConfig(),token=await googleAccess(db,cfg);const before=await googleTopics(token,linked.google_course_id);
@@ -108,12 +105,15 @@ export default async function handler(req,res){
    const linked=await q(db.from('jaguar_classroom_clases').select('google_course_id').eq('grupo_materia_id',gmId).eq('ciclo_escolar',cycle).maybeSingle());
    if(!linked?.google_course_id)fail('Esta materia aún no tiene Google Classroom vinculado.',409);
    const course=linked.google_course_id;
-   const cfg=googleConfig(),connection=await readConnection(db);
-   const scopes=String(connection?.permisos||'').split(/\s+/);
-   const needed=['https://www.googleapis.com/auth/classroom.coursework.students.readonly','https://www.googleapis.com/auth/classroom.rosters.readonly'];
-   if(needed.some(s=>!scopes.includes(s)))fail('Reconecta Google para autorizar consulta de actividades y alumnos de Classroom.',409);
-   const token=await googleAccess(db,cfg);
-   const students=await googleStudents(token,course);
+   // El registro `permisos` guardado por OAuth puede estar vacío u obsoleto:
+   // no demuestra qué puede hacer el token actual. Classroom valida los permisos reales.
+   const cfg=googleConfig(),token=await googleAccess(db,cfg);
+   let students;
+   try { students=await googleStudents(token,course); }
+   catch(e) {
+    if(e?.status===403)fail('Google rechazó consultar los alumnos de esta clase. Comprueba que Servicios Docentes tenga acceso al curso y los permisos de alumnos autorizados en Google Cloud.',403);
+    throw e;
+   }
    if(students.length>250)fail('El curso supera el límite de 250 alumnos para importar notas.',409);
    const roster=await q(db.from('alumnos').select('id,matricula,nombre_completo,grupo_id').eq('grupo_id',gm.grupo_id).eq('activo',true).limit(251));
    if(roster.length>250)fail('El grupo supera el límite seguro de 250 alumnos.',409);
