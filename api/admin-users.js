@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile } from 'node:fs/promises';
 import { requireRoles } from '../lib/_admin.js';
-import { departmentKeyForRole, getDepartmentByKey, listResponsibleUsers, validateResponsible } from './responsables.js';
+import { departmentKeyForRole, getDepartmentByKey, listResponsibleUsers, validateResponsible } from '../lib/responsables.js';
 import { getInstitution } from './institution.js';
 import { audit } from '../lib/audit.js';
 

@@ -1,5 +1,5 @@
 import { requireRoles } from '../lib/_admin.js';
-import { getDepartmentByKey } from './responsables.js';
+import { getDepartmentByKey } from '../lib/responsables.js';
 
 const DEFAULTS={
   id:1,

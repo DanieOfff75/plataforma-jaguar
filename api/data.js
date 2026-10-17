@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import { getClients, requireRoles } from '../lib/_admin.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { departmentKeyForRole, validateResponsible, listResponsibleUsers } from './responsables.js';
+import { departmentKeyForRole, validateResponsible, listResponsibleUsers } from '../lib/responsables.js';
 import { audit } from '../lib/audit.js';
 import { getInstitution } from './institution.js';
-import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from './documentos.js';
+import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from '../lib/documentos.js';
 import { buildOfficialPdf } from '../lib/documentos_oficiales_pdf.js';
 import { readCredentialPhoto } from '../lib/credential_photo.js';
 import { normalizeNewPeriod } from '../lib/periodos_escolares.js';

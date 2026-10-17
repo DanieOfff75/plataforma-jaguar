@@ -7,8 +7,8 @@ import fontkit from '@pdf-lib/fontkit';
 import { readFile } from 'node:fs/promises';
 import { requireRoles } from '../lib/_admin.js';
 import { getInstitution } from './institution.js';
-import { listResponsibleUsers } from './responsables.js';
-import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from './documentos.js';
+import { listResponsibleUsers } from '../lib/responsables.js';
+import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from '../lib/documentos.js';
 
 const days = ['Lunes','Martes','Miércoles','Jueves','Viernes'];
 const normalizeSubjectName=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();

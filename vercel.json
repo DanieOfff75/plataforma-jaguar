@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/academic-tools",
+      "destination": "/api/router?__jaguar_route=academic-tools"
+    },
+    {
+      "source": "/api/classroom",
+      "destination": "/api/router?__jaguar_route=classroom"
+    },
+    {
+      "source": "/api/google-classroom",
+      "destination": "/api/router?__jaguar_route=google-classroom"
+    },
+    {
+      "source": "/api/google-oauth",
+      "destination": "/api/router?__jaguar_route=google-oauth"
+    },
+    {
+      "source": "/api/teacher",
+      "destination": "/api/router?__jaguar_route=teacher"
+    }
+  ]
+}

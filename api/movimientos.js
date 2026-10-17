@@ -1,9 +1,9 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile } from 'node:fs/promises';
 import { requireControl } from '../lib/_admin.js';
-import { validateResponsible, listResponsibleUsers } from './responsables.js';
+import { validateResponsible, listResponsibleUsers } from '../lib/responsables.js';
 import { getInstitution } from './institution.js';
-import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from './documentos.js';
+import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from '../lib/documentos.js';
 import { audit } from '../lib/audit.js';
 
 function safe(v){ return String(v ?? '').replace(/\s+/g,' ').trim(); }

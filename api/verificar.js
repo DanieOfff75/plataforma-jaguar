@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { getClients, requireRoles } from '../lib/_admin.js';
-import { documentStatus } from './documentos.js';
+import { documentStatus } from '../lib/documentos.js';
 import { makeVerificationPdf } from '../lib/verificacion_pdf.js';
 
 function hashToken(value){return crypto.createHash('sha256').update(String(value||'')).digest('hex');}
