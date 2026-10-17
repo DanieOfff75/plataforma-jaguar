@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
 import { getClients, requireRoles } from '../lib/_admin.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { departmentKeyForRole, validateResponsible, listResponsibleUsers } from '../lib/responsables.js';
@@ -4719,7 +4720,27 @@ export default async function handler(
     if (req.method === 'POST' && req.body?.resource === 'submitEvaluationPeriod') {
       if (profile.rol !== 'docente') return res.status(403).json({ok:false,error:'Solo el docente puede cerrar su evaluación.'});
       const gmId=Number(req.body?.grupo_materia_id||0), periodoId=Number(req.body?.periodo_id||0);
-      const closure=await buildEvaluationClosure(adminClient,user,gmId,periodoId);
+      const modoExcel=req.body?.modo_origen==='excel_valor_total';
+      let closure;
+      if(modoExcel){
+        const filePath=String(req.body?.file_path||''),sha=String(req.body?.file_sha256||'');
+        if(!filePath||!/^[a-f0-9]{64}$/i.test(sha))return res.status(400).json({ok:false,error:'Falta el Excel de respaldo o su huella SHA-256.'});
+        const ctx=await teacherOwnAssignment(adminClient,user,gmId,periodoId);
+        const [rubricQ,studentsQ]=await Promise.all([
+          adminClient.from('rubricas_evaluacion').select('*').eq('docente_id',ctx.tid).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).maybeSingle(),
+          adminClient.from('alumnos').select('id,nombre_completo,matricula,grupo_id').eq('grupo_id',ctx.assignment.grupo_materias.grupo_id).eq('activo',true).order('nombre_completo')
+        ]);
+        for(const result of [rubricQ,studentsQ])if(result.error)throw result.error;
+        const rubric=rubricQ.data;
+        if(!rubric)return res.status(404).json({ok:false,error:'No existe la rúbrica del periodo.'});
+        if(rubric.estado==='cerrada')return res.status(409).json({ok:false,error:'El periodo ya está cerrado.'});
+        if(Number(req.body?.rubrica_version||0)!==Number(rubric.version||1))return res.status(409).json({ok:false,error:'La rúbrica cambió durante la revisión; vuelve a cargar el Excel.'});
+        const compResult=await adminClient.from('rubrica_componentes').select('*').eq('rubrica_id',rubric.id).order('orden');if(compResult.error)throw compResult.error;
+        const {detail,gradeRows}=buildExcelGradeRows({students:studentsQ.data||[],components:compResult.data||[],rows:req.body?.excel_rows,rubric,gmId,periodoId,teacherId:ctx.tid});
+        closure={ctx,rubric,detail,gradeRows,componentes:compResult.data||[]};
+      }else{
+        closure=await buildEvaluationClosure(adminClient,user,gmId,periodoId);
+      }
       const adjustments=Array.isArray(req.body?.adjustments)?req.body.adjustments:[];
       const allowedAdjustments=new Map(closure.detail.map(x=>[String(x.alumno_id),x]));
       const normalizedAdjustments=[];
@@ -4739,7 +4760,7 @@ export default async function handler(
       for(const row of closure.gradeRows){const a=adjustmentMap.get(String(row.alumno_id));if(a){row.calificacion=a.valor_nuevo;row.observaciones=`Ajuste docente registrado: ${a.motivo}`;row.detalle_evaluacion={...(row.detalle_evaluacion||{}),ajuste:{valor_calculado:a.valor_calculado,valor_nuevo:a.valor_nuevo,tipo:a.tipo,motivo:a.motivo}};}}
       const filePath=String(req.body?.file_path||'');
       if(filePath && !filePath.startsWith(`${closure.ctx.tid}/`)) return res.status(403).json({ok:false,error:'Archivo de evidencia no autorizado.'});
-      const closureRow={rubrica_id:closure.rubric.id,docente_id:closure.ctx.tid,grupo_materia_id:gmId,periodo_id:periodoId,archivo_path:filePath||null,archivo_nombre:String(req.body?.file_name||'').slice(0,180)||null,archivo_sha256:String(req.body?.file_sha256||'').slice(0,64)||null,registros:closure.detail.length,promedio_general:closure.detail.length?closure.detail.reduce((a,x)=>a+x.calificacion,0)/closure.detail.length:null,estado:'cerrado',resumen:closure.detail.map(x=>({alumno_id:x.alumno_id,matricula:x.matricula,calificacion:x.calificacion})),submitted_at:new Date().toISOString(),submitted_by:user.id};
+      const closureRow={rubrica_id:closure.rubric.id,docente_id:closure.ctx.tid,grupo_materia_id:gmId,periodo_id:periodoId,archivo_path:filePath||null,archivo_nombre:String(req.body?.file_name||'').slice(0,180)||null,archivo_sha256:String(req.body?.file_sha256||'').slice(0,64)||null,registros:closure.detail.length,promedio_general:closure.gradeRows.length?closure.gradeRows.reduce((a,x)=>a+x.calificacion,0)/closure.gradeRows.length:null,estado:'cerrado',resumen:closure.detail.map(x=>({alumno_id:x.alumno_id,matricula:x.matricula,calificacion:closure.gradeRows.find(z=>z.alumno_id===x.alumno_id)?.calificacion??x.calificacion})),submitted_at:new Date().toISOString(),submitted_by:user.id};
       const {data:close,error:ce}=await adminClient.from('cierres_evaluacion').upsert(closureRow,{onConflict:'rubrica_id'}).select('*').single(); if(ce) throw ce;
       const gradeRows=closure.gradeRows.map(x=>({...x,cierre_evaluacion_id:close.id}));
       for(const row of gradeRows){
