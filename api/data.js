@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {createGroupGradeBatch,listGroupGradeReviews,approveGroupGradeReview} from '../lib/group_grade_batch.js';
 import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
 import { academicGradesNavigation, academicGradeDetail, allowGradeExplorer } from '../lib/academic_grade_explorer.js';
 import { getClients, requireRoles } from '../lib/_admin.js';
@@ -4244,6 +4245,21 @@ export default async function handler(
       if (isSuspended && blockedResources.has(requestedResource)) {
         return res.status(403).json({ ok:false, error:'Este modulo esta temporalmente bloqueado mientras tu suspension esta en revision.' });
       }
+    }
+
+    // V5.8.4: bandeja de oficios, independiente de calificaciones oficiales.
+    if(req.method==='GET'&&req.query?.resource==='groupGradeReviews'){
+      return res.status(200).json({ok:true,data:await listGroupGradeReviews(adminClient,user,profile)});
+    }
+    if(req.method==='POST'&&req.body?.resource==='createGroupGradeBatch'){
+      const result=await createGroupGradeBatch(adminClient,user,profile,req.body);
+      await audit(adminClient,{userId:user.id,role:profile.rol,action:'create_group_grade_batch',module:'calificaciones',entity:'jaguar_cargas_grupo',entityId:result.carga_id,description:'Oficios de revisión de calificaciones de un grupo',after:result,req});
+      return res.status(200).json({ok:true,data:result});
+    }
+    if(req.method==='POST'&&req.body?.resource==='approveGroupGradeReview'){
+      const result=await approveGroupGradeReview(adminClient,user,profile,req.body);
+      await audit(adminClient,{userId:user.id,role:profile.rol,action:'approve_group_grade_review',module:'calificaciones',entity:'jaguar_cargas_materias',entityId:result.revision_id,description:'Aceptación de calificaciones por docente',after:result,req});
+      return res.status(200).json({ok:true,data:result});
     }
 
     /* GET */

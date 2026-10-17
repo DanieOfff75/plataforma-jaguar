@@ -4,6 +4,7 @@ import {readCredentialPhoto,saveCredentialPhoto} from '../lib/credential_photo.j
 import {buildDailyGradebookPdf} from '../lib/jaguar_gradebook_pdf.js';
 import {academicGradeDetail,allowGradeExplorer} from '../lib/academic_grade_explorer.js';
 import {buildAcademicGradesPdf} from '../lib/academic_grade_report_pdf.js';
+import {buildGradeBatchOfficePdf} from '../lib/grade_batch_office_pdf.js';
 import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { readFile } from 'node:fs/promises';
@@ -699,14 +700,15 @@ async function boletaPdf(admin,id,req=null){
   if(se) throw se;
   if(!s) throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
 
-  const [gradesQ,periodsQ,attendanceQ,incidentsQ,scheduleTeachersQ]=await Promise.all([
+  const [gradesQ,periodsQ,attendanceQ,incidentsQ,scheduleTeachersQ,groupSubjectsQ]=await Promise.all([
     admin.from('calificaciones').select('id,calificacion,periodo_id,docente_id,observaciones,periodos_escolares(id,nombre,ciclo_escolar),grupo_materias(id,materia_id,materias(id,nombre),grupos(id,clave,grado,letra,turno))').eq('alumno_id',id).order('grupo_materia_id').order('periodo_id'),
     admin.from('periodos_escolares').select('id,nombre,ciclo_escolar,activo,numero_periodo,es_periodo_actual').eq('ciclo_escolar',cycle).order('numero_periodo',{ascending:true}).order('id',{ascending:true}),
     admin.from('asistencias').select('id,fecha,estado,observaciones,grupo_materia_id').eq('alumno_id',id).order('fecha',{ascending:true}).limit(5000),
     admin.from('incidencias_prefectura').select('id,tipo,titulo,descripcion,fecha,estado,observaciones').eq('alumno_id',id).order('fecha',{ascending:false}).limit(500),
-    admin.from('horarios').select('grupo_materias!inner(id,grupo_id,materia_id,materias(id,nombre)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',s.grupo_id).eq('ciclo_escolar',cycle)
+    admin.from('horarios').select('grupo_materias!inner(id,grupo_id,materia_id,materias(id,nombre)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',s.grupo_id).eq('ciclo_escolar',cycle),
+    admin.from('grupo_materias').select('id,grupo_id,materia_id,materias(id,nombre)').eq('grupo_id',s.grupo_id)
   ]);
-  for(const q of [gradesQ,periodsQ,attendanceQ,incidentsQ,scheduleTeachersQ]) if(q.error) throw q.error;
+  for(const q of [gradesQ,periodsQ,attendanceQ,incidentsQ,scheduleTeachersQ,groupSubjectsQ]) if(q.error) throw q.error;
 
   let workshopName='Sin taller asignado';
   try{const {data:ws}=await admin.from('inscripciones_talleres').select('talleres(nombre),estado,ciclo_escolar').eq('alumno_id',id).eq('estado','inscrito').order('id',{ascending:false}).limit(1).maybeSingle();if(ws?.talleres?.nombre)workshopName=ws.talleres.nombre;}catch{}
@@ -731,12 +733,22 @@ async function boletaPdf(admin,id,req=null){
   const periodIndex=new Map(periodLabels.filter(p=>p.id!=null).map((p,i)=>[String(p.id),i]));
 
   const subjectMap=new Map();
+  // Registrar todas las materias oficiales del grupo, incluso sin nota.
+  // La versión anterior omitía Artes explícitamente y además ocultaba materias
+  // que aún no tenían una fila en calificaciones.
+  for(const gm of groupSubjectsQ.data||[]){
+    const name=String(gm.materias?.nombre||'Materia');
+    if(/lengua\s+ind[ií]gena/i.test(name))continue; // Exclusión histórica aprobada para el formato.
+    if(!subjectMap.has(String(gm.materia_id)))subjectMap.set(String(gm.materia_id),{
+      materia_id:gm.materia_id,name,grades:{},teachers:new Set(),gradeTeachersFromGroup:new Set(),observations:[]
+    });
+  }
   for(const g of gradesQ.data||[]){
     if(g.periodos_escolares?.ciclo_escolar!==cycle) continue;
     const sid=g.grupo_materias?.materia_id||g.grupo_materia_id;
     const name=g.grupo_materias?.materias?.nombre||'Materia';
     // Reglas del formato aprobado: estas áreas no se imprimen en la boleta oficial.
-    if(/\bartes\b|lengua\s+ind[ií]gena/i.test(String(name))) continue;
+    if(/lengua\s+ind[ií]gena/i.test(String(name))) continue;
     if(!subjectMap.has(String(sid))) subjectMap.set(String(sid),{materia_id:sid,name,grades:{},teachers:new Set(),gradeTeachersFromGroup:new Set(),observations:[]});
     const x=subjectMap.get(String(sid));
     const pi=periodIndex.get(String(g.periodo_id));
@@ -767,6 +779,7 @@ async function boletaPdf(admin,id,req=null){
     if(te)throw te; teacherNames=new Map((ts||[]).map(t=>[String(t.id),t.nombre_completo]));
   }
   const subjects=[...subjectMap.values()].sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
+  if(subjects.length>10)throw Object.assign(new Error('El grupo tiene más de 10 materias oficiales; revisa las asignaciones antes de emitir una boleta incompleta.'),{status:409});
   for(const x of subjects){
     x.teacher=[...x.teachers].map(t=>teacherNames.get(t)).filter(Boolean)[0]||'Sin docente';
     const vals=Object.values(x.grades).filter(v=>v!==null&&Number.isFinite(v));
@@ -850,10 +863,69 @@ async function dailyGradebookPdf(admin,snapshotId,req){
 }
 
 export default async function handler(req,res){try{if(req.method!=='POST')return res.status(405).json({ok:false,error:'Método no permitido.'});const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','alumno']);const b=req.body||{};
+  if(b.action==='grade_batch_office_pdf'){
+    const revisionId=Number(b.revision_id||0);
+    if(!Number.isSafeInteger(revisionId)||revisionId<1)return res.status(400).json({ok:false,error:'Selecciona un oficio válido.'});
+    const {data:rev,error:re}=await adminClient.from('jaguar_cargas_materias')
+      .select('id,carga_id,grupo_materia_id,docente_id,estado,notas_originales,notas_finales,firma_docente_path')
+      .eq('id',revisionId).maybeSingle();
+    if(re)throw re;if(!rev)return res.status(404).json({ok:false,error:'Oficio no encontrado.'});
+    if(profile.rol==='docente'){
+      const {data:t,error:te}=await adminClient.from('docentes').select('id').eq('auth_user_id',user.id).maybeSingle();
+      if(te)throw te;
+      if(Number(t?.id)!==Number(rev.docente_id))return res.status(403).json({ok:false,error:'Este oficio no corresponde a tu materia.'});
+    }else if(!allowGradeExplorer(profile.rol))return res.status(403).json({ok:false,error:'No autorizado para ver este oficio.'});
+    const [bq,gmq,tq]=await Promise.all([
+      adminClient.from('jaguar_cargas_grupo').select('id,grupo_id,periodo_id,actor_nombre,actor_rol,firma_departamento_path').eq('id',rev.carga_id).maybeSingle(),
+      adminClient.from('grupo_materias').select('id,grupo_id,materias(nombre),grupos(clave)').eq('id',rev.grupo_materia_id).maybeSingle(),
+      adminClient.from('docentes').select('id,nombre_completo').eq('id',rev.docente_id).maybeSingle()
+    ]);
+    for(const q of [bq,gmq,tq])if(q.error)throw q.error;
+    const [studentsQ,periodQ]=await Promise.all([
+      adminClient.from('alumnos').select('id,matricula,nombre_completo').eq('grupo_id',bq.data.grupo_id).limit(500),
+      adminClient.from('periodos_escolares').select('id,nombre').eq('id',bq.data.periodo_id).maybeSingle()
+    ]);
+    if(studentsQ.error)throw studentsQ.error;if(periodQ.error)throw periodQ.error;
+    const bytes=await buildGradeBatchOfficePdf({revision:rev,batch:{...bq.data,periodo:periodQ.data?.nombre},
+      subject:{nombre:gmq.data?.materias?.nombre,grupo:gmq.data?.grupos?.clave},teacher:tq.data,students:studentsQ.data,
+      logoBytes:await loadLogo(),loadSignature:(pdf,path)=>loadSignatureImage(pdf,adminClient,path)});
+    return res.status(200).json({ok:true,pdf_base64:Buffer.from(bytes).toString('base64'),filename:`ITHLA-Oficio-Revision-${revisionId}.pdf`});
+  }
   if(b.action==='academic_grades_pdf'){
     if(!allowGradeExplorer(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});
     const details=await academicGradeDetail(adminClient,profile.rol,b);
-    const bytes=await buildAcademicGradesPdf(details);
+    // La firma del docente corresponde al responsable de la materia, no al usuario que descargó.
+    const {data:assigned,error:asErr}=await adminClient.from('asignaciones_docentes')
+      .select('docente_id,docentes(id,nombre_completo,correo,auth_user_id)')
+      .eq('grupo_materia_id',Number(b.grupo_materia_id)).eq('ciclo_escolar',details.periodo.ciclo_escolar)
+      .eq('activo',true).order('id',{ascending:false}).limit(1);
+    if(asErr)throw asErr;
+    const teacher=assigned?.[0]?.docentes||null;
+    const teacherProfile=teacher?await profileSignatureByAuth(adminClient,teacher.auth_user_id,teacher.nombre_completo,'docente',teacher.correo):null;
+    let deptSigner=null, approvedSigner=null;
+    // Sólo un oficio institucional realmente aceptado sirve como prueba de autoría.
+    try{
+      const {data:accepted,error:qe}=await adminClient.from('jaguar_cargas_materias')
+        .select('id,firma_docente_path,firmado_at,jaguar_cargas_grupo!inner(actor_nombre,actor_rol,firma_departamento_path,grupo_id,periodo_id)')
+        .eq('grupo_materia_id',Number(b.grupo_materia_id)).eq('estado','aceptada')
+        .eq('jaguar_cargas_grupo.grupo_id',Number(b.grupo_id))
+        .eq('jaguar_cargas_grupo.periodo_id',Number(b.periodo_id))
+        .order('id',{ascending:false}).limit(1);
+      if(!qe&&accepted?.length){
+        const approved=accepted[0],issuer=approved.jaguar_cargas_grupo;
+        deptSigner={name:issuer.actor_nombre,status:`Carga institucional · ${String(issuer.actor_rol).replaceAll('_',' ')}`,path:issuer.firma_departamento_path};
+        approvedSigner=approved.firma_docente_path||null;
+      }
+    }catch{/* Una base sin la nueva migración aún debe poder emitir reportes tradicionales. */}
+    const signers={
+      department:deptSigner,
+      teacher:{name:teacher?.nombre_completo||'Docente pendiente de asignar',
+        status:approvedSigner?'Evaluación aceptada y firmada':deptSigner?'Pendiente de firma':'Espacio para firma docente',
+        path:approvedSigner||(!deptSigner?teacherProfile?.firma_path:null)}
+    };
+    const logoBytes=await loadLogo();
+    const bytes=await buildAcademicGradesPdf(details,{signatures:signers,logoBytes,
+      loadSignature:(pdf,path)=>loadSignatureImage(pdf,adminClient,path)});
     const safeFile=(s)=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,65);
     return res.status(200).json({ok:true,pdf_base64:Buffer.from(bytes).toString('base64'),filename:`ITHLA-Calificaciones-${safeFile(details.grupo?.clave)}-${safeFile(details.periodo?.nombre)}-${safeFile(details.materia?.nombre)}.pdf`});
   }

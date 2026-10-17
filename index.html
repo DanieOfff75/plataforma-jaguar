@@ -248,6 +248,8 @@ async function loadPage(page){
     if(page==='notificaciones'&&['alumno','control_escolar','control'].includes(S.role))c.innerHTML=await jaguarNotificationsModule();
     else c.innerHTML=await pageHtml(page);
     if(page==='calificaciones'&&['control_escolar','control','direccion_escolar'].includes(S.role))jaguarGradesRender();
+    if(page==='calificaciones'&&['control_escolar','control','direccion_escolar','docente'].includes(S.role))c.insertAdjacentHTML('afterbegin','<div class="card mb-3"><button class="btn primary" onclick="loadPage(\'calificaciones_lote_grupo\')">📄 Cargas por grupo y oficios docentes</button></div>');
+    if(page==='calificaciones_lote_grupo')jaguarBatchLoadReviews();
     if(page==='perfil'&&['docente','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','direccion_escolar','control_escolar','control','recursos_monetarios'].includes(S.role)){requestAnimationFrame(()=>setupSignatureCanvas());setTimeout(setupSignatureCanvas,120);}
     if(typeof jaguarRefreshNotificationBadge==='function')await jaguarRefreshNotificationBadge();
     if(S.role==='alumno'&&typeof applyStudentAccessTheme==='function')applyStudentAccessTheme();
@@ -268,6 +270,7 @@ async function pageHtml(p){
   if(p==='aulas')return jaguarAulasModule();
   if(p==='examenes')return jaguarExamenesModule();
   if(p==='calificaciones_masivas')return jaguarCalificacionesMasivasModule();
+  if(p==='calificaciones_lote_grupo')return jaguarGroupBatchModule();
   if(p==='inicio'||p==='resumen'){
     if(typeof jaguarPremiumHome==='function')return jaguarPremiumHome();
     if(S.role==='docente')return v3TeacherDashboard();
@@ -4586,6 +4589,122 @@ async function jaguarGradesDownloadPdf(){
     downloadPdf(result.pdf_base64,result.filename||'ITHLA-Desglose-Calificaciones.pdf');
   }catch(e){toast(e.message)}
 }
+/* V5.8.4: carga de un Excel completo por grupo, con validación y firma por materia. */
+let _jaguarGroupBatch=null;
+async function jaguarGroupBatchModule(){
+  if(S.role==='docente')return `<div class="space-y-4"><div class="card"><h2 class="text-xl font-bold">Oficios de revisión · Calificaciones</h2><p class="text-sm mt-2">Revisa las notas que Control Escolar envió para tus materias. Puedes corregir con motivo y aceptar mediante tu firma registrada en Perfil.</p></div><div id="group_batch_teacher">Consultando oficios…</div></div>`;
+  if(!['control_escolar','control','direccion_escolar'].includes(S.role))return '<div class="card">Sin permiso.</div>';
+  const [nav,students]=await Promise.all([api('academicGradesNavigation'),api('students')]);
+  _jaguarGroupBatch={nav,students,preview:null};
+  return `<div class="space-y-4"><div class="card"><h2 class="text-xl font-bold">Carga masiva de grupo completo</h2><p class="text-sm mt-2">Un Excel con todas las materias del grupo y las calificaciones finales del periodo. Las notas quedan pendientes hasta que cada docente acepte su oficio; no se publican automáticamente.</p><div class="grid md:grid-cols-2 gap-3 mt-3"><label>Grupo<select class="select mt-1" id="batch_group"><option value="">Seleccionar…</option>${nav.groups.map(g=>`<option value="${Number(g.id)}">${esc(g.clave)}</option>`).join('')}</select></label><label>Periodo<select class="select mt-1" id="batch_period"><option value="">Seleccionar…</option>${nav.periods.map(p=>`<option value="${Number(p.id)}">${esc(p.nombre)} · ${esc(p.ciclo_escolar)}</option>`).join('')}</select></label></div><div class="flex flex-wrap gap-3 mt-4"><button class="btn" onclick="jaguarBatchDownloadTemplate()">Descargar plantilla del grupo</button><label class="btn primary cursor-pointer">Seleccionar Excel<input class="hidden" type="file" accept=".xlsx,.xls" onchange="jaguarBatchReadFile(this.files[0])"></label></div><div id="batch_preview" class="mt-4"></div></div><div class="card"><h3>Estado de los oficios</h3><div id="group_batch_admin">Consultando…</div></div></div>`;
+}
+function jaguarBatchSelection(){
+  const st=_jaguarGroupBatch;
+  if(!st)throw Error('Abre Cargas por grupo desde Calificaciones.');
+  const gid=Number(document.getElementById('batch_group')?.value),pid=Number(document.getElementById('batch_period')?.value);
+  const g=st.nav.groups.find(x=>Number(x.id)===gid),p=st.nav.periods.find(x=>Number(x.id)===pid);
+  if(!g||!p)throw Error('Selecciona grupo y periodo.');
+  const subjects=st.nav.subjects.filter(x=>Number(x.grupo_id)===gid).sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+  const students=st.students.filter(x=>Number(x.grupo_id)===gid&&x.activo!==false).sort((a,b)=>String(a.nombre_completo).localeCompare(String(b.nombre_completo),'es'));
+  if(!subjects.length||!students.length)throw Error('El grupo necesita materias y alumnos activos.');
+  return {g,p,subjects,students};
+}
+function jaguarBatchDownloadTemplate(){
+ try{
+  if(!window.XLSX)throw Error('El editor Excel no está disponible.');
+  const {g,p,subjects,students}=jaguarBatchSelection();
+  const rows=[['MATRICULA','ALUMNO',...subjects.map(s=>s.nombre)],['IDENTIFICADORES','NO MODIFICAR',...subjects.map(s=>`GM:${s.id}`)],...students.map(st=>[st.matricula,st.nombre_completo,...subjects.map(()=>null)])];
+  const ws=XLSX.utils.aoa_to_sheet(rows);ws['!cols']=[{wch:25},{wch:38},...subjects.map(()=>({wch:25}))];
+  ws['!freeze']='C3';
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'NOTAS');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['JAGUAR_CARGA_GRUPO','V1'],['grupo_id',g.id],['periodo_id',p.id],['ciclo_escolar',p.ciclo_escolar],['instruccion','Las calificaciones deben ser valores finales de 0 a 10. No cambies matrículas ni identificadores.']]),'JAGUAR_META');
+  XLSX.writeFile(wb,`ITHLA-Carga-${g.clave}-${p.nombre}.xlsx`);
+ }catch(e){toast(e.message)}
+}
+async function jaguarBatchReadFile(file){
+ try{
+  if(!file) return;
+  const sel=jaguarBatchSelection();
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellFormula:true});
+  const sheet=wb.Sheets.NOTAS,meta=wb.Sheets.JAGUAR_META;
+  if(!sheet||!meta)throw Error('Elige una plantilla de Carga por grupo generada en este módulo.');
+  const metaRows=XLSX.utils.sheet_to_json(meta,{header:1,raw:true,defval:''});
+  if(String(metaRows[0]?.[0])!=='JAGUAR_CARGA_GRUPO'||String(metaRows[0]?.[1])!=='V1'||Number(metaRows[1]?.[1])!==Number(sel.g.id)||Number(metaRows[2]?.[1])!==Number(sel.p.id))throw Error('La plantilla corresponde a otro grupo o periodo.');
+  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});
+  if(rows.length!==sel.students.length+2)throw Error(`El Excel debe contener exactamente ${sel.students.length} alumnos, sin filas extra.`);
+  const keys=rows[1].slice(2).map(String);
+  if(keys.length!==sel.subjects.length||keys.some((k,i)=>k!==`GM:${sel.subjects[i].id}`))throw Error('Las materias o identificadores fueron modificados. Descarga otra plantilla.');
+  const students=new Map(sel.students.map(s=>[String(s.matricula).trim().toUpperCase(),s]));
+  const seen=new Set(),bySubject=sel.subjects.map(s=>({grupo_materia_id:s.id,rows:[]}));
+  for(let i=2;i<rows.length;i++){
+    const matr=String(rows[i][0]||'').trim().toUpperCase(),st=students.get(matr);
+    if(!st||seen.has(matr))throw Error(`Matrícula incorrecta o duplicada en fila ${i+1}.`);
+    seen.add(matr);
+    for(let c=0;c<sel.subjects.length;c++){
+      const cell=sheet[XLSX.utils.encode_cell({r:i,c:c+2})];
+      const raw=cell?.v;
+      if(raw==null||raw===''||!Number.isFinite(Number(raw)))throw Error(`Falta calificación numérica de ${matr} en ${sel.subjects[c].nombre}.`);
+      const num=Number(raw);
+      if(num<0||num>10||Math.round(num*100)!==num*100)throw Error(`Valor fuera de 0–10 o con más de dos decimales: ${matr} · ${sel.subjects[c].nombre}.`);
+      bySubject[c].rows.push({alumno_id:st.id,calificacion:num});
+    }
+  }
+  const grades=bySubject.flatMap(x=>x.rows.map(r=>r.calificacion));
+  _jaguarGroupBatch.preview={sel,materias:bySubject,file:file.name};
+  document.getElementById('batch_preview').innerHTML=`<div class="card"><h3>Revisión antes de enviar</h3><p class="text-sm mt-2">${esc(sel.g.clave)} · ${esc(sel.p.nombre)} · ${sel.students.length} alumnos · ${sel.subjects.length} materias · ${grades.length} notas. Archivo: ${esc(file.name)}</p><p class="text-sm mt-2 text-[#D4AF37]">Todas las notas pasarán a revisión de los docentes; no se escribirán todavía en la boleta.</p><button class="btn primary mt-4" onclick="jaguarBatchSend()">Firmar y enviar oficios por materia</button></div>`;
+ }catch(e){_jaguarGroupBatch.preview=null;toast(e.message);const el=document.getElementById('batch_preview');if(el)el.innerHTML=`<div class="card">${esc(e.message)}</div>`;}
+}
+async function jaguarBatchSend(){
+ try{
+  const p=_jaguarGroupBatch?.preview;if(!p)throw Error('Selecciona y revisa un Excel primero.');
+  if(Number(document.getElementById('batch_group')?.value)!==Number(p.sel.g.id)||Number(document.getElementById('batch_period')?.value)!==Number(p.sel.p.id))throw Error('Cambiaste el grupo o periodo; vuelve a cargar el Excel.');
+  if(!confirm(`¿Enviar ${p.materias.length} oficios docentes? Ninguna calificación será oficial hasta su aceptación.`))return;
+  const result=await apiPost('createGroupGradeBatch',{grupo_id:p.sel.g.id,periodo_id:p.sel.p.id,materias:p.materias});
+  toast(`Lote #${result.carga_id} enviado a ${result.materias_enviadas} materias.`); _jaguarGroupBatch.preview=null;
+  document.getElementById('batch_preview').innerHTML='<p class="mt-3">Lote enviado para revisión docente.</p>';
+  jaguarBatchLoadReviews();
+ }catch(e){toast(e.message)}
+}
+async function jaguarBatchLoadReviews(){
+ const el=document.getElementById(S.role==='docente'?'group_batch_teacher':'group_batch_admin');if(!el)return;
+ try{
+  const rows=await api('groupGradeReviews');
+  el.innerHTML=rows.map(r=>`<div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 py-3"><div><b>${esc(r.grupo_materias?.materias?.nombre||'Materia')}</b><div class="text-sm">${esc(r.grupo_materias?.grupos?.clave||'')} · Lote #${r.carga_id} · ${r.notas_originales?.length||0} alumnos</div><small>${esc(r.jaguar_cargas_grupo?.actor_nombre||'')} · ${esc(r.estado)}</small></div><div class="flex gap-2"><button class="btn" onclick="jaguarBatchDownloadOffice(${Number(r.id)})">Descargar oficio</button>${S.role==='docente'&&r.estado==='pendiente'?`<button class="btn primary" onclick="jaguarBatchTeacherReview(${Number(r.id)})">Revisar y firmar</button>`:''}</div></div>`).join('')||'<p class="text-sm mt-3">No hay oficios registrados.</p>';
+ }catch(e){el.innerHTML=`<p class="text-sm text-rose-300 mt-3">${esc(e.message)}</p>`;}
+}
+let _jaguarReviewCurrent=null;
+async function jaguarBatchTeacherReview(id){
+ try{
+  const rows=await api('groupGradeReviews'),r=rows.find(x=>Number(x.id)===Number(id));
+  if(!r||r.estado!=='pendiente')throw Error('Revisión no disponible.');
+  _jaguarReviewCurrent=r;
+  const html=(r.notas_originales||[]).map((x,i)=>`<tr><td>${i+1}</td><td>${x.alumno_id}</td><td>${Number(x.calificacion).toFixed(2)}</td><td><input type="number" class="input w-28" min="0" max="10" step="0.01" id="rev_grade_${i}" value="${Number(x.calificacion)}"></td><td><input class="input" id="rev_reason_${i}" placeholder="Sólo si modificas la nota"></td></tr>`).join('');
+  modal('Oficio de revisión · '+esc(r.grupo_materias?.materias?.nombre||'Materia'),`<div class="space-y-3"><p>Emitido por: <b>${esc(r.jaguar_cargas_grupo?.actor_nombre||'Control Escolar')}</b>. Las notas no están registradas como oficiales.</p><div class="scroll max-h-80"><table class="table"><thead><tr><th>N°</th><th>ID alumno</th><th>Original</th><th>Confirmar</th><th>Motivo de cambio</th></tr></thead><tbody>${html}</tbody></table></div><p class="text-xs">Al aceptar se utilizará la firma registrada en Perfil. No podrás modificar una evaluación ya aceptada desde esta pantalla.</p><button class="btn primary" onclick="jaguarBatchTeacherApprove(${Number(id)})">Aceptar, firmar y registrar notas</button></div>`);
+ }catch(e){toast(e.message)}
+}
+async function jaguarBatchTeacherApprove(id){
+ try{
+  const r=_jaguarReviewCurrent;if(!r||Number(r.id)!==Number(id))throw Error('Oficio no disponible.');
+  const notas=r.notas_originales.map((orig,i)=>({alumno_id:Number(orig.alumno_id),calificacion:Number(document.getElementById(`rev_grade_${i}`)?.value),motivo:String(document.getElementById(`rev_reason_${i}`)?.value||'').trim()}));
+  for(let i=0;i<notas.length;i++){
+   if(!Number.isFinite(notas[i].calificacion)||notas[i].calificacion<0||notas[i].calificacion>10)throw Error(`Calificación inválida en alumno #${i+1}`);
+   if(Number(notas[i].calificacion)!==Number(r.notas_originales[i].calificacion)&&notas[i].motivo.length<12)throw Error(`Justifica el cambio en alumno #${i+1} (mínimo 12 caracteres).`);
+  }
+  if(!confirm('¿Aceptar y firmar las calificaciones de esta materia? Se registrarán oficialmente.'))return;
+  const data=await apiPost('approveGroupGradeReview',{revision_id:id,notas});
+  closeModal();toast(`${data.aceptadas} calificaciones registradas.`);await jaguarBatchLoadReviews();
+ }catch(e){toast(e.message)}
+}
+
+async function jaguarBatchDownloadOffice(id){
+ try{
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  const resp=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'grade_batch_office_pdf',revision_id:Number(id)})});
+  const result=await resp.json();if(!resp.ok||!result.ok)throw Error(result.error||'No se pudo generar el oficio.');
+  downloadPdf(result.pdf_base64,result.filename);
+ }catch(e){toast(e.message)}
+}
+
 </script>
 </body>
 </html>
