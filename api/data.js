@@ -8,6 +8,7 @@ import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from './d
 import { buildOfficialPdf } from '../lib/documentos_oficiales_pdf.js';
 import { readCredentialPhoto } from '../lib/credential_photo.js';
 import { normalizeNewPeriod } from '../lib/periodos_escolares.js';
+import {departmentForPlanningRole,planningVerdictSummary,planningRejectReason} from '../lib/planeaciones_dictamen.js';
 
 const resources = {
   groups: 'grupos',
@@ -49,6 +50,10 @@ const studentServices = [
 
 const archiveManagers = ['archivo_escolar'];
 const archiveAcademics = ['archivo_escolar'];
+// Los permisos para planeaciones son específicos; no conceden acceso a expedientes generales.
+const planningReviewers = ['direccion_escolar','control_escolar','control','coordinacion_academica','servicios_docentes'];
+function canReviewTeacherPlanning(profile){return Boolean(departmentForPlanningRole(profile?.rol));}
+function canReadTeacherPlanning(profile){return canReviewTeacherPlanning(profile)||profile?.rol==='docente'||profile?.rol==='archivo_escolar';}
 
 const noticeWriters = [
   'direccion_escolar',
@@ -496,6 +501,23 @@ async function getStudentOverview(admin, userId) {
     return { student: enriched, grades: [], attendance: [], schedules: [], workshops: [], requests: [] };
   }
 
+  // Colores oficiales de las asignaturas del grupo, definidos en Jaguar por
+  // los docentes responsables. Se exponen únicamente para el propio horario.
+  if (student.grupo_id && (schedules.data||[]).length) {
+    let byMateria=new Map();
+    try {
+      const assignedColors=await getGroupSubjectColors(admin, student.grupo_id);
+      byMateria=new Map(assignedColors.map(x=>[String(x.materia_id),validHexColor(x.color_hex,'#D8B45A')]));
+    } catch (e) {
+      // La visualización de colores no debe impedir al alumno consultar notas,
+      // asistencias u horario si falla temporalmente la configuración cromática.
+      console.warn('No se pudieron cargar colores del horario:',e.message);
+    }
+    for(const row of schedules.data||[]) {
+      row.subject_color=byMateria.get(String(row.grupo_materias?.materia_id))||'#D8B45A';
+    }
+  }
+
   return {
     student: enriched,
     grades: grades.data || [],
@@ -562,13 +584,17 @@ async function getTeacherRoster(admin, user, groupSubjectId, extra = {}) {
    ========================================================= */
 function evaluationTeacherAllowed(role){ return role === 'docente'; }
 function normalizeEvaluationItems(items){
-  const rows = Array.isArray(items) ? items : [];
+  const rows=Array.isArray(items)?items:[];
   return rows.map((x,i)=>{
-    const ponderacion=Math.max(0,Math.min(100,Number(x.ponderacion||0)));
-    const maximo=Number.isFinite(Number(x.maximo))&&Number(x.maximo)>0?Number(x.maximo):Number((ponderacion/10).toFixed(2));
-    return {nombre:String(x.nombre||`Actividad ${String(i+1).padStart(2,'0')}`).trim().slice(0,160),ponderacion,maximo,orden:i+1};
-  }).filter(x=>x.nombre && Number.isFinite(x.ponderacion) && Number.isFinite(x.maximo) && x.maximo>0);
+    const peso=Number(x?.ponderacion);
+    const nombre=String(x?.nombre||'').trim().slice(0,160);
+    const ponderacion=Number(peso.toFixed(2));
+    if(!nombre||!Number.isFinite(peso)||peso<=0||peso>100)throw Object.assign(new Error(`Actividad ${i+1}: captura un nombre y una ponderación entre 0.01% y 100%.`),{status:400});
+    // Los 10 puntos máximos se obtienen SIEMPRE del porcentaje: evita doble escala contradictoria.
+    return {id:Number(x?.id||0)||null,nombre,ponderacion,maximo:Number((ponderacion/10).toFixed(3)),orden:i+1};
+  });
 }
+
 async function getTeacherEvaluationOverview(admin,user){
   const tid=await teacherId(admin,user.id);
   if(!tid) throw Object.assign(new Error('Docente no encontrado.'),{status:404});
@@ -639,8 +665,10 @@ async function buildEvaluationClosure(admin,user,gmId,periodoId){
       const row=map.get(`${st.id}|${c.id}`); const value=row?.valor;
       if(value===null||value===undefined||value==='') throw Object.assign(new Error(`Falta la calificación de ${st.nombre_completo} en ${c.nombre}.`),{status:400});
       const n=Number(value); if(!Number.isFinite(n)||n<0||n>10) throw Object.assign(new Error(`La calificación de ${st.nombre_completo} en ${c.nombre} debe estar entre 0 y 10.`),{status:400});
-      const maxPoints=Number(c.maximo);
-      final += (n/10)*maxPoints;
+      const maxPoints=Number((Number(c.ponderacion)/10).toFixed(3));
+      // Equivalencia directa: una actividad con valor 8 y ponderación 30% aporta 2.4/10.
+      // No se depende del redondeo de maximo almacenado en la base de datos.
+      final += n*(Number(c.ponderacion)/100);
       activities.push({componente_id:c.id,nombre:c.nombre,valor:n,maximo_puntos:maxPoints,ponderacion:Number(c.ponderacion)});
     }
     const rounded=Math.round(final*10)/10;
@@ -1310,12 +1338,29 @@ async function getArchiveGradeClaims(admin,user,profile){
 }
 
 async function getTeacherPlans(admin,user,profile){
-  if(!(isArchiveAcademic(profile)||profile?.rol==='docente')) throw Object.assign(new Error('No autorizado.'),{status:403});
+  if(!canReadTeacherPlanning(profile)) throw Object.assign(new Error('No autorizado para consultar planeaciones.'),{status:403});
   let q=admin.from('planeaciones_docentes').select('*,docentes(id,nombre_completo,numero_empleado),grupo_materias(id,grupo_id,materia_id,materias(id,nombre,clave),grupos(id,clave,grado,letra,turno)),periodos_escolares(id,nombre,ciclo_escolar)').order('updated_at',{ascending:false}).limit(500);
   if(profile.rol==='docente'){
     const tid=await teacherId(admin,user.id); if(!tid)throw Object.assign(new Error('Docente no encontrado.'),{status:404}); q=q.eq('docente_id',tid);
   }
-  const {data,error}=await q;if(error)throw error;return data||[];
+  const {data,error}=await q;if(error)throw error;
+  const rows=data||[];
+  if(!rows.length)return rows;
+  const ids=rows.map(x=>x.id);
+  const [votesQ,appealsQ]=await Promise.all([
+    admin.from('planeacion_dictamenes').select('planeacion_id,departamento,dictamen,motivo,firmado_por,firmado_at,firma_sha256').in('planeacion_id',ids),
+    admin.from('planeacion_apelaciones').select('planeacion_origen_id,planeacion_nueva_id,argumentos,cambios_realizados,created_at').in('planeacion_origen_id',ids)
+  ]);
+  for(const result of [votesQ,appealsQ])if(result.error){
+    if(/does not exist|schema cache|42P01|PGRST205/i.test(result.error.message||''))
+      throw Object.assign(new Error('Falta ejecutar sql/JAGUAR_V5_4_PLANEACIONES_DICTAMENES.sql en Supabase antes de consultar las planeaciones.'),{status:409});
+    throw result.error;
+  }
+  const votesById=new Map(),appealsById=new Map();
+  for(const vote of votesQ.data||[]){const arr=votesById.get(Number(vote.planeacion_id))||[];arr.push(vote);votesById.set(Number(vote.planeacion_id),arr);}
+  for(const item of appealsQ.data||[])appealsById.set(Number(item.planeacion_origen_id),item);
+  return rows.map(r=>({ ...r,dictamenes:votesById.get(Number(r.id))||[],
+    votacion:planningVerdictSummary(votesById.get(Number(r.id))||[]),apelacion:appealsById.get(Number(r.id))||null}));
 }
 
 async function archiveSchoolRecords(admin,req){
@@ -1441,7 +1486,7 @@ async function getArchivePathUrl(admin,user,profile,body,req){
     expedienteId=Number(plan.docente_id);
     if(profile.rol==='docente'){
       const tid=await teacherId(admin,user.id);allowed=Number(tid)===Number(plan.docente_id);
-    }else if(isArchiveAcademic(profile)){
+    }else if(canReviewTeacherPlanning(profile)){
       allowed=true;
     }
     if(!allowed)throw Object.assign(new Error('No tienes autorización para consultar esta planeación.'),{status:403});
@@ -1580,22 +1625,99 @@ async function sendTeacherPlanning(admin,user,profile,body,req){
   if(profile.rol!=='docente')throw Object.assign(new Error('Solo docentes pueden enviar sus planeaciones.'),{status:403});
   const tid=await teacherId(admin,user.id),id=Number(body.id||0);if(!tid||!id)throw Object.assign(new Error('Planeación no válida.'),{status:400});
   const {data:current,error:ce}=await admin.from('planeaciones_docentes').select('*').eq('id',id).maybeSingle();if(ce)throw ce;if(!current||Number(current.docente_id)!==Number(tid))throw Object.assign(new Error('No puedes enviar esta planeación.'),{status:403});
-  if(!['borrador','devuelta'].includes(current.estado))throw Object.assign(new Error('Solo puedes enviar una planeación en borrador o devuelta para corrección.'),{status:409});
+  if(current.estado!=='borrador')throw Object.assign(new Error('Sólo los borradores nuevos pueden enviarse. Si fue rechazada, crea una apelación y una nueva versión.'),{status:409});
   const {data,error}=await admin.from('planeaciones_docentes').update({estado:'enviada',enviado_at:new Date().toISOString(),enviado_por:user.id,updated_at:new Date().toISOString()}).eq('id',id).select('*').single();if(error)throw error;
   await audit(admin,{userId:user.id,role:profile.rol,action:'submit_teacher_planning',module:'archivo_escolar',entity:'planeaciones_docentes',entityId:id,description:'Planeación enviada a revisión',after:data,req});
   return data;
 }
 
 async function reviewTeacherPlanning(admin,user,profile,body,req){
-  if(!isArchiveAcademic(profile))throw Object.assign(new Error('No autorizado para revisar planeaciones.'),{status:403});
-  const id=Number(body.id||0),estado=['revisada','devuelta','cerrada'].includes(body.estado)?body.estado:null;if(!id||!estado)throw Object.assign(new Error('Revisión no válida.'),{status:400});
-  const {data:current,error:ce}=await admin.from('planeaciones_docentes').select('*').eq('id',id).maybeSingle();if(ce)throw ce;if(!current)throw Object.assign(new Error('Planeación no encontrada.'),{status:404});
-  const allowedTransition=((estado==='revisada'||estado==='devuelta')&&current.estado==='enviada') || (estado==='cerrada'&&current.estado==='revisada');
-  if(!allowedTransition)throw Object.assign(new Error(`La planeación está en estado ${current.estado} y no puede pasar directamente a ${estado}.`),{status:409});
-  const patch={estado,revision_observaciones:String(body.observaciones||'').trim().slice(0,2000)||null,revisado_por:user.id,revisado_at:new Date().toISOString(),updated_at:new Date().toISOString()};
-  const {data,error}=await admin.from('planeaciones_docentes').update(patch).eq('id',id).select('*').single();if(error)throw error;
-  await audit(admin,{userId:user.id,role:profile.rol,action:'review_teacher_planning',module:'archivo_escolar',entity:'planeaciones_docentes',entityId:id,description:`Planeación marcada como ${estado}`,after:data,req});
+  const departamento=departmentForPlanningRole(profile?.rol);
+  if(!departamento)throw Object.assign(new Error('Sólo los cuatro departamentos académicos pueden emitir dictámenes.'),{status:403});
+  const id=Number(body.id||0),decision=String(body.dictamen||'').trim();
+  if(!id||!['aprobada','rechazada'].includes(decision))throw Object.assign(new Error('Selecciona Aprobar y firmar o Rechazar con argumentos.'),{status:400});
+  const motivo=decision==='rechazada'?planningRejectReason(body.observaciones):String(body.observaciones||'').trim().slice(0,2000);
+  const {data:current,error:ce}=await admin.from('planeaciones_docentes').select('id,estado,docente_id').eq('id',id).maybeSingle();
+  if(ce)throw ce;
+  if(!current)throw Object.assign(new Error('Planeación no encontrada.'),{status:404});
+  if(!['enviada','revisada'].includes(current.estado))throw Object.assign(new Error('Esta versión no admite nuevos dictámenes.'),{status:409});
+  const {data:perfil,error:pe}=await admin.from('perfiles').select('firma_path,firma_sha256').eq('id',user.id).maybeSingle();
+  if(pe)throw pe;
+  if(!perfil?.firma_path||!perfil?.firma_sha256)throw Object.assign(new Error('Primero registra tu firma digital en Perfil para firmar un dictamen.'),{status:409});
+  const {data:stored,error:se}=await admin.storage.from('firmas-institucionales').download(perfil.firma_path);
+  if(se||!stored)throw Object.assign(new Error('No se pudo comprobar la firma privada; vuelve a guardarla desde Perfil.'),{status:409});
+  const hash=crypto.createHash('sha256').update(Buffer.from(await stored.arrayBuffer())).digest('hex');
+  if(hash!==String(perfil.firma_sha256).toLowerCase())throw Object.assign(new Error('La firma registrada no coincide con el archivo original.'),{status:409});
+  const {data,error}=await admin.rpc('jaguar_firmar_dictamen_planeacion',{
+    p_planeacion_id:id,p_departamento:departamento,p_dictamen:decision,p_motivo:motivo||null,
+    p_firmado_por:user.id,p_firma_path:perfil.firma_path,p_firma_sha256:hash
+  });
+  if(error){
+    if(/function.*does not exist|schema cache|PGRST202/i.test(error.message||''))throw Object.assign(new Error('Ejecuta la migración SQL de dictámenes V5.4 antes de firmar.'),{status:409});
+    throw error;
+  }
+  await audit(admin,{userId:user.id,role:profile.rol,action:'sign_teacher_planning_verdict',module:'planeaciones',entity:'planeacion_dictamenes',entityId:id,
+    description:`${departamento}: ${decision}`,after:{departamento,decision,motivo,firmado_por:user.id,resultado:data},req});
   return data;
+}
+
+async function appealTeacherPlanning(admin,user,profile,body,req){
+  if(profile?.rol!=='docente')throw Object.assign(new Error('Sólo el docente autor puede apelar.'),{status:403});
+  const tid=await teacherId(admin,user.id),id=Number(body.id||0);
+  const argumentos=String(body.argumentos||'').trim().slice(0,3000),
+    cambios=String(body.cambios_realizados||'').trim().slice(0,3000),
+    contenido=String(body.texto_corregido||'').trim().slice(0,30000),
+    archivoPath=String(body.archivo_path||'').trim(),archivoNombre=String(body.archivo_nombre||'').trim().slice(0,180),archivoSha=String(body.archivo_sha256||'').trim().slice(0,64);
+  if(argumentos.length<30||cambios.length<15||(!contenido&&!archivoPath))throw Object.assign(new Error('Explica la apelación (30 caracteres), los cambios (15 caracteres) y adjunta el contenido o archivo corregido.'),{status:400});
+  if(archivoPath&&!archivoPath.startsWith(`docente/${tid}/`))throw Object.assign(new Error('El adjunto de apelación debe pertenecer al expediente del docente.'),{status:403});
+  const {data:prev,error:pe}=await admin.from('planeaciones_docentes').select('*').eq('id',id).maybeSingle();if(pe)throw pe;
+  if(!prev||Number(prev.docente_id)!==Number(tid))throw Object.assign(new Error('No tienes acceso a la planeación.'),{status:403});
+  if(prev.estado!=='devuelta')throw Object.assign(new Error('Esta versión no requiere apelación.'),{status:409});
+  const {data:oldAppeal,error:ae}=await admin.from('planeacion_apelaciones').select('id').eq('planeacion_origen_id',id).maybeSingle();if(ae)throw ae;
+  if(oldAppeal)throw Object.assign(new Error('La apelación de esta versión ya fue registrada. Abre la nueva versión.'),{status:409});
+  const {data:existingVersions,error:ve}=await admin.from('planeaciones_docentes').select('version')
+    .eq('docente_id',tid).eq('tipo',prev.tipo)
+    .eq('grupo_materia_id',prev.grupo_materia_id).eq('periodo_id',prev.periodo_id)
+    .order('version',{ascending:false}).limit(1);
+  if(ve)throw ve;
+  const version=Math.max(Number(prev.version||1),Number(existingVersions?.[0]?.version||0))+1;
+  const row={docente_id:tid,grupo_materia_id:prev.grupo_materia_id,periodo_id:prev.periodo_id,ciclo_escolar:prev.ciclo_escolar,
+    version,tipo:prev.tipo,fecha_planeada:prev.fecha_planeada,estado:'borrador',
+    titulo:String(body.titulo||prev.titulo||'Planeación corregida').trim().slice(0,240),
+    snapshot:{...(prev.snapshot||{}),texto:contenido},
+    // El adjunto anterior no se reutiliza como corrección; cada apelación guarda su propia evidencia.
+    archivo_path:archivoPath||null,archivo_nombre:archivoNombre||null,archivo_sha256:archivoSha||null,updated_at:new Date().toISOString()};
+  const {data:next,error:ne}=await admin.from('planeaciones_docentes').insert(row).select('*').single();if(ne)throw ne;
+  const {error:ie}=await admin.from('planeacion_apelaciones').insert({planeacion_origen_id:id,planeacion_nueva_id:next.id,
+    docente_id:tid,argumentos,cambios_realizados:cambios,creado_por:user.id});
+  if(ie){
+    await admin.from('planeaciones_docentes').delete().eq('id',next.id).eq('estado','borrador');
+    throw ie;
+  }
+  await audit(admin,{userId:user.id,role:profile.rol,action:'appeal_teacher_planning',module:'planeaciones',entity:'planeacion_apelaciones',entityId:id,
+    description:`Nueva versión ${version} de la planeación ${id}`,after:{origen:id,nueva:next.id,argumentos,cambios},req});
+  return next;
+}
+
+async function getPlanningSignaturePreview(admin,user,profile,body){
+  const id=Number(body.id||0);
+  if(!id||!canReadTeacherPlanning(profile))throw Object.assign(new Error('Sin autorización para consultar las firmas.'),{status:403});
+  const {data:plan,error:pe}=await admin.from('planeaciones_docentes').select('id,docente_id').eq('id',id).maybeSingle();if(pe)throw pe;
+  if(!plan)throw Object.assign(new Error('No se encontró la planeación.'),{status:404});
+  if(profile.rol==='docente'&&Number(await teacherId(admin,user.id))!==Number(plan.docente_id))
+    throw Object.assign(new Error('No puedes consultar las firmas de otra planeación.'),{status:403});
+  const {data:rows,error:re}=await admin.from('planeacion_dictamenes').select('departamento,dictamen,motivo,firma_path,firma_sha256,firmado_at').eq('planeacion_id',id);
+  if(re)throw re;
+  const result=[];
+  for(const vote of rows||[]){
+    let firma_url=null;
+    if(vote.dictamen==='aprobada'&&vote.firma_path){
+      const {data,error}=await admin.storage.from('firmas-institucionales').createSignedUrl(vote.firma_path,120);
+      if(!error)firma_url=data?.signedUrl||null;
+    }
+    result.push({departamento:vote.departamento,dictamen:vote.dictamen,motivo:vote.motivo,firmado_at:vote.firmado_at,firma_url});
+  }
+  return result;
 }
 
 
@@ -4506,24 +4628,46 @@ export default async function handler(
       if(!gmId||!periodoId) return res.status(400).json({ok:false,error:'Grupo-materia y periodo son obligatorios.'});
       const {tid}=await teacherOwnAssignment(adminClient,user,gmId,periodoId);
       const items=normalizeEvaluationItems(req.body?.componentes);
-      if(!items.length) return res.status(400).json({ok:false,error:'Agrega al menos una actividad.'});
+      if(!items.length)return res.status(400).json({ok:false,error:'Agrega al menos una actividad.'});
       const total=items.reduce((a,x)=>a+x.ponderacion,0);
-      if(Math.abs(total-100)>0.001) return res.status(400).json({ok:false,error:`La ponderación debe sumar 100%. Actualmente suma ${total.toFixed(2)}%.`});
-      const totalPoints=items.reduce((a,x)=>a+x.maximo,0);
-      if(Math.abs(totalPoints-10)>0.001) return res.status(400).json({ok:false,error:`Los puntos máximos deben sumar 10. Actualmente suman ${totalPoints.toFixed(2)}. Ajusta las ponderaciones.`});
+      if(Math.abs(total-100)>0.005)return res.status(400).json({ok:false,error:`La ponderación debe sumar 100%. Actualmente suma ${total.toFixed(2)}%.`});
       const {data:existing,error:ee}=await adminClient.from('rubricas_evaluacion').select('*').eq('docente_id',tid).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).maybeSingle();
-      if(ee) throw ee;
-      if(existing?.estado==='cerrada') return res.status(409).json({ok:false,error:'Este periodo ya está cerrado.'});
-      let rubric;
-      if(existing){
-        const {data,error}=await adminClient.from('rubricas_evaluacion').update({titulo:String(req.body?.titulo||'Evaluación del periodo').trim()||'Evaluación del periodo',descripcion:String(req.body?.descripcion||'').trim()||null,escala_maxima:10,version:Number(existing.version||1)+1,updated_at:new Date().toISOString()}).eq('id',existing.id).select('*').single(); if(error) throw error; rubric=data;
-        const {error:de}=await adminClient.from('rubrica_componentes').delete().eq('rubrica_id',rubric.id); if(de) throw de;
-        const {error:se}=await adminClient.from('evaluacion_notas').delete().eq('rubrica_id',rubric.id); if(se) throw se;
-      } else {
-        const {data,error}=await adminClient.from('rubricas_evaluacion').insert({docente_id:tid,grupo_materia_id:gmId,periodo_id:periodoId,titulo:String(req.body?.titulo||'Evaluación del periodo').trim()||'Evaluación del periodo',descripcion:String(req.body?.descripcion||'').trim()||null,escala_maxima:10,estado:'borrador',version:1}).select('*').single(); if(error) throw error; rubric=data;
+      if(ee)throw ee;
+      if(existing?.estado==='cerrada')return res.status(409).json({ok:false,error:'Este periodo ya está cerrado.'});
+      const titulo=String(req.body?.titulo||'Evaluación del periodo').trim()||'Evaluación del periodo';
+      const descripcion=String(req.body?.descripcion||'').trim()||null;
+      let rubric=existing;
+      if(!rubric){
+        const {data,error}=await adminClient.from('rubricas_evaluacion').insert({docente_id:tid,grupo_materia_id:gmId,periodo_id:periodoId,titulo,descripcion,escala_maxima:10,estado:'borrador',version:1}).select('*').single();
+        if(error)throw error;rubric=data;
       }
-      const componentRows=items.map(x=>({...x,rubrica_id:rubric.id}));
-      const {data:components,error:ce}=await adminClient.from('rubrica_componentes').insert(componentRows).select('*').order('orden'); if(ce) throw ce;
+      const {data:previous,error:pr}=await adminClient.from('rubrica_componentes').select('id,nombre,ponderacion,maximo').eq('rubrica_id',rubric.id);
+      if(pr)throw pr;
+      const previousMap=new Map((previous||[]).map(c=>[Number(c.id),c]));
+      const oldIds=new Set(previousMap.keys());
+      for(const x of items){if(x.id&&!oldIds.has(x.id))return res.status(400).json({ok:false,error:'Se encontró un componente ajeno a esta rúbrica.'});}
+      const keep=new Set(items.map(x=>x.id).filter(Boolean));
+      const removed=(previous||[]).filter(x=>!keep.has(Number(x.id)));
+      // Nunca borrar calificaciones guardadas de manera silenciosa.
+      if(removed.length){
+        const {data:notes,error:ne}=await adminClient.from('evaluacion_notas').select('componente_id').eq('rubrica_id',rubric.id).in('componente_id',removed.map(x=>x.id)).limit(1);
+        if(ne)throw ne;
+        if(notes?.length)return res.status(409).json({ok:false,error:'Una actividad que intentas quitar ya tiene calificaciones. Conserva esa actividad o solicita una corrección académica; no se borraron notas.'});
+      }
+      for(const component of items){
+        const payload={nombre:component.nombre,ponderacion:component.ponderacion,maximo:component.maximo,orden:component.orden};
+        if(component.id){
+          const {error}=await adminClient.from('rubrica_componentes').update(payload).eq('id',component.id).eq('rubrica_id',rubric.id);
+          if(error)throw error;
+        }else{
+          const {error}=await adminClient.from('rubrica_componentes').insert({...payload,rubrica_id:rubric.id});
+          if(error)throw error;
+        }
+      }
+      if(removed.length){const {error}=await adminClient.from('rubrica_componentes').delete().eq('rubrica_id',rubric.id).in('id',removed.map(x=>x.id));if(error)throw error;}
+      const {data:updated,error:ue}=await adminClient.from('rubricas_evaluacion').update({titulo,descripcion,escala_maxima:10,version:Number(rubric.version||1)+(existing?1:0),updated_at:new Date().toISOString()}).eq('id',rubric.id).select('*').single();
+      if(ue)throw ue;rubric=updated;
+      const {data:components,error:ce}=await adminClient.from('rubrica_componentes').select('*').eq('rubrica_id',rubric.id).order('orden');if(ce)throw ce;
       return res.status(200).json({ok:true,message:'Rúbrica guardada.',data:{rubrica:rubric,componentes:components}});
     }
 
@@ -4537,10 +4681,26 @@ export default async function handler(
       const {data:components,error:ce}=await adminClient.from('rubrica_componentes').select('id,maximo').eq('rubrica_id',rubric.id); if(ce) throw ce;
       const maxMap=new Map((components||[]).map(x=>[String(x.id),Number(x.maximo)]));
       const roster=await getTeacherRoster(adminClient,user,gmId,{periodo_id:periodoId}); const allowed=new Set((roster.students||[]).map(x=>String(x.id)));
-      const payload=[];
-      for(const row of rows){const alumnoId=Number(row.alumno_id||0),componentId=Number(row.componente_id||0);if(!allowed.has(String(alumnoId))||!maxMap.has(String(componentId)))continue;const value=row.valor===''||row.valor==null?null:Number(row.valor);if(value!==null&&(!Number.isFinite(value)||value<0||value>10))return res.status(400).json({ok:false,error:'Las calificaciones de actividades deben estar entre 0 y 10.'});payload.push({rubrica_id:rubric.id,componente_id:componentId,alumno_id:alumnoId,valor:value});}
-      if(payload.length){const {error}=await adminClient.from('evaluacion_notas').upsert(payload,{onConflict:'rubrica_id,componente_id,alumno_id'});if(error)throw error;}
-      return res.status(200).json({ok:true,message:`Se guardaron ${payload.length} calificaciones de actividades.`});
+      const toSave=new Map(),toClear=new Set();
+      for(const row of rows){
+        const alumnoId=Number(row.alumno_id||0),componentId=Number(row.componente_id||0);
+        if(!allowed.has(String(alumnoId))||!maxMap.has(String(componentId)))throw Object.assign(new Error('El archivo contiene un alumno o una actividad que no pertenecen a esta rúbrica.'),{status:400});
+        const key=`${alumnoId}|${componentId}`;
+        if(row.valor===''||row.valor==null){toClear.add(key);toSave.delete(key);continue;}
+        const value=Number(row.valor);
+        if(!Number.isFinite(value)||value<0||value>10)return res.status(400).json({ok:false,error:'Las calificaciones de actividades deben estar entre 0 y 10.'});
+        toSave.set(key,{rubrica_id:rubric.id,componente_id:componentId,alumno_id:alumnoId,valor:value});toClear.delete(key);
+      }
+      const {data:existingNotes,error:en}=await adminClient.from('evaluacion_notas').select('id,alumno_id,componente_id').eq('rubrica_id',rubric.id).limit(20000);if(en)throw en;
+      const current=new Map((existingNotes||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x]));
+      // No se guardan null en columnas que podrían ser NOT NULL; una celda vacía elimina su nota previa.
+      const deletions=[...toClear].map(key=>current.get(key)?.id).filter(Boolean);
+      if(deletions.length){const {error:de}=await adminClient.from('evaluacion_notas').delete().in('id',deletions).eq('rubrica_id',rubric.id);if(de)throw de;}
+      const inserts=[],updates=[];
+      for(const [key,note] of toSave){const old=current.get(key);if(old)updates.push({id:old.id,valor:note.valor});else inserts.push(note);}
+      if(inserts.length){const {error:ie}=await adminClient.from('evaluacion_notas').insert(inserts);if(ie)throw ie;}
+      for(const note of updates){const {error:ue}=await adminClient.from('evaluacion_notas').update({valor:note.valor}).eq('id',note.id).eq('rubrica_id',rubric.id);if(ue)throw ue;}
+      return res.status(200).json({ok:true,message:`Se guardaron ${toSave.size} calificaciones de actividades y se limpiaron ${deletions.length} celdas vacías.`});
     }
 
     if (req.method === 'POST' && req.body?.resource === 'prepareEvaluationUpload') {
@@ -4819,7 +4979,15 @@ export default async function handler(
     }
     if(req.method==='POST' && req.body?.resource==='reviewTeacherPlanning'){
       const data=await reviewTeacherPlanning(adminClient,user,profile,req.body||{},req);
-      return res.status(200).json({ok:true,data,message:'Planeación actualizada.'});
+      return res.status(200).json({ok:true,data,message:'Dictamen institucional firmado y registrado.'});
+    }
+    if(req.method==='POST' && req.body?.resource==='appealTeacherPlanning'){
+      const data=await appealTeacherPlanning(adminClient,user,profile,req.body||{},req);
+      return res.status(200).json({ok:true,data,message:'Apelación registrada. Se creó un borrador corregido; envíalo para obtener nuevos dictámenes.'});
+    }
+    if(req.method==='POST' && req.body?.resource==='getPlanningSignaturePreview'){
+      const data=await getPlanningSignaturePreview(adminClient,user,profile,req.body||{});
+      return res.status(200).json({ok:true,data});
     }
 
     /* RECURSOS MONETARIOS */

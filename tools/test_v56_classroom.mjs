@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {cleanRecord,classCode,classroomLink,canReadCourse,CLASSROOM_READERS} from '../lib/classroom_rules.js';
+let ok=0;function test(name,fn){fn();ok++;console.log('OK',name)}
+test('código válido',()=>assert.equal(classCode(' CuJfLTzi '),'cujfltzi'));
+test('código vacío indica pendiente',()=>assert.equal(classCode(''),null));
+test('código con URL/script rechazado',()=>assert.throws(()=>classCode('<script>')));
+test('enlace HTTPS oficial',()=>assert.equal(classroomLink('https://classroom.google.com/c/NDUwMTM5NDUwMTAz'),'https://classroom.google.com/c/NDUwMTM5NDUwMTAz'));
+test('enlace de otro sitio rechazado',()=>assert.throws(()=>classroomLink('https://classroom.google.com.evil.test/c/a')));
+test('enlace sin curso rechazado',()=>assert.throws(()=>classroomLink('https://classroom.google.com/')));
+test('enlace http rechazado',()=>assert.throws(()=>classroomLink('http://classroom.google.com/c/1234')));
+test('registro pendiente sin código',()=>assert.equal(cleanRecord({grupo_materia_id:1,nombre:'Artes 1F'}).estado,'pendiente'));
+test('registro activo sin enlace rechazado',()=>assert.throws(()=>cleanRecord({grupo_materia_id:1,nombre:'Artes 1F',estado:'registrada',codigo_union:'abc12345'})));
+test('registro activo completo',()=>assert.equal(cleanRecord({grupo_materia_id:2,nombre:'Artes 1F',estado:'registrada',codigo_union:'abc12345',enlace_clase:'https://classroom.google.com/c/12345678'}).estado,'registrada'));
+test('docente sólo lee clases asignadas',()=>assert.equal(canReadCourse('docente',2,{docente_id:3}),false));
+test('personal autorizado puede consultar',()=>assert.ok(CLASSROOM_READERS.includes('servicios_docentes')));
+test('grupo/materia obligatorio',()=>assert.throws(()=>cleanRecord({grupo_materia_id:0,nombre:'Artes 1F'})));
+const source=await readFile(new URL('../index.html',import.meta.url),'utf8');
+test('módulo presente en enrutador',()=>assert.ok(source.includes("if(p==='classroom')return jaguarClassroomModule()")));
+test('script cargado al final',()=>assert.ok(source.includes('/assets/jaguar-classroom-v56.js')));
+console.log(`Classroom Fase 1: ${ok} pruebas aprobadas.`);

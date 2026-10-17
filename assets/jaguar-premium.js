@@ -88,12 +88,13 @@ function lineChart(rows){
 const action=(id,text)=>`<button class="btn" onclick="loadPage('${id}')">${html(text)} →</button>`;
 async function adminHome(){
   const [dReq,aReq]=await Promise.allSettled([api('dashboard'),api('dashboardAnalytics')]);
-  if(dReq.status==='rejected')return v22Dashboard();
-  const d=dReq.value, a=aReq.status==='fulfilled'?aReq.value:null;
+  // La vista Premium debe permanecer visible aunque falle una de las consultas.
+  const d=dReq.status==='fulfilled'?(dReq.value||{}):{counts:{},notices:[]};
+  const a=aReq.status==='fulfilled'?aReq.value:null;
   const c=d.counts||{};
   const kpis=[['Alumnos activos',c.alumnos,'♙'],['Docentes activos',c.docentes,'♧'],['Grupos',c.grupos,'▦'],['Materias',c.materias,'▤']];
   const grades=a?.gradesByBand||[];
-  const status=a?`Se analizaron ${nice(a.recordedGrades)} calificaciones y ${nice(a.recordedAttendance)} asistencias${a.gradeSampleLimited||a.attendanceSampleLimited?' (muestra reciente limitada a 5,000 por tipo)':''}.`:'Las estadísticas ampliadas no están disponibles; los módulos y recuentos siguen funcionando.';
+  const status=dReq.status==='rejected'?'No se pudieron consultar los indicadores institucionales. Revisa la conexión o los permisos de Supabase; el resto de los módulos continúa disponible.':a?`Se analizaron ${nice(a.recordedGrades)} calificaciones y ${nice(a.recordedAttendance)} asistencias${a.gradeSampleLimited||a.attendanceSampleLimited?' (muestra reciente limitada a 5,000 por tipo)':''}.`:'Las estadísticas ampliadas no están disponibles; los módulos y recuentos siguen funcionando.';
   return `<div class="j-stack">${hero('Panel institucional · consulta y seguimiento académico')}<div class="j-kpis">${kpis.map(x=>titleCard(...x)).join('')}</div><div class="j-chart-grid">${panel('Rendimiento académico','Distribución de las calificaciones registradas',bars(grades.map(x=>x.label),grades.map(x=>x.total)),a?`<span class="chip">Promedio ${html(printable(a.mean))}</span>`:'')}${panel('Distribución de calificaciones','Rangos registrados en el sistema',donut(grades,'Evaluaciones'))}</div><div class="j-chart-grid">${panel('Evolución de la asistencia','Porcentaje de presentes y justificadas por mes',lineChart(a?.attendanceMonths||[]),a?`<span class="chip">Asistencia ${html(pct(a.attendanceRate))}</span>`:'')}${panel('Alumnos por grado','Alumnado activo con grupo asignado',bars(Object.keys(a?.byGrade||{}).sort((x,y)=>+x-+y).map(x=>x+'°'),Object.keys(a?.byGrade||{}).sort((x,y)=>+x-+y).map(x=>a.byGrade[x])))}</div><div class="j-chart-grid">${panel('Avisos institucionales','Últimos comunicados publicados',(d.notices||[]).map(n=>`<div class="j-notice"><b>${html(n.titulo)}</b><p>${html(n.contenido)}</p></div>`).join('')||'<p class="j-hint">No hay avisos publicados.</p>')}${panel('Accesos rápidos','Continúan todos los módulos en la barra lateral',`<div class="j-quick">${action('alumnos','Alumnos')}${action('calificaciones','Calificaciones')}${action('asistencia','Asistencia')}${action('grupos','Grupos')}${action('avisos','Avisos')}</div><p class="j-hint" style="margin-top:18px">${html(status)}</p>`)}</div></div>`;
 }
 async function studentHome(){

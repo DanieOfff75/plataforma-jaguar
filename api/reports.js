@@ -3,6 +3,7 @@ import {buildStudentCredentialPDF} from '../lib/credencial_escolar_pdf.js';
 import {readCredentialPhoto,saveCredentialPhoto} from '../lib/credential_photo.js';
 import {buildDailyGradebookPdf} from '../lib/jaguar_gradebook_pdf.js';
 import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import { readFile } from 'node:fs/promises';
 import { requireRoles } from '../lib/_admin.js';
 import { getInstitution } from './institution.js';
@@ -10,6 +11,7 @@ import { listResponsibleUsers } from './responsables.js';
 import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from './documentos.js';
 
 const days = ['Lunes','Martes','Miércoles','Jueves','Viernes'];
+const normalizeSubjectName=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
 const GREEN = rgb(0.105,0.212,0.365); // azul marino institucional
 const GREEN2 = rgb(0.000,0.420,0.420); // teal
 const PALE = rgb(0.945,0.957,0.969);
@@ -103,8 +105,12 @@ function getTurnSlots(turno){
   ];
 }
 function getSlots(rows,turno=null){
-  if(turno) return getTurnSlots(turno);
-  return [...new Set((rows||[]).map(r=>`${String(r.hora_inicio||'').slice(0,5)}|${String(r.hora_fin||'').slice(0,5)}`))].sort((a,b)=>a.localeCompare(b));
+  // Combina los módulos oficiales con cualquier sesión extraordinaria registrada.
+  // Antes el PDF ignoraba las horas ajenas al turno predefinido.
+  const real=(rows||[]).map(r=>`${String(r.hora_inicio||'').slice(0,5)}|${String(r.hora_fin||'').slice(0,5)}`)
+    .filter(s=>/^\d{2}:\d{2}\|\d{2}:\d{2}$/.test(s));
+  // Se dibujan solo intervalos reales; las clases extraordinarias conservan su hora.
+  return [...new Set(real)].sort((a,b)=>a.localeCompare(b));
 }
 function uniqueSubjects(rows,teacherMode=false){
   const seen=new Map();
@@ -250,17 +256,20 @@ async function profileSignatureByAuth(admin, authUserId, fallbackName=null, fall
   // latest accepted schedule signature as a fallback.
   return readableSignatureProfile(admin,candidates);
 }
-async function drawSignatureBox(page,pdf,admin,{x,y,w,h,label,profile,showName=true,missingText='FIRMA NO REGISTRADA',signatureImage=null}){
-  rect(page,x,y,w,h,rgb(1,1,1,.86),LINE,.65);
+async function drawSignatureBox(page,pdf,admin,{x,y,w,h,label,profile,showName=true,missingText='FIRMA NO REGISTRADA',signatureImage=null,fontRegular=null,fontBold=null,accentColor=INK}){
+  rect(page,x,y,w,h,rgb(1,1,1),LINE,.65);
+  page.drawRectangle({x,y:y+h-2.5,width:w,height:2.5,color:GOLD});
   const title=String(label||'FIRMA').toUpperCase();
-  page.drawText(title,{x:x+6,y:y+h-12,size:5.5,font:await pdf.embedFont(StandardFonts.HelveticaBold),color:GRAY});
-  const regular=await pdf.embedFont(StandardFonts.Helvetica);
+  const headingFont=fontBold||await pdf.embedFont(StandardFonts.HelveticaBold);
+  const tf=fitText(headingFont,title,w-14,6.4,6.4,4.8);
+  page.drawText(tf.text,{x:x+7,y:y+h-13,size:tf.size,font:headingFont,color:accentColor});
+  const regular=fontRegular||await pdf.embedFont(StandardFonts.Helvetica);
   const sig=signatureImage || (profile?.firma_path?await loadSignatureImage(pdf,admin,profile.firma_path):null);
   if(sig){
     const iw=Math.min(w-18,110), ih=Math.min(h-28,32); const ratio=Math.min(iw/sig.image.width,ih/sig.image.height);
     page.drawImage(sig.image,{x:x+(w-sig.image.width*ratio)/2,y:y+22,width:sig.image.width*ratio,height:sig.image.height*ratio});
   } else {
-    const italic=await pdf.embedFont(StandardFonts.HelveticaOblique);
+    const italic=fontRegular||await pdf.embedFont(StandardFonts.HelveticaOblique);
     const nf=fitText(italic,missingText,w-18,5.8,5.8,4.6);
     page.drawText(nf.text,{x:x+(w-textWidth(italic,nf.text,nf.size))/2,y:y+28,size:nf.size,font:italic,color:GRAY});
   }
@@ -271,227 +280,325 @@ async function drawSignatureBox(page,pdf,admin,{x,y,w,h,label,profile,showName=t
   }
 }
 
+/**
+ * Horarios PDF Jaguar V5.2. Los horarios del grupo/alumno utilizan los colores
+ * oficiales registrados por materia; el horario del docente es deliberadamente
+ * monocromático en dorado, sin importar los colores privados de sus materias.
+ * La vista es carta horizontal/A4 apaisado y mantiene validación, QR y firmas.
+ */
 async function drawSchedulePdf({admin,student=null,teacher=null,group:groupInfo=null,rows=[],cycle,workshop='Sin taller asignado',req,verification}){
   const institution=await institutionForPdf(admin);
-  const p=await PDFDocument.create();
-  const page=p.addPage([841.89,595.28]);
-  const regular=await p.embedFont(StandardFonts.Helvetica);
-  const bold=await p.embedFont(StandardFonts.HelveticaBold);
-  const W=841.89,H=595.28;
-  const theme=teacher?{primary:GOLD_DARK,primary2:GOLD,pale:GOLD_SOFT,gold:GOLD,leaf:rgb(.82,.72,.49),paper:rgb(.995,.99,.965)}:{primary:GREEN,primary2:GREEN2,pale:PALE,gold:GOLD,leaf:rgb(.72,.82,.79),paper:PAPER};
-  drawJaguarScheduleChrome(page,W,H,theme);
-
-  const logoBytes=await loadLogo();
-  if(logoBytes){
-    const logo=await p.embedPng(logoBytes);
-    page.drawImage(logo,{x:27,y:H-73,width:58,height:61});
-  }
-  line(page,105,H-30,105,H-98,rgb(.616,.702,.682),.7);
-  page.drawText(institution.siglas||'ITHLA',{x:115,y:H-42,size:13,font:bold,color:theme.primary===GOLD_DARK?INK:INK});
-  page.drawText(short(institution.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano',78),{x:115,y:H-54,size:7.1,font:bold,color:INK});
-  page.drawText(`CCT ${institution.cct||'—'} · ${institution.clave_rvoe||'—'} · Zona ${institution.zona_escolar||'—'} · Sector ${institution.sector||'—'}`,{x:115,y:H-65,size:5.8,font:regular,color:GRAY});
-  page.drawText(`${institution.entidad||'—'} · ${institution.telefono||'—'} · ${short(institution.direccion||'—',92)}`,{x:115,y:H-76,size:5.2,font:regular,color:GRAY});
-  page.drawText('SISTEMA DE GESTIÓN ESCOLAR · HORARIO ACADÉMICO',{x:115,y:H-87,size:5.8,font:regular,color:GRAY});
-  line(page,700,H-30,700,H-98,GOLD,.8);
-  const scheduleMotto=mottoLines(institution,4,22);
-  scheduleMotto.forEach((lineText,i)=>page.drawText(lineText,{x:712,y:H-48-i*10,size:7.2,font:regular,color:theme.primary}));
-
-  page.drawText('HORARIO SEMANAL DE CLASES',{x:27,y:H-102,size:19,font:bold,color:theme.primary});
-  page.drawText(`Ciclo escolar ${cycle}`,{x:27,y:H-116,size:8.5,font:bold,color:theme.primary===GOLD_DARK?INK:INK});
-
-  const rightX=650;
-  rect(page,rightX,H-121,165,24,rgb(1,1,1,.78),theme.primary,.9);
-  const group=student?.grupos?.clave||groupInfo?.clave||'—';
-  if(teacher){
-    page.drawText('DOCUMENTO',{x:rightX+9,y:H-108,size:6.5,font:bold,color:theme.primary});
-    page.drawText('CICLO',{x:rightX+91,y:H-108,size:6.5,font:bold,color:theme.primary});
-    page.drawText('HORARIO DOCENTE',{x:rightX+9,y:H-118,size:7.0,font:bold,color:INK});
-    page.drawText(String(cycle||'—'),{x:rightX+124,y:H-118,size:7.2,font:bold,color:INK});
-  }else if(student){
-    page.drawText('DOCUMENTO',{x:rightX+9,y:H-108,size:6.5,font:bold,color:theme.primary});
-    page.drawText('CICLO',{x:rightX+91,y:H-108,size:6.5,font:bold,color:theme.primary});
-    page.drawText('HORARIO DEL ALUMNO',{x:rightX+9,y:H-118,size:7.0,font:bold,color:INK});
-    page.drawText(String(cycle||'—'),{x:rightX+124,y:H-118,size:7.2,font:bold,color:INK});
-  }else{
-    page.drawText('DOCUMENTO',{x:rightX+9,y:H-108,size:6.5,font:bold,color:theme.primary});
-    page.drawText('CICLO',{x:rightX+91,y:H-108,size:6.5,font:bold,color:theme.primary});
-    page.drawText(`HORARIO ${group||'GRUPO'}`,{x:rightX+9,y:H-118,size:7.0,font:bold,color:INK});
-    page.drawText(String(cycle||'—'),{x:rightX+124,y:H-118,size:7.2,font:bold,color:INK});
-  }
-
-  const infoY=H-159, infoH=32, gap=4;
-  const info=teacher
-    ? [['Docente',teacher.nombre_completo||'—',1.55],['No. empleado',teacher.numero_empleado||'—',.85],['Especialidad',teacher.especialidad||'—',1.0],['Ciclo escolar',cycle||'—',1.25]]
-    : groupInfo && !student
-      ? [['Grupo',groupInfo.clave||group||'—',1.0],['Grado',groupInfo.grado?`${groupInfo.grado}°`:'—',.75],['Turno',groupInfo.turno||'—',.9],['Ciclo escolar',cycle||'—',1.25]]
-      : [['Alumno',student?.nombre_completo||'—',1.55],['Matrícula',student?.matricula||'—',.85],['Grado / grupo',student?.grupos?.grado?`${student.grupos.grado}° ${student.grupos?.clave||''}`:group||'—',1.0],['Turno',student?.grupos?.turno||groupInfo?.turno||'—',.75],['Taller extracurricular',workshop,1.25]];
-  if(teacher){
-    info.splice(0,info.length,
-      ['Docente',teacher.nombre_completo||'—',1.75],
-      ['No. empleado',teacher.numero_empleado||'—',.78],
-      ['Especialidad',teacher.especialidad||'—',1.15],
-      ['Ciclo escolar',cycle,.8]
-    );
-  } else if(groupInfo){
-    info.splice(0,info.length,
-      ['Grupo',groupInfo.clave||'—',.9],
-      ['Grado',groupInfo.grado?`${groupInfo.grado}°`: '—',.65],
-      ['Turno',groupInfo.turno||'—',1.05],
-      ['Ciclo escolar',cycle,1.0]
-    );
-  }
-  const totalW=W-54-gap*(info.length-1); const sum=info.reduce((a,x)=>a+x[2],0);
-  let ix=27;
-  for(const [label,value,weight] of info){
-    const iw=totalW*(weight/sum);rect(page,ix,infoY,iw,infoH,rgb(1,1,1,.84),LINE,.7);
-    page.drawText(label.toUpperCase(),{x:ix+7,y:infoY+20,size:5.8,font:bold,color:GRAY});
-    const fit=fitText(bold,value,iw-14,8.8,8.8,6.2);
-    page.drawText(fit.text,{x:ix+7,y:infoY+8,size:fit.size,font:bold,color:theme.primary===GOLD_DARK?INK:INK});
-    ix+=iw+gap;
-  }
-
-  // Materias y docentes: solo se imprime en horario de alumno/grupo.
-  // El horario docente empieza directamente con su tabla semanal.
-  let listTop=infoY-15;
-  let shown=[];
-  let listRow=0;
-  if(!teacher){
-    const sectionTitleY=infoY-15;
-    page.drawRectangle({x:27,y:sectionTitleY-16,width:W-54,height:16,color:theme.primary});
-    page.drawText('MATERIAS Y DOCENTES',{x:34,y:sectionTitleY-11,size:8.5,font:bold,color:rgb(1,1,1)});
-    const subjects=uniqueSubjects(rows,false);
-    const availableRows=Math.min(18,Math.max(1,Math.floor((H-220)/12)));
-    shown=subjects.slice(0,availableRows);
-    listRow=Math.max(10,Math.min(15,180/Math.max(1,shown.length)));
-    const col1=27,col2=57,col3=470,col4=W-27;
-    const tableH=(shown.length+1)*listRow;
-    const listBottom=sectionTitleY-16-tableH;
-    rect(page,col1,listBottom,col4-col1,tableH,rgb(1,1,1,.86),LINE,.7);
-    line(page,col2,sectionTitleY-16,col2,listBottom,LINE,.7);
-    line(page,col3,sectionTitleY-16,col3,listBottom,LINE,.7);
-    page.drawText('No.',{x:35,y:sectionTitleY-27,size:7.2,font:bold,color:theme.primary});
-    page.drawText('NOMBRE DE MATERIA / ASIGNATURA',{x:col2+7,y:sectionTitleY-27,size:7.2,font:bold,color:theme.primary});
-    page.drawText('DOCENTE',{x:col3+7,y:sectionTitleY-27,size:7.2,font:bold,color:theme.primary});
-    line(page,col1,sectionTitleY-32,col4,sectionTitleY-32,LINE,.7);
-    shown.forEach((subj,i)=>{
-      const yTop=sectionTitleY-32-i*listRow;
-      if(i>0)line(page,col1,yTop,col4,yTop,LINE,.55);
-      cellText(page,bold,String(i+1),col1,yTop-listRow,col2-col1,listRow,7.2,true,theme.primary);
-      cellText(page,bold,subj.materia,col2,yTop-listRow,col3-col2,listRow,7.1,true,INK);
-      cellText(page,regular,subj.docente,col3,yTop-listRow,col4-col3,listRow,6.7,false,GRAY);
-    });
-    if(subjects.length>shown.length){
-      const extra=subjects.length-shown.length;
-      const yTop=sectionTitleY-32-shown.length*listRow;
-      cellText(page,regular,`+ ${extra} materia(s) no mostradas en este resumen`,col2,yTop-listRow,col4-col2,listRow,6.5,false,GRAY);
+  const pdf=await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
+  const [bookBytes,heavyBytes,logoBytes]=await Promise.all([
+    readFile(new URL('../assets/fonts/Garet-Book.ttf',import.meta.url)),
+    readFile(new URL('../assets/fonts/Garet-Heavy.ttf',import.meta.url)),
+    loadLogo()
+  ]);
+  const book=await pdf.embedFont(bookBytes,{subset:true});
+  const heavy=await pdf.embedFont(heavyBytes,{subset:true});
+  const serif=await pdf.embedFont(StandardFonts.TimesRomanBold);
+  const italic=await pdf.embedFont(StandardFonts.TimesRomanItalic);
+  const W=841.89,H=595.28,M=30,right=W-M;
+  const teacherMode=Boolean(teacher);
+  const primary=teacherMode?rgb(.41,.31,.105):GREEN;
+  const accent=teacherMode?rgb(.72,.54,.17):GREEN2;
+  const gold=GOLD;
+  const soft=teacherMode?rgb(.985,.964,.907):rgb(.942,.961,.967);
+  const white=rgb(1,1,1);
+  const ink=INK;
+  const muted=rgb(.38,.43,.48);
+  const logo=logoBytes?await pdf.embedPng(logoBytes):null;
+  const groupName=student?.grupos?.clave||groupInfo?.clave||'—';
+  const docType=teacherMode?'DOCENTE':student?'ALUMNO':'GRUPO';
+  const heading=teacherMode?'HORARIO DEL DOCENTE':student?'HORARIO DEL ALUMNO':'HORARIO DEL GRUPO';
+  const year=String(cycle||'—');
+  const qr=verification?.qrBytes?await pdf.embedPng(verification.qrBytes):null;
+  const signBox=(page,options)=>drawSignatureBox(page,pdf,admin,{...options,fontRegular:book,fontBold:heavy,accentColor:primary});
+  const normColor=(hex)=>/^#[0-9a-f]{6}$/i.test(String(hex||''))?hexToRgb(hex,accent):accent;
+  const tint=(col,blend=.86)=>rgb(col.red*(1-blend)+blend,col.green*(1-blend)+blend,col.blue*(1-blend)+blend);
+  const pdfSafe=s=>String(s??'—').replace(/[\r\n\t]+/g,' ').trim()||'—';
+  function fit(font,raw,maxW,base=8,min=5){
+    let t=pdfSafe(raw),size=base;
+    while(size>min&&font.widthOfTextAtSize(t,size)>maxW)size-=.2;
+    if(font.widthOfTextAtSize(t,size)>maxW){
+      while(t.length>1&&font.widthOfTextAtSize(t+'…',size)>maxW)t=t.slice(0,-1);
+      t=t+'…';
     }
-    listTop=listBottom;
+    return {t,size};
   }
-  // Horario semanal
-  const schedTitleY=listTop-10;
-  page.drawRectangle({x:27,y:schedTitleY-16,width:W-54,height:16,color:theme.primary});
-  page.drawText('HORARIO SEMANAL',{x:34,y:schedTitleY-11,size:8.5,font:bold,color:rgb(1,1,1)});
-  const tableTop=schedTitleY-16;
-  const slots=getSlots(rows, student?.grupos?.turno || groupInfo?.turno || null);
-  const usableH=Math.max(130,tableTop-48);
-  const rowH=Math.min(31,Math.max(22,usableH/(Math.max(1,slots.length)+1)));
-  const timeW=64, dayW=(W-54-timeW)/5, x0=27;
-  rect(page,x0,tableTop-(slots.length+1)*rowH,timeW+dayW*5,(slots.length+1)*rowH,rgb(1,1,1,.9),LINE,.75);
-  page.drawRectangle({x:x0,y:tableTop-rowH,width:timeW,height:rowH,color:theme.pale,borderColor:LINE,borderWidth:.5});
-  cellText(page,bold,'HORA',x0,tableTop-rowH,timeW,rowH,8.5,true,theme.primary);
-  days.forEach((d,i)=>{const x=x0+timeW+i*dayW;page.drawRectangle({x,y:tableTop-rowH,width:dayW,height:rowH,color:theme.pale,borderColor:LINE,borderWidth:.5});cellText(page,bold,d,x,tableTop-rowH,dayW,rowH,8.2,true,theme.primary);});
-  slots.forEach((slot,ri)=>{
-    const [start,end]=slot.split('|'); const y=tableTop-(ri+2)*rowH;
-    page.drawRectangle({x:x0,y,width:timeW,height:rowH,color:rgb(.95,.97,.96),borderColor:LINE,borderWidth:.5});
-    cellText(page,bold,`${start}–${end}`,x0,y,timeW,rowH,7.5,true,INK);
-    days.forEach((_,di)=>{
-      const x=x0+timeW+di*dayW;
-      const r=(rows||[]).find(z=>Number(z.dia_semana)===di+1&&String(z.hora_inicio||'').slice(0,5)===start&&String(z.hora_fin||'').slice(0,5)===end);
-      page.drawRectangle({x,y,width:dayW,height:rowH,color:r?(r.subject_color?hexToRgb(r.subject_color, teacher?GOLD_CELL:CELL):(teacher?GOLD_CELL:CELL)):rgb(1,1,1,.82),borderColor:LINE,borderWidth:.5});
-      if(r){
-        const materia=r.grupo_materias?.materias?.nombre||'Materia';
-        const subY=y+rowH/2+1;
-        const f=fitText(bold,materia,dayW-8,rowH>=27?8.3:7.7,rowH>=27?8.3:7.7,6.1);
-        page.drawText(f.text,{x:x+(dayW-textWidth(bold,f.text,f.size))/2,y:subY,size:f.size,font:bold,color:theme.primary===GOLD_DARK?INK:INK});
-        const second=teacher
-          ? (r.grupo_materias?.grupos?.clave||'—')
-          : (r.docente?.nombre_completo ? `${r.docente.nombre_completo}${r.aula?' · '+r.aula:''}` : (r.aula||'Sin docente'));
-        const sf=fitText(regular,second,dayW-8,6.4,6.4,5.0);
-        page.drawText(sf.text,{x:x+(dayW-textWidth(regular,sf.text,sf.size))/2,y:y+5,size:sf.size,font:regular,color:GRAY});
+  function txt(page,raw,{x,y,width=240,font=book,size=8,min=5,color=ink,align='left'}={}){
+    const a=fit(font,raw,width,size,min);
+    let xx=x;
+    if(align==='center')xx=x+(width-font.widthOfTextAtSize(a.t,a.size))/2;
+    if(align==='right')xx=x+width-font.widthOfTextAtSize(a.t,a.size);
+    page.drawText(a.t,{x:xx,y,size:a.size,font,color});
+  }
+  function basePage(kicker,title,sub=''){
+    const page=pdf.addPage([W,H]);
+    page.drawRectangle({x:0,y:0,width:W,height:H,color:white});
+    page.drawRectangle({x:0,y:H-9,width:W,height:9,color:primary});
+    page.drawRectangle({x:0,y:H-12,width:W,height:3,color:gold});
+    page.drawRectangle({x:0,y:0,width:W,height:19,color:primary});
+    page.drawRectangle({x:0,y:19,width:W,height:2,color:gold});
+    if(logo)page.drawImage(logo,{x:32,y:H-84,width:65,height:67});
+    page.drawLine({start:{x:110,y:H-85},end:{x:110,y:H-24},thickness:.7,color:gold});
+    txt(page,institution.nombre_institucion||'INSTITUTO TECNOLÓGICO E HISTÓRICO LATINOAMERICANO',{x:124,y:H-41,width:525,font:serif,size:15,min:10,color:primary});
+    txt(page,institution.lema||institution.eslogan||institution.slogan||'Scientia, Humanitas et Progressum',{x:124,y:H-55,width:510,font:italic,size:9,min:7,color:GOLD_DARK});
+    txt(page,`CCT ${institution.cct||'—'}  ·  ${institution.clave_rvoe||'—'}  ·  ${institution.entidad||'Estado de México'}`,{x:124,y:H-69,width:565,font:book,size:6.9,color:muted});
+    txt(page,`CICLO ESCOLAR  ${year}`,{x:673,y:H-38,width:137,font:heavy,size:8,min:7,color:primary,align:'right'});
+    txt(page,docType==='DOCENTE'?'FORMATO DOCENTE':'FORMATO ACADÉMICO',{x:673,y:H-55,width:137,font:book,size:7,color:muted,align:'right'});
+    page.drawLine({start:{x:M,y:H-93},end:{x:right,y:H-93},color:LINE,thickness:.7});
+    txt(page,kicker,{x:M,y:H-108,width:590,font:heavy,size:7.4,color:GOLD_DARK});
+    txt(page,title,{x:M,y:H-136,width:690,font:serif,size:23,min:17,color:primary});
+    if(sub)txt(page,sub,{x:M,y:H-150,width:755,font:book,size:7.7,color:muted});
+    return page;
+  }
+  function strip(page,label,y,{color=primary}={}){
+    page.drawRectangle({x:M,y,width:right-M,height:19,color});
+    txt(page,label,{x:M+10,y:y+6,width:700,font:heavy,size:8.0,color:white});
+  }
+  function frame(page,x,y,w,h,{fill=white,border=LINE,bw=.65}={}){
+    page.drawRectangle({x,y,width:w,height:h,color:fill,borderColor:border,borderWidth:bw});
+  }
+  function footer(page,index,total){
+    txt(page,`${institution.siglas||'ITHLA'} · PLATAFORMA JAGUAR · HORARIOS ACADÉMICOS`,{x:M,y:6.5,width:370,font:book,size:6.0,color:white});
+    txt(page,`FOLIO: ${verification?.row?.folio||'CONSULTA'}`,{x:405,y:6.5,width:290,font:book,size:5.7,min:4.4,color:white,align:'right'});
+    txt(page,`${index} / ${total}`,{x:755,y:6.5,width:57,font:heavy,size:6.1,color:white,align:'right'});
+  }
+  function summary(page){
+    let info;
+    if(teacherMode)info=[
+      ['DOCENTE',teacher.nombre_completo||'—',2.1],['NÚM. EMPLEADO',teacher.numero_empleado||'—',1],['ESPECIALIDAD',teacher.especialidad||'—',1.5],['CICLO',year,.9]
+    ];
+    else if(student)info=[
+      ['ALUMNO',student.nombre_completo||'—',2.05],['MATRÍCULA',student.matricula||'—',1.2],['GRUPO',groupName,1],['TURNO',student.grupos?.turno||'—',1.1]
+    ];
+    else info=[
+      ['GRUPO',groupName,1.3],['GRADO',groupInfo?.grado?`${groupInfo.grado}°`:'—',1],['TURNO',groupInfo?.turno||'—',1.3],['CICLO',year,1.3]
+    ];
+    const gap=7,y=398,h=37,totalW=right-M-gap*(info.length-1),sum=info.reduce((n,x)=>n+x[2],0);
+    let x=M;
+    for(const [label,value,weight] of info){
+      const w=totalW*weight/sum;
+      frame(page,x,y,w,h,{fill:soft,border:rgb(.83,.85,.86)});
+      page.drawRectangle({x,y:y+h-3,width:w,height:3,color:gold});
+      txt(page,label,{x:x+8,y:y+23,width:w-16,font:heavy,size:6.3,color:muted});
+      txt(page,value,{x:x+8,y:y+8,width:w-16,font:heavy,size:9,min:6.7,color:ink});
+      x+=w+gap;
+    }
+  }
+  function groupedLesson(r){return r?.grupo_materias?.materias?.nombre||'Asignatura';}
+  function dayLesson(r){return teacherMode?(r?.grupo_materias?.grupos?.clave||'Sin grupo'):(r?.docente?.nombre_completo||'Sin docente');}
+  const subjectList=teacherMode?[]:uniqueSubjects(rows,false);
+  const colorsBySubject=new Map();
+  for(const item of rows||[]){
+    const color=item.subject_color;
+    if(/^#[0-9a-fA-F]{6}$/.test(String(color||'')))colorsBySubject.set(normalizeSubjectName(item.grupo_materias?.materias?.nombre),hexToRgb(color,accent));
+  }
+  const main=basePage('PLATAFORMA JAGUAR  /  ORGANIZACIÓN ACADÉMICA',heading,'Documento de consulta y validación institucional.');
+  summary(main);
+  const daysPdf=['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES'];
+  const allSlots=getSlots(rows,student?.grupos?.turno||groupInfo?.turno||null);
+  const slots=allSlots.length?allSlots:[];
+  // 14 materias se muestran en la primera página; las demás continúan en anexos
+  // antes de la página de firmas para evitar que desaparezcan silenciosamente.
+  const chunkSize=13;
+  const mainSubjects=subjectList.slice(0,chunkSize);
+  let weekSectionY;
+  if(!teacherMode){
+    strip(main,'01  ·  ASIGNATURAS Y DOCENTES',368);
+    const top=368,rowH=10.7,headH=16;
+    const x0=M,x1=M+34,x2=M+448,x3=right;
+    frame(main,x0,top-headH,x3-x0,headH,{fill:soft});
+    txt(main,'N.º',{x:x0+6,y:top-11,width:20,font:heavy,size:6.6,color:primary});
+    txt(main,'ASIGNATURA',{x:x1+8,y:top-11,width:x2-x1-15,font:heavy,size:6.7,color:primary});
+    txt(main,'DOCENTE RESPONSABLE',{x:x2+8,y:top-11,width:x3-x2-15,font:heavy,size:6.7,color:primary});
+    for(let i=0;i<mainSubjects.length;i++){
+      const subj=mainSubjects[i],y=top-headH-(i+1)*rowH;
+      frame(main,x0,y,x3-x0,rowH,{fill:i%2?white:rgb(.986,.989,.992),border:LINE,bw:.38});
+      const c=colorsBySubject.get(normalizeSubjectName(subj.materia))||accent;
+      main.drawRectangle({x:x0,y,width:3,height:rowH,color:c});
+      txt(main,String(i+1).padStart(2,'0'),{x:x0+7,y:y+2.7,width:23,font:book,size:6.4,color:muted});
+      txt(main,subj.materia,{x:x1+7,y:y+2.6,width:x2-x1-15,font:heavy,size:7.3,min:6,color:ink});
+      txt(main,subj.docente,{x:x2+8,y:y+2.7,width:x3-x2-16,font:book,size:7.0,min:5.6,color:muted});
+    }
+    weekSectionY=top-headH-mainSubjects.length*rowH-25;
+  }else{
+    strip(main,'01  ·  HORARIO SEMANAL Y GRUPOS ASIGNADOS',366,{color:primary});
+    weekSectionY=366;
+  }
+
+  // Cada materia se identifica por el color registrado en Jaguar. No se usan
+  // colores de profesor en el horario docente: únicamente dorado institucional.
+  function weeklyTable(page,list,barY,{compact=false}={}){
+    strip(page,teacherMode?'HORARIO SEMANAL  ·  DOCENTE':'02  ·  DISTRIBUCIÓN SEMANAL',barY,{color:primary});
+    const top=barY,hHead=22,tableBottom=53,available=top-hHead-tableBottom;
+    const hRow=list.length?Math.min(teacherMode?45:31,available/list.length):33;
+    const x0=M,tW=77,dW=(right-M-tW)/5;
+    frame(page,x0,top-hHead,right-M,hHead,{fill:soft});
+    txt(page,'HORA',{x:x0+8,y:top-14,width:tW-14,font:heavy,size:7.5,color:primary});
+    daysPdf.forEach((d,idx)=>txt(page,d,{x:x0+tW+idx*dW,y:top-14,width:dW,font:heavy,size:7.4,color:primary,align:'center'}));
+    if(!list.length){txt(page,'Sin clases asignadas para este ciclo escolar.',{x:M+12,y:top-48,width:500,font:book,size:10,color:muted});return;}
+    list.forEach((slot,ri)=>{
+      const [start,end]=slot.split('|');const y=top-hHead-(ri+1)*hRow;
+      frame(page,x0,y,tW,hRow,{fill:soft,border:LINE,bw:.55});
+      txt(page,`${start}–${end}`,{x:x0+4,y:y+hRow/2-2.5,width:tW-8,font:heavy,size:7.2,min:6.1,color:primary,align:'center'});
+      for(let di=0;di<5;di++){
+        const x=x0+tW+di*dW;
+        const found=(rows||[]).filter(r=>Number(r.dia_semana)===di+1 && String(r.hora_inicio||'').slice(0,5)===start && String(r.hora_fin||'').slice(0,5)===end);
+        const rec=found[0];
+        if(!rec){frame(page,x,y,dW,hRow,{fill:white,border:LINE,bw:.55});continue;}
+        const stripe=teacherMode?gold:normColor(rec.subject_color);
+        const fill=teacherMode?rgb(.993,.981,.939):tint(stripe,.88);
+        frame(page,x,y,dW,hRow,{fill,border:LINE,bw:.55});
+        page.drawRectangle({x:x+.3,y:y+.4,width:3.5,height:hRow-.8,color:stripe});
+        const label=groupedLesson(rec);
+        txt(page,label,{x:x+8,y:y+hRow*.59,width:dW-13,font:heavy,size:hRow<25?7.0:8.3,min:6.3,color:ink,align:'center'});
+        const note=teacherMode?`${dayLesson(rec)}${rec.aula?' · '+rec.aula:''}`:`${dayLesson(rec)}${rec.aula?' · '+rec.aula:''}`;
+        txt(page,note,{x:x+7,y:y+hRow*.24,width:dW-11,font:book,size:hRow<25?5.8:6.4,min:5.2,color:muted,align:'center'});
+        // Si existen sesiones simultáneas, evitar ocultarlas: señalar la cantidad.
+        if(found.length>1)txt(page,`+${found.length-1} simultánea(s)`,{x:x+7,y:y+2.5,width:dW-12,font:book,size:5.3,min:5,color:GOLD_DARK,align:'right'});
       }
     });
-  });
-
-  page.drawText('Documento generado automáticamente por ITHLA',{x:27,y:29,size:6.2,font:regular,color:rgb(1,1,1)});
-  page.drawText('HORARIO ESCOLAR',{x:W-125,y:29,size:6.2,font:bold,color:rgb(1,1,1)});
-
-  // Página 2: firmas oficiales. Para alumnos incluye a todos los docentes del grupo;
-  // para docentes funciona como constancia de aceptación del horario.
-  const signPage=p.addPage([W,H]);
-  drawFloral(signPage,W,H,theme);
-  if(logoBytes){const logo2=await p.embedPng(logoBytes);signPage.drawImage(logo2,{x:27,y:H-73,width:58,height:61});}
-  signPage.drawText('ITHLA',{x:105,y:H-42,size:13,font:bold,color:INK});
-  signPage.drawText(teacher?'CONSTANCIA DE ACEPTACIÓN DEL HORARIO':'VALIDACIÓN DEL HORARIO DEL ALUMNO',{x:105,y:H-55,size:8,font:bold,color:theme.primary});
-  signPage.drawText(`Ciclo escolar ${cycle}`,{x:105,y:H-68,size:7,font:regular,color:GRAY});
-
-  const authorities=teacher
+  }
+  // Usar las coordenadas según la cantidad real de materias y intervalos.
+  // Para jornadas extraordinarias o una materia extensa se genera un anexo.
+  const minWeeklyH=slots.length*20+22+53;
+  const mainFits=weekSectionY>=minWeeklyH;
+  if(mainFits)weeklyTable(main,slots,weekSectionY);
+  else{
+    strip(main,'02  ·  RESUMEN DE HORARIOS',weekSectionY);
+    txt(main,'La tabla semanal completa continúa en la página siguiente para mantener legibles todas las clases.',{x:M+10,y:weekSectionY-30,width:740,font:book,size:9,color:muted});
+  }
+  const extraPages=[];
+  // Continuación de asignaturas (si hay más de 13), sin omitir materias.
+  if(subjectList.length>chunkSize){
+    for(let offset=chunkSize;offset<subjectList.length;offset+=30){
+      const extra=basePage('ANEXO ACADÉMICO  /  RELACIÓN COMPLETA','MATERIAS Y DOCENTES · CONTINUACIÓN',`Grupo ${groupName} · Ciclo ${year}`);
+      const chunk=subjectList.slice(offset,offset+30);
+      strip(extra,'ASIGNATURAS REGISTRADAS',432);
+      const rowH=11.7;
+      for(let i=0;i<chunk.length;i++){
+        const sub=chunk[i],y=412-(i+1)*rowH;
+        frame(extra,M,y,right-M,rowH,{fill:i%2?white:soft,border:LINE,bw:.4});
+        const c=colorsBySubject.get(normalizeSubjectName(sub.materia))||accent;
+        extra.drawRectangle({x:M,y,width:3,height:rowH,color:c});
+        txt(extra,String(offset+i+1).padStart(2,'0'),{x:M+8,y:y+3,width:27,font:book,size:6.6});
+        txt(extra,sub.materia,{x:M+50,y:y+3,width:360,font:heavy,size:7,min:5.9});
+        txt(extra,sub.docente,{x:M+426,y:y+3,width:326,font:book,size:7,min:5.5,color:muted});
+      }
+      extraPages.push(extra);
+    }
+  }
+  // La tabla completa tiene prioridad y se paginará si no cabe en la portada.
+  if(!mainFits){
+    const perPage=11;
+    for(let offset=0;offset<slots.length;offset+=perPage){
+      const ext=basePage('ANEXO ACADÉMICO  /  JORNADA COMPLETA','HORARIO SEMANAL · CONTINUACIÓN',`Ciclo ${year} · ${docType} ${teacherMode?teacher.nombre_completo:groupName}`);
+      weeklyTable(ext,slots.slice(offset,offset+perPage),423);
+      extraPages.push(ext);
+    }
+  }
+  // No perder sesiones simultáneas: la retícula indica +N y el anexo
+  // detalla cada materia, grupo, docente y aula involucrados en el conflicto.
+  const slotGroups=new Map();
+  for(const r of rows||[]){
+    const key=`${r.dia_semana}|${String(r.hora_inicio||'').slice(0,5)}|${String(r.hora_fin||'').slice(0,5)}`;
+    if(!slotGroups.has(key))slotGroups.set(key,[]);
+    slotGroups.get(key).push(r);
+  }
+  const simultaneous=[...slotGroups.entries()].filter(([key,arr])=>arr.length>1).flatMap(([key,arr])=>arr.map(r=>({key,row:r})));
+  for(let offset=0;offset<simultaneous.length;offset+=25){
+    const ext=basePage('REVISIÓN ACADÉMICA  /  SESIONES SIMULTÁNEAS','DETALLE DE HORARIOS COINCIDENTES','El documento muestra todos los registros de clase, incluidos los superpuestos.');
+    strip(ext,'SESIONES REGISTRADAS EN EL MISMO HORARIO',429);
+    const part=simultaneous.slice(offset,offset+25);
+    for(let i=0;i<part.length;i++){
+      const r=part[i].row,dy=410-i*13.5;
+      frame(ext,M,dy-10,right-M,13.5,{fill:i%2?white:soft,border:LINE,bw:.4});
+      txt(ext,`${days[(Number(r.dia_semana)||1)-1]||'Día'} · ${String(r.hora_inicio||'').slice(0,5)}–${String(r.hora_fin||'').slice(0,5)}`,{x:M+9,y:dy-6,width:165,font:heavy,size:7.1,color:primary});
+      txt(ext,groupedLesson(r),{x:M+180,y:dy-6,width:260,font:heavy,size:7.0});
+      txt(ext,`${dayLesson(r)}${r.aula?' · '+r.aula:''}`,{x:M+450,y:dy-6,width:320,font:book,size:6.7,color:muted});
+    }
+    extraPages.push(ext);
+  }
+  // Página de validación: todas las firmas reales + QR, con el mismo lenguaje visual.
+  const signPage=basePage('VALIDACIÓN INSTITUCIONAL  /  CONTROL DE FIRMAS','FIRMAS Y AUTORIZACIONES',`Ciclo ${year} · ${teacherMode?'Aceptación del horario docente':`Horario del ${student?'alumno':'grupo'} ${groupName}`}`);
+  strip(signPage,'01  ·  AUTORIDADES RESPONSABLES',420);
+  const authorities=teacherMode
     ? [['Servicios Docentes','servicios_docentes'],['Coordinación Académica','coordinacion_academica'],['Dirección Escolar','direccion_escolar']]
     : [['Servicios Estudiantiles','servicios_estudiantiles'],['Coordinación Académica','coordinacion_academica'],['Control Escolar','control_escolar'],['Dirección Escolar','direccion_escolar']];
-  const ap=await Promise.all(authorities.map(async ([label,role])=>[label,await profileSignatureByRole(admin,role)]));
-  signPage.drawRectangle({x:27,y:H-105,width:W-54,height:18,color:theme.primary});
-  signPage.drawText('FIRMAS DE AUTORIDADES',{x:34,y:H-99,size:8,font:bold,color:rgb(1,1,1)});
-  let schedulePages=2;
-  const cols=teacher?3:4, aw=(W-54-(cols-1)*6)/cols;
-  for(let i=0;i<ap.length;i++){
-    const [label,profile]=ap[i];
-    const x=27+i*(aw+6);
-    await drawSignatureBox(signPage,p,admin,{x,y:H-205,w:aw,h:88,label,profile});
+  const ap=await Promise.all(authorities.map(async([label,role])=>[label,await profileSignatureByRole(admin,role)]));
+  const aw=(right-M-7*(ap.length-1))/ap.length;
+  for(const [i,[label,profile]] of ap.entries()){
+    await signBox(signPage,{x:M+i*(aw+7),y:307,w:aw,h:97,label,profile});
   }
-
-  if(teacher){
+  const continuation=[];
+  if(teacherMode){
+    strip(signPage,'02  ·  ACEPTACIÓN DEL DOCENTE',280);
     const acceptance=await admin.from('aceptaciones_horario_docente').select('*').eq('docente_id',teacher.id).eq('ciclo_escolar',cycle).maybeSingle();
-    let tp=null;
-    if(acceptance?.data?.estado==='aceptado' && acceptance?.data?.firma_path){
-      tp={id:teacher.auth_user_id||null,nombre_completo:teacher.nombre_completo,rol:'docente',firma_path:acceptance.data.firma_path,firma_sha256:acceptance.data.firma_sha256||null};
+    let profile=null;
+    if(acceptance?.data?.estado==='aceptado'&&acceptance.data?.firma_path){
+      profile={id:teacher.auth_user_id||null,nombre_completo:teacher.nombre_completo,rol:'docente',firma_path:acceptance.data.firma_path,firma_sha256:acceptance.data.firma_sha256||null};
     }
-    signPage.drawRectangle({x:27,y:H-238,width:W-54,height:18,color:theme.primary});
-    signPage.drawText('ACEPTACIÓN DEL DOCENTE',{x:34,y:H-232,size:8,font:bold,color:rgb(1,1,1)});
-    await drawSignatureBox(signPage,p,admin,{x:27,y:H-370,w:260,h:112,label:acceptance?.data?.estado==='aceptado'?'Horario aceptado':'Firma del docente',profile:tp,showName:false,missingText:acceptance?.data?.estado==='aceptado'?'FIRMA NO DISPONIBLE':'PENDIENTE DE ACEPTACIÓN'});
-    signPage.drawText(acceptance?.data?.estado==='aceptado'?`Aceptado el ${new Date(acceptance.data.aceptado_at).toLocaleString('es-MX')}`:'El docente aún no ha aceptado este horario.',{x:305,y:H-290,size:8,font:bold,color:acceptance?.data?.estado==='aceptado'?theme.primary:GRAY});
-    signPage.drawText('La firma registrada se utiliza como método de aceptación y permanece en almacenamiento privado.',{x:305,y:H-308,size:6.5,font:regular,color:GRAY});
-  } else {
-    const teacherProfiles=[];
-    const seen=new Set();
-    for(const r of rows||[]){const t=r.docente;if(!t||seen.has(t.id||t.nombre_completo))continue;seen.add(t.id||t.nombre_completo);let prof=await profileSignatureByAuth(admin,t.auth_user_id,t.nombre_completo,'docente',t.correo);if(!prof?.firma_path){const acc=await admin.from('aceptaciones_horario_docente').select('firma_path,firma_sha256,aceptado_at').eq('docente_id',t.id).eq('ciclo_escolar',cycle).eq('estado','aceptado').maybeSingle();if(acc.data?.firma_path)prof={id:t.auth_user_id||null,nombre_completo:t.nombre_completo,rol:'docente',firma_path:acc.data.firma_path,firma_sha256:acc.data.firma_sha256||null};}teacherProfiles.push({name:t.nombre_completo,profile:prof});}
-    signPage.drawRectangle({x:27,y:H-238,width:W-54,height:18,color:theme.primary});
-    signPage.drawText('FIRMAS DE DOCENTES DEL GRUPO',{x:34,y:H-232,size:8,font:bold,color:rgb(1,1,1)});
-    const max=teacherProfiles.slice(0,20), tw=(W-54-15*5)/4;
-    for(let i=0;i<max.length;i++){
-      const t=max[i],col=i%4,row=Math.floor(i/4);
-      await drawSignatureBox(signPage,p,admin,{x:27+col*(tw+5),y:H-340-row*68,w:tw,h:58,label:t.name,profile:t.profile,showName:false});
+    await signBox(signPage,{x:M,y:138,w:320,h:122,label:acceptance?.data?.estado==='aceptado'?'Horario aceptado':'Firma del docente',profile,showName:true,missingText:'PENDIENTE DE ACEPTACIÓN'});
+    txt(signPage,acceptance?.data?.estado==='aceptado'?`Aceptado: ${acceptance.data.aceptado_at?new Date(acceptance.data.aceptado_at).toLocaleString('es-MX'):'Registro confirmado'}`:'El docente todavía no ha aceptado su horario.',{x:375,y:206,width:400,font:heavy,size:10,color:primary});
+    txt(signPage,'La firma institucional se consulta desde el repositorio privado y respalda la aceptación del horario.',{x:375,y:185,width:400,font:book,size:8,color:muted});
+  }else{
+    strip(signPage,'02  ·  DOCENTES ASIGNADOS AL GRUPO',280);
+    const teacherProfiles=[],seen=new Set();
+    for(const r of rows||[]){
+      const t=r.docente;if(!t)continue;
+      const id=t.id||t.nombre_completo;
+      if(seen.has(id))continue;seen.add(id);
+      let profile=await profileSignatureByAuth(admin,t.auth_user_id,t.nombre_completo,'docente',t.correo);
+      if(!profile?.firma_path){
+        const acc=await admin.from('aceptaciones_horario_docente').select('firma_path,firma_sha256').eq('docente_id',t.id).eq('ciclo_escolar',cycle).eq('estado','aceptado').maybeSingle();
+        if(acc.data?.firma_path)profile={id:t.auth_user_id||null,nombre_completo:t.nombre_completo,firma_path:acc.data.firma_path,firma_sha256:acc.data.firma_sha256||null};
+      }
+      teacherProfiles.push({name:t.nombre_completo,profile});
     }
-    if(teacherProfiles.length>20){schedulePages=3;const extra=p.addPage([W,H]);drawFloral(extra,W,H,theme);if(logoBytes){const logo3=await p.embedPng(logoBytes);extra.drawImage(logo3,{x:27,y:H-73,width:58,height:61});}extra.drawText(institution.siglas||'ITHLA',{x:105,y:H-42,size:13,font:bold,color:INK});extra.drawText('FIRMAS DOCENTES · CONTINUACIÓN',{x:105,y:H-55,size:8,font:bold,color:theme.primary});const rest=teacherProfiles.slice(20);for(let i=0;i<rest.length;i++){const t=rest[i],col=i%4,row=Math.floor(i/4);await drawSignatureBox(extra,p,admin,{x:27+col*(tw+5),y:H-145-row*68,w:tw,h:58,label:t.name,profile:t.profile,showName:false});}extra.drawRectangle({x:27,y:15,width:W-54,height:17,color:theme.primary});extra.drawText(`${institution.siglas||'ITHLA'} · DOCUMENTO OFICIAL`,{x:35,y:21,size:5.2,font:bold,color:rgb(1,1,1)});}
-
+    const perPage=11;
+    for(const [i,t] of teacherProfiles.slice(0,perPage).entries()){
+      const col=i%4,row=Math.floor(i/4),w=(right-M-18)/4;
+      await signBox(signPage,{x:M+col*(w+6),y:206-row*75,w,h:67,label:t.name,profile:t.profile,showName:false});
+    }
+    for(let offset=perPage;offset<teacherProfiles.length;offset+=20){
+      const ext=basePage('VALIDACIÓN INSTITUCIONAL  /  CONTINUACIÓN','FIRMAS DOCENTES · CONTINUACIÓN',`Horario del grupo ${groupName} · Ciclo ${year}`);
+      strip(ext,'DOCENTES RESPONSABLES',433);
+      const part=teacherProfiles.slice(offset,offset+20),w=(right-M-18)/4;
+      for(let i=0;i<part.length;i++){
+        const col=i%4,row=Math.floor(i/4),t=part[i];
+        await signBox(ext,{x:M+col*(w+6),y:348-row*66,w,h:59,label:t.name,profile:t.profile,showName:false});
+      }
+      continuation.push(ext);
+    }
   }
-  signPage.drawRectangle({x:27,y:15,width:W-54,height:17,color:theme.primary});
-  signPage.drawText('ITHLA · DOCUMENTO OFICIAL',{x:35,y:21,size:5.2,font:bold,color:rgb(1,1,1)});
-  signPage.drawText(`Página 2 de ${schedulePages}`,{x:W-83,y:21,size:5.2,font:bold,color:rgb(1,1,1)});
-  if(verification?.qrBytes){await addQrToPage(signPage,p,verification.qrBytes,{x:W-82,y:39,size:55});signPage.drawText('ESCANEA PARA VALIDAR',{x:W-205,y:42,size:5.1,font:bold,color:theme.primary});}
-  return {pdf_base64:Buffer.from(await p.save()).toString('base64')};
+  if(qr){
+    const x=right-96,y=43;
+    frame(signPage,x-5,y-5,88,88,{fill:white,border:LINE,bw:.7});
+    signPage.drawImage(qr,{x,y,width:78,height:78});
+    txt(signPage,'VERIFICA TU DOCUMENTO',{x:right-245,y:59,width:135,font:heavy,size:7.0,color:primary,align:'right'});
+    txt(signPage,'Escanea el código QR',{x:right-245,y:46,width:135,font:book,size:7,color:muted,align:'right'});
+  }
+  txt(signPage,'La verificación del documento se realiza mediante el folio y código QR. Las firmas digitales disponibles se incorporan desde Jaguar.',{x:M,y:55,width:540,font:book,size:7.3,min:6.3,color:muted});
+  const count=pdf.getPageCount();
+  pdf.getPages().forEach((page,index)=>footer(page,index+1,count));
+  return {pdf_base64:Buffer.from(await pdf.save()).toString('base64')};
 }
 
 async function studentSchedulePdf(admin,id,req=null){
   const cycle=await activeCycle(admin);
   const {data:s}=await admin.from('alumnos').select('id,nombre_completo,matricula,grupo_id,grupos(id,clave,grado,letra,turno)').eq('id',id).maybeSingle();
   if(!s)throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
-  const {data:rows,error}=await admin.from('horarios').select('id,dia_semana,hora_inicio,hora_fin,aula,ciclo_escolar,grupo_materia_id,grupo_materias!inner(id,grupo_id,materias(nombre),grupos!inner(id,clave,turno)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',s.grupo_id).eq('ciclo_escolar',cycle).order('hora_inicio').order('dia_semana');
+  const {data:rows,error}=await admin.from('horarios').select('id,dia_semana,hora_inicio,hora_fin,aula,ciclo_escolar,grupo_materia_id,grupo_materias!inner(id,grupo_id,materia_id,materias(nombre),grupos!inner(id,clave,turno)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',s.grupo_id).eq('ciclo_escolar',cycle).order('hora_inicio').order('dia_semana');
   if(error)throw error;
   const gmIds=[...new Set((rows||[]).map(r=>Number(r.grupo_materia_id)).filter(Boolean))];
-  if(gmIds.length){ const {data:as,error:ae}=await admin.from('asignaciones_docentes').select('grupo_materia_id,docente_id,docentes(id,nombre_completo,auth_user_id)').in('grupo_materia_id',gmIds).eq('activo',true).eq('ciclo_escolar',cycle); if(ae)throw ae; const amap=new Map((as||[]).map(a=>[String(a.grupo_materia_id),a.docentes])); for(const r of rows||[]){ if(!r.docente) r.docente=amap.get(String(r.grupo_materia_id))||null; }}
+  if(gmIds.length){ const {data:as,error:ae}=await admin.from('asignaciones_docentes').select('grupo_materia_id,docente_id,docentes(id,nombre_completo,auth_user_id)').in('grupo_materia_id',gmIds).eq('activo',true).eq('ciclo_escolar',cycle); if(ae)throw ae; const amap=new Map((as||[]).map(a=>[String(a.grupo_materia_id),a.docentes])); for(const r of rows||[]){ if(amap.has(String(r.grupo_materia_id)))r.docente=amap.get(String(r.grupo_materia_id)); }}
   const teacherIds=[...new Set((rows||[]).map(r=>r.docente?.id).filter(Boolean))];
   let colorMap=new Map();
   if(teacherIds.length){const {data:colors,error:ce}=await admin.from('docente_materia_colores').select('docente_id,materia_id,color_hex').in('docente_id',teacherIds);if(ce)throw ce;colorMap=new Map((colors||[]).map(c=>[`${c.docente_id}|${c.materia_id}`,c.color_hex]));}
-  for(const r of rows||[]){const mid=r.grupo_materias?.materia_id;const tid=r.docente?.id;r.subject_color=colorMap.get(`${tid}|${mid}`)||null;}
+  for(const r of rows||[]){const mid=r.grupo_materias?.materia_id;const tid=r.docente?.id;r.subject_color=colorMap.get(`${tid}|${mid}`)||'#D8B45A';}
   const {data:workshop}=await admin.from('inscripciones_talleres').select('talleres(nombre),estado,ciclo_escolar').eq('alumno_id',id).eq('estado','inscrito').order('id',{ascending:false}).limit(1).maybeSingle();
   const folio=`HOR-${cycle.replace(/[^0-9]/g,'')}-${String(s.id).padStart(6,'0')}-${Date.now().toString().slice(-5)}`;
   const verification=await registerVerifiableDocument(admin,{folio,tipo:'horario_alumno',titulo:'HORARIO DEL ALUMNO',alumno_id:s.id,created_by:null,req,payload:{alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:s.grupos?.clave,grado:s.grupos?.grado?`${s.grupos.grado}°`:'—',ciclo:cycle},institucion:{siglas:(await institutionForPdf(admin)).siglas,nombre_institucion:(await institutionForPdf(admin)).nombre_institucion},detalle:(rows||[]).slice(0,40).map(r=>({label:`${String(r.hora_inicio||'').slice(0,5)}–${String(r.hora_fin||'').slice(0,5)} · ${days[(Number(r.dia_semana)||1)-1]||''}`,value:`${r.grupo_materias?.materias?.nombre||'Materia'} · ${r.docente?.nombre_completo||'Sin docente'}${r.aula?' · '+r.aula:''}`}))}});
@@ -508,8 +615,8 @@ async function teacherSchedulePdf(admin,id,req=null){
   if(!t)throw Object.assign(new Error('Docente no encontrado.'),{status:404});
   const {data:rows,error}=await admin.from('horarios').select('id,dia_semana,hora_inicio,hora_fin,aula,ciclo_escolar,grupo_materia_id,grupo_materias(id,materia_id,materias(nombre),grupos(clave)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('docente_id',id).eq('ciclo_escolar',cycle).order('hora_inicio').order('dia_semana');
   if(error)throw error;
-  const gmIds=[...new Set((rows||[]).map(r=>Number(r.grupo_materia_id)).filter(Boolean))];
-  if(gmIds.length){const {data:as,error:ae}=await admin.from('asignaciones_docentes').select('grupo_materia_id,docente_id,grupo_materias(materia_id)').eq('docente_id',id).eq('activo',true).in('grupo_materia_id',gmIds);if(ae)throw ae;const mids=new Set((as||[]).map(a=>String(a.grupo_materias?.materia_id)).filter(Boolean));if(mids.size){const {data:colors,error:ce}=await admin.from('docente_materia_colores').select('materia_id,color_hex').eq('docente_id',id).in('materia_id',[...mids]);if(ce)throw ce;const cmap=new Map((colors||[]).map(c=>[String(c.materia_id),c.color_hex]));for(const r of rows||[]){r.subject_color=cmap.get(String(r.grupo_materias?.materia_id))||null;}}}
+  // Los horarios de docentes se presentan sólo en dorado institucional;
+  // el color individual de cada asignatura no altera este PDF.
   const folio=`HDT-${cycle.replace(/[^0-9]/g,'')}-${String(t.id).padStart(6,'0')}-${Date.now().toString().slice(-5)}`;
   const institution=await institutionForPdf(admin);
   const verification=await registerVerifiableDocument(admin,{folio,tipo:'horario_docente',titulo:'HORARIO DEL DOCENTE',created_by:null,req,payload:{alumno:{},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion},detalle:[{label:'Docente',value:t.nombre_completo},{label:'No. empleado',value:t.numero_empleado||'—'},{label:'Ciclo escolar',value:cycle},...(rows||[]).slice(0,40).map(r=>({label:`${String(r.hora_inicio||'').slice(0,5)}–${String(r.hora_fin||'').slice(0,5)} · ${days[(Number(r.dia_semana)||1)-1]||''}`,value:`${r.grupo_materias?.materias?.nombre||'Materia'} · ${r.grupo_materias?.grupos?.clave||'—'}${r.aula?' · '+r.aula:''}`}))]}});
@@ -520,14 +627,14 @@ async function groupSchedulePdf(admin,id,req=null){
   const cycle=await activeCycle(admin);
   const {data:g}=await admin.from('grupos').select('id,clave,grado,letra,turno').eq('id',id).maybeSingle();
   if(!g)throw Object.assign(new Error('Grupo no encontrado.'),{status:404});
-  const {data:rows,error}=await admin.from('horarios').select('id,dia_semana,hora_inicio,hora_fin,aula,ciclo_escolar,grupo_materia_id,grupo_materias!inner(id,grupo_id,materias(nombre),grupos!inner(id,clave,turno)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',id).eq('ciclo_escolar',cycle).order('hora_inicio').order('dia_semana');
+  const {data:rows,error}=await admin.from('horarios').select('id,dia_semana,hora_inicio,hora_fin,aula,ciclo_escolar,grupo_materia_id,grupo_materias!inner(id,grupo_id,materia_id,materias(nombre),grupos!inner(id,clave,turno)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',id).eq('ciclo_escolar',cycle).order('hora_inicio').order('dia_semana');
   if(error)throw error;
   const gmIds=[...new Set((rows||[]).map(r=>Number(r.grupo_materia_id)).filter(Boolean))];
-  if(gmIds.length){ const {data:as,error:ae}=await admin.from('asignaciones_docentes').select('grupo_materia_id,docente_id,docentes(id,nombre_completo,auth_user_id)').in('grupo_materia_id',gmIds).eq('activo',true).eq('ciclo_escolar',cycle); if(ae)throw ae; const amap=new Map((as||[]).map(a=>[String(a.grupo_materia_id),a.docentes])); for(const r of rows||[]){ if(!r.docente) r.docente=amap.get(String(r.grupo_materia_id))||null; }}
+  if(gmIds.length){ const {data:as,error:ae}=await admin.from('asignaciones_docentes').select('grupo_materia_id,docente_id,docentes(id,nombre_completo,auth_user_id)').in('grupo_materia_id',gmIds).eq('activo',true).eq('ciclo_escolar',cycle); if(ae)throw ae; const amap=new Map((as||[]).map(a=>[String(a.grupo_materia_id),a.docentes])); for(const r of rows||[]){ if(amap.has(String(r.grupo_materia_id)))r.docente=amap.get(String(r.grupo_materia_id)); }}
   const teacherIds=[...new Set((rows||[]).map(r=>r.docente?.id).filter(Boolean))];
   let colorMap=new Map();
   if(teacherIds.length){const {data:colors,error:ce}=await admin.from('docente_materia_colores').select('docente_id,materia_id,color_hex').in('docente_id',teacherIds);if(ce)throw ce;colorMap=new Map((colors||[]).map(c=>[`${c.docente_id}|${c.materia_id}`,c.color_hex]));}
-  for(const r of rows||[]){const mid=r.grupo_materias?.materia_id;const tid=r.docente?.id;r.subject_color=colorMap.get(`${tid}|${mid}`)||null;}
+  for(const r of rows||[]){const mid=r.grupo_materias?.materia_id;const tid=r.docente?.id;r.subject_color=colorMap.get(`${tid}|${mid}`)||'#D8B45A';}
   const folio=`HGR-${cycle.replace(/[^0-9]/g,'')}-${String(g.id).padStart(6,'0')}-${Date.now().toString().slice(-5)}`;
   const institution=await institutionForPdf(admin);
   const verification=await registerVerifiableDocument(admin,{folio,tipo:'horario_grupo',titulo:`HORARIO DEL GRUPO ${g.clave||''}`,created_by:null,req,payload:{institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion},detalle:[{label:'Grupo',value:g.clave||'—'},{label:'Grado',value:g.grado?`${g.grado}°`:'—'},{label:'Turno',value:g.turno||'—'},{label:'Ciclo escolar',value:cycle},...(rows||[]).slice(0,40).map(r=>({label:`${String(r.hora_inicio||'').slice(0,5)}–${String(r.hora_fin||'').slice(0,5)} · ${days[(Number(r.dia_semana)||1)-1]||''}`,value:`${r.grupo_materias?.materias?.nombre||'Materia'} · ${r.docente?.nombre_completo||'Sin docente'}${r.aula?' · '+r.aula:''}`}))]}});
