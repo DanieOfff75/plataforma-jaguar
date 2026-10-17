@@ -892,6 +892,67 @@ async function dashboard(admin, profile, user) {
 }
 
 
+/**
+ * Resumen agregado para el dashboard institucional.
+ * No devuelve nombres, matrículas, identificadores ni expedientes.
+ * Solo roles académicos autorizados; no sustituye permisos existentes.
+ * Los recuentos de calificaciones/asistencias se basan en hasta 5000
+ * registros recientes de cada tipo para acotar costes en Vercel gratuito.
+ */
+async function dashboardAnalytics(admin,profile){
+  if(!['direccion_escolar','control_escolar','control','coordinacion_academica'].includes(profile?.rol)){
+    throw Object.assign(new Error('No autorizado para estadísticas institucionales.'),{status:403});
+  }
+  const limit=5000;
+  const [gradesQ,attendanceQ,studentsQ]=await Promise.all([
+    admin.from('calificaciones').select('calificacion').order('id',{ascending:false}).limit(limit),
+    admin.from('asistencias').select('fecha,estado').order('fecha',{ascending:false}).limit(limit),
+    admin.from('alumnos').select('grupos(grado)').eq('activo',true).not('estado_escolar','in','(archivado,baja,traslado,egresado)').limit(limit)
+  ]);
+  for(const q of [gradesQ,attendanceQ,studentsQ])if(q.error)throw q.error;
+  const buckets=[0,0,0,0,0];
+  let sum=0,graded=0,passed=0;
+  for(const row of gradesQ.data||[]){
+    if(row.calificacion===null||row.calificacion===undefined||String(row.calificacion).trim()==='')continue;
+    const n=Number(row.calificacion);
+    if(!Number.isFinite(n)||n<0||n>10)continue;
+    const i=n<6?0:n<7?1:n<8?2:n<9?3:4;
+    buckets[i]++;sum+=n;graded++;if(n>=6)passed++;
+  }
+  const gradesByBand=['0–5.9','6–6.9','7–7.9','8–8.9','9–10'].map((label,i)=>({label,total:buckets[i]}));
+  const byGrade={};
+  for(const row of studentsQ.data||[]){
+    const n=Number(row?.grupos?.grado);
+    if(Number.isInteger(n)&&n>0&&n<20)byGrade[n]=(byGrade[n]||0)+1;
+  }
+  const months=new Map();
+  let attended=0,absence=0,attendanceCount=0;
+  for(const row of attendanceQ.data||[]){
+    const status=String(row.estado||'').toLowerCase();
+    const present=['presente','justificada'].includes(status);
+    const absent=['falta','ausente','injustificada'].includes(status);
+    if(!present&&!absent)continue;
+    attendanceCount++;if(present)attended++;else absence++;
+    const key=String(row.fecha||'').slice(0,7);
+    if(!/^\d{4}-\d{2}$/.test(key))continue;
+    const m=months.get(key)||{month:key,present:0,absent:0};
+    if(present)m.present++;else m.absent++;
+    months.set(key,m);
+  }
+  const attendanceMonths=[...months.values()].sort((a,b)=>a.month.localeCompare(b.month)).slice(-6);
+  return {
+    gradesByBand,byGrade,
+    mean:graded?Number((sum/graded).toFixed(2)):null,
+    passingRate:graded?Number((passed/graded*100).toFixed(1)):null,
+    attendanceRate:attendanceCount?Number((attended/attendanceCount*100).toFixed(1)):null,
+    attendanceMonths,
+    recordedGrades:graded,recordedAttendance:attendanceCount,
+    gradeSampleLimited:(gradesQ.data||[]).length===limit,
+    attendanceSampleLimited:(attendanceQ.data||[]).length===limit,
+    studentSampleLimited:(studentsQ.data||[]).length===limit
+  };
+}
+
 function isArchiveManager(profile){return archiveManagers.includes(profile?.rol);}
 function isArchiveAcademic(profile){return archiveAcademics.includes(profile?.rol);}
 function archiveSafeName(name='archivo'){
@@ -1827,6 +1888,7 @@ async function getResource(
   profile,
   req
 ) {
+  if (key === 'dashboardAnalytics') return dashboardAnalytics(admin,profile);
   if (key === 'dashboard') {
     return dashboard(admin, profile, user);
   }

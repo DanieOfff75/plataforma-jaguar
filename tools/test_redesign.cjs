@@ -1,0 +1,33 @@
+/* Pruebas rápidas sin Supabase ni dependencias npm: node tools/test_redesign.cjs */
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+const root=path.join(__dirname,'..');
+const server=fs.readFileSync(path.join(root,'api/data.js'),'utf8');
+const browser=fs.readFileSync(path.join(root,'assets/jaguar-premium.js'),'utf8');
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+(async()=>{
+  const start=server.indexOf('async function dashboardAnalytics('),end=server.indexOf('\nfunction isArchiveManager(',start);
+  assert(start>0&&end>start,'Existe resource dashboardAnalytics');
+  const gradeRows=[{calificacion:5},{calificacion:6},{calificacion:7.5},{calificacion:8.8},{calificacion:9.5},{calificacion:null}];
+  const attendanceRows=[{fecha:'2026-10-10',estado:'presente'},{fecha:'2026-10-11',estado:'falta'},{fecha:'2026-09-10',estado:'justificada'}];
+  const studentsRows=[{grupos:{grado:1}},{grupos:{grado:2}},{grupos:{grado:1}}];
+  const db={calificaciones:gradeRows,asistencias:attendanceRows,alumnos:studentsRows};
+  const admin={from(name){return {select(){return this},order(){return this},eq(){return this},not(){return this},limit(max){this.max=max;return Promise.resolve({data:db[name].slice(0,max),error:null})}}}};
+  const script=server.slice(start,end)+'\nthis.statFn=dashboardAnalytics';
+  const ctx={};vm.runInNewContext(script,ctx);const r=await ctx.statFn(admin,{rol:'control_escolar'});
+  assert.deepStrictEqual(Array.from(r.gradesByBand,x=>x.total),[1,1,1,1,1]);
+  assert.strictEqual(r.recordedGrades,5);assert.strictEqual(r.attendanceRate,66.7);assert.strictEqual(r.byGrade[1],2);
+  await assert.rejects(ctx.statFn(admin,{rol:'alumno'}),/No autorizado/);
+  const mode={current:''};
+  const dom={documentElement:{setAttribute(k,v){mode.current=v},getAttribute(){return mode.current}},getElementById(){return null},querySelector(){return null},querySelectorAll(){return []},addEventListener(){}};
+  const state={role:'control_escolar',page:'inicio',profile:{nombre_completo:'Prueba del Sistema'},activeCycle:'2026-2027'};
+  const sandbox={document:dom,localStorage:{getItem(){return null},setItem(){}},window:{},S:state,api:async resource=>resource==='dashboard'?{counts:{alumnos:3,docentes:2,grupos:1,materias:5},notices:[]}:resource==='dashboardAnalytics'?r:{},esc:x=>String(x),toast(){},v22Dashboard:async()=>'<p>fallback</p>',v22StudentOverview:async()=>'<p>Alumno</p>',v3TeacherDashboard:async()=>'<p>Docente</p>',v3DeptDashboard:async()=>'<p>Depto</p>',dashboard:async()=>'<p>General</p>',Intl,Number,Math,console};
+  vm.createContext(sandbox);vm.runInContext(browser,sandbox);
+  assert.strictEqual(mode.current,'light');sandbox.window.jaguarToggleMode();assert.strictEqual(mode.current,'dark');sandbox.window.jaguarToggleMode();assert.strictEqual(mode.current,'light');
+  const nav=sandbox.window.jaguarRenderNav([['inicio','⌂ Inicio'],['alumnos','👥 Grupos y alumnos'],['avisos','📢 Avisos']]);
+  assert.strictEqual((nav.match(/<button/g)||[]).length,3);
+  const dashboard=await sandbox.window.jaguarPremiumHome();
+  assert(dashboard.includes('Distribución de calificaciones')&&dashboard.includes('Alumnos por grado'));
+  assert(html.includes('jaguarPremiumHome()')&&html.includes('/assets/jaguar-premium.css')&&html.includes('/assets/jaguar-premium.js'));
+  assert(html.includes('id="nav"')&&html.includes('id="content"')&&html.includes('id="modal"'));
+  console.log('OK: roles, agregados, gráficas, modo oscuro, navegación, integración y elementos originales.');
+})().catch(e=>{console.error(e);process.exitCode=1});

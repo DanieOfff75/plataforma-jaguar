@@ -65,16 +65,37 @@ body{overflow-x:hidden;background-attachment:fixed}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 </style>
+<script id="jaguar-premium-theme-boot">try{const m=localStorage.getItem("jaguar_display_mode_v3");document.documentElement.setAttribute("data-jaguar-mode",m==="dark"?"dark":"light")}catch{document.documentElement.setAttribute("data-jaguar-mode","light")}</script>
+<link rel="stylesheet" href="/assets/jaguar-premium.css">
 </head>
 <body>
 <div id="login" class="min-h-screen flex items-center justify-center p-5"><div class="glass rounded-3xl p-7 max-w-xl w-full">
-<div class="flex justify-between gap-5 mb-8"><div><span class="chip">● PLATAFORMA JAGUAR</span><h1 class="text-4xl mt-3">Acceso al sistema</h1><p class="text-[#A9BAC8] mt-2">Inicia sesión con tu cuenta institucional.</p></div><div class="text-right"><div class="brand text-2xl">🐆 PLATAFORMA JAGUAR</div><div class="text-xs text-[#8FA3B5]">Instituto Tecnológico e Histórico Latinoamericano · ITHLA</div></div></div>
+<div class="flex justify-between gap-5 mb-8"><div><span class="chip">● PLATAFORMA JAGUAR</span><h1 class="text-4xl mt-3">Acceso al sistema</h1><p class="text-[#A9BAC8] mt-2">Inicia sesión con tu cuenta institucional.</p></div><div class="text-right"><div class="brand text-2xl j-login-brand"><img src="/assets/ithla-logo.png" alt="Escudo institucional ITHLA"><span>PLATAFORMA<br>JAGUAR</span></div><div class="text-xs text-[#8FA3B5]">Instituto Tecnológico e Histórico Latinoamericano · ITHLA</div></div></div>
 <form onsubmit="loginWithPassword(event)" class="space-y-4"><div><label class="text-xs text-[#8FA3B5]">Correo institucional</label><input id="loginEmail" class="input mt-1" type="email" autocomplete="username" required></div><div><label class="text-xs text-[#8FA3B5]">Contraseña</label><input id="loginPassword" class="input mt-1" type="password" autocomplete="current-password" required></div><button id="loginBtn" class="btn primary w-full" type="submit">Entrar</button></form>
 <div class="flex justify-between items-center mt-4"><div id="loginStatus" class="text-xs text-[#8FA3B5]"></div><button type="button" class="text-xs text-[#D4AF37] font-bold" onclick="forgotPassword()">¿Olvidaste tu contraseña?</button></div><div class="mt-5 text-xs text-[#8FA3B5]">La autenticación se valida con Supabase Auth. Los datos escolares se consultan mediante API segura en Vercel.</div>
 </div></div>
-<div id="app" class="hide"><div class="mobile fixed top-0 left-0 right-0 z-40 p-3 bg-[#03100df5] border-b border-white/5 items-center justify-between"><b class="brand">🐆 JAGUAR</b><button class="btn" onclick="document.querySelector('.side').classList.toggle('!flex')">☰</button></div>
-<div class="flex min-h-screen"><aside class="side shrink-0 border-r border-white/5 bg-[#020b09ee] p-4 sticky top-0 h-screen"><div class="px-2 py-4"><div class="brand text-2xl">🐆 PLATAFORMA JAGUAR</div><div class="text-[10px] tracking-widest text-[#D4AF37]">ITHLA · SISTEMA ESCOLAR</div></div><div id="nav"></div><div class="side-account card mt-4"><div id="mini"></div><button class="btn w-full mt-3" onclick="logout()">Cerrar sesión</button></div></aside>
-<main class="main flex-1 min-w-0"><header class="h-20 border-b border-white/5 px-5 md:px-8 flex items-center justify-between"><div><div class="text-xs text-[#D4AF37] font-bold">PLATAFORMA JAGUAR</div><h2 id="title" class="text-xl md:text-2xl font-bold">Inicio</h2><div id="academicContextLine" class="text-[11px] text-[#8FA3B5] mt-1"></div></div><div class="flex gap-2 items-center"><span id="academicContext" class="chip"></span><span id="role" class="chip"></span><button class="btn" onclick="loadPage('avisos')">🔔 <span id="ncount">0</span></button></div></header><section id="content" class="p-5 md:p-8"></section></main></div></div>
+<div id="app" class="hide jaguar-v3">
+  <div class="mobile fixed top-0 left-0 right-0 z-40 p-3 items-center justify-between">
+    <div class="flex gap-2 items-center"><img src="/assets/ithla-logo.png" alt="ITHLA" style="height:34px;width:34px;object-fit:contain"><strong>JAGUAR · ITHLA</strong></div>
+    <button id="j-mobile-menu" class="btn" type="button" aria-controls="nav" aria-expanded="false" onclick="jaguarToggleSidebar()">☰ <span class="sr-only">Abrir menú</span></button>
+  </div>
+  <div class="j-side-backdrop" onclick="jaguarCloseSidebar()" aria-hidden="true"></div>
+  <div class="flex min-h-screen">
+    <aside class="side shrink-0 sticky top-0 h-screen" aria-label="Navegación escolar">
+      <div class="j-brand"><img src="/assets/ithla-logo.png" alt="Escudo del ITHLA"><div><strong>ITHLA</strong><small>Plataforma Jaguar<br>Sistema escolar</small></div></div>
+      <nav id="nav" aria-label="Módulos habilitados para tu rol"></nav>
+      <div class="side-account card"><div id="mini"></div><button class="btn w-full mt-3" type="button" onclick="logout()">↪ Cerrar sesión</button></div>
+    </aside>
+    <main class="main flex-1 min-w-0">
+      <header class="flex items-center justify-between">
+        <div><div class="text-xs font-bold" style="color:var(--j-gold)">PLATAFORMA JAGUAR · ITHLA</div><h2 id="title">Inicio</h2><div id="academicContextLine" class="text-[11px] mt-1" style="color:var(--j-muted)"></div></div>
+        <form class="j-search" onsubmit="event.preventDefault();jaguarFocusModule()" role="search"><span class="j-lens" aria-hidden="true">⌕</span><input id="j-module-search" class="input" type="search" autocomplete="off" placeholder="Buscar módulo en mi menú…" aria-label="Buscar módulo disponible"></form>
+        <div class="j-context"><span id="academicContext" class="chip"></span><span id="role" class="chip"></span><button class="btn" type="button" onclick="loadPage('avisos')" title="Avisos institucionales">♧ <span id="ncount">0</span></button><button id="j-mode" class="btn j-dark-toggle" type="button" onclick="jaguarToggleMode()" title="Cambiar modo" aria-label="Cambiar modo visual">☾</button></div>
+      </header>
+      <section id="content" aria-live="polite"></section>
+    </main>
+  </div>
+</div>
 <div id="modal" class="modal"><div class="glass rounded-2xl max-w-5xl w-full max-h-[92vh] overflow-auto p-6"><div class="flex justify-between gap-4"><h3 id="mt"></h3><button class="btn" onclick="closeModal()">✕</button></div><div id="mb" class="mt-5"></div></div></div><div id="toast" class="toast"></div>
 <script>
 const S={user:null,profile:null,role:null,page:'inicio',cache:{},institution:null,signatureRequired:false,studentSuspended:false,studentReview:false,activeCycle:'',activePeriod:null,periodNumber:null,totalPeriods:0};let supabaseClient=null;
@@ -233,7 +254,7 @@ async function loadPage(page){
 }
 function renderShell(){
   const items=S.role==='alumno'&&(S.studentAccess?.suspended||S.studentSuspended)?jaguarStudentSuspendedNav():(S.role==='control_escolar'?controlNav:(roleNav[S.role]||roleNav.alumno));
-  document.getElementById('nav').innerHTML=items.map(([id,t])=>'<button class="nav '+(S.page===id?'active':'')+'" onclick="loadPage(\''+id+'\')">'+t+'</button>').join('');
+  document.getElementById('nav').innerHTML=typeof jaguarRenderNav==='function'?jaguarRenderNav(items):items.map(([id,t])=>'<button class="nav '+(S.page===id?'active':'')+'" onclick="loadPage(\''+id+'\')">'+t+'</button>').join('');
   document.getElementById('title').textContent=titles[S.page]||S.page;
   const periodLabel=S.activePeriod?(S.totalPeriods?`Ciclo ${S.activeCycle} · Periodo ${S.periodNumber||'—'} de ${S.totalPeriods}`:`Ciclo ${S.activeCycle} · ${S.activePeriod.nombre||'Periodo actual'}`):`Ciclo ${S.activeCycle||'—'} · Sin periodo actual`;
   const pc=document.getElementById('academicContext');if(pc)pc.textContent=periodLabel;
@@ -243,6 +264,7 @@ function renderShell(){
 }
 async function pageHtml(p){
   if(p==='inicio'||p==='resumen'){
+    if(typeof jaguarPremiumHome==='function')return jaguarPremiumHome();
     if(S.role==='docente')return v3TeacherDashboard();
     if(['servicios_estudiantiles','servicios_docentes','prefectura','coordinacion_academica'].includes(S.role))return v3DeptDashboard();
     if(S.role==='control_escolar')return v22Dashboard();
@@ -3256,7 +3278,7 @@ async function usersModule(){
   try{
     const rows=await api('users');
     const isDirector=S.role==='direccion_escolar';
-    const depts=isDirector?[['DIR','Dirección Escolar'],['CE','Control Escolar'],['AE','Archivo Escolar y Expedientes'],['SD','Servicios Docentes'],['SE','Servicios Estudiantiles'],['PRE','Prefectura'],['CA','Coordinación Académica'],['RM','Recursos Monetarios'],['RM','Recursos Monetarios']]:[['CE','Control Escolar']];
+    const depts=isDirector?[['DIR','Dirección Escolar'],['CE','Control Escolar'],['AE','Archivo Escolar y Expedientes'],['SD','Servicios Docentes'],['SE','Servicios Estudiantiles'],['PRE','Prefectura'],['CA','Coordinación Académica'],['RM','Recursos Monetarios']]:[['CE','Control Escolar']];
     const cards=[];
     for(const [key,name] of depts){
       const rr=await jaguarResponsables(key);const r=rr[0];
@@ -3428,7 +3450,7 @@ body{background:radial-gradient(circle at 8% 0%,rgba(27,54,93,.55),transparent 3
 <script id="jaguar-responsibles-directory-v02132">
 async function jaguarResponsibleDirectory(){
   if(S.role!=='direccion_escolar')return '<div class="card">Módulo no disponible.</div>';
-  const depts=[['DIR','Dirección Escolar'],['CE','Control Escolar'],['SD','Servicios Docentes'],['SE','Servicios Estudiantiles'],['PRE','Prefectura'],['CA','Coordinación Académica'],['RM','Recursos Monetarios'],['RM','Recursos Monetarios']];
+  const depts=[['DIR','Dirección Escolar'],['CE','Control Escolar'],['SD','Servicios Docentes'],['SE','Servicios Estudiantiles'],['PRE','Prefectura'],['CA','Coordinación Académica'],['RM','Recursos Monetarios']];
   const cards=[];
   for(const [key,name] of depts){
     const rows=await jaguarResponsables(key); const r=rows[0];
@@ -4069,6 +4091,7 @@ async function jaguarInstitutionStatisticsModule(){
 }
 async function jaguarStudentPaymentsModule(){try{const [rows,charges]=await Promise.all([api('financeStudentPayments'),api('financeStudentCharges')]);return `<div class="space-y-5"><div class="card"><span class="chip">TRANSPARENCIA FINANCIERA</span><h2 class="text-2xl font-extrabold mt-3">💳 Mis pagos y cargos</h2><p class="text-sm text-[#A9BAC8] mt-2">Aquí puedes ver cargos pendientes y tus tickets emitidos por Recursos Monetarios.</p></div><div class="card"><h3>⏳ Pagos pendientes</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Folio de cargo</th><th>Concepto</th><th>Importe</th><th>Pagado</th><th>Pendiente</th></tr></thead><tbody>${charges.map(x=>`<tr><td><b>${esc(x.folio)}</b></td><td>${esc(x.recursos_conceptos?.nombre||'—')}</td><td>${financeMoney(x.importe)}</td><td>${financeMoney(x.paid)}</td><td><b>${financeMoney(x.remaining)}</b></td></tr>`).join('')||'<tr><td colspan="5">No tienes cargos pendientes.</td></tr>'}</tbody></table></div></div><div class="card"><h3>🧾 Mis comprobantes</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Fecha</th><th>Folio</th><th>Concepto</th><th>Importe</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.fecha_pago||'—')}</td><td><b>${esc(x.folio)}</b></td><td>${esc(x.recursos_conceptos?.nombre||'—')}</td><td>${financeMoney(x.importe)}</td><td><span class="chip">${esc(x.estado)}</span></td><td>${x.archivo_path?`<button class="btn" onclick="jaguarFinanceReceipt(${x.id})">📄 Ver ticket</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="6">No tienes pagos registrados.</td></tr>'}</tbody></table></div></div></div>`}catch(e){return `<div class="card border-red-500/30"><b>No se pudieron consultar tus pagos.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`}}
 </script>
+<script src="/assets/jaguar-premium.js"></script>
 </body>
 </html>
 
