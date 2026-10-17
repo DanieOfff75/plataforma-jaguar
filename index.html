@@ -342,7 +342,23 @@ async function pageHtml(p){
 
 async function tableModule(title,res,cols,add){const rows=await api(res);return `<div class="card"><div class="flex flex-col md:flex-row justify-between gap-3 mb-4"><div><h3>${title}</h3><p class="text-sm text-[#8FA3B5]">Datos conectados a Supabase.</p></div>${S.role==='control_escolar'&&add?`<button class="btn primary" onclick="formFor('${res}')">+ Agregar</button>`:''}</div><div class="scroll"><table class="table"><thead><tr>${cols.map(c=>`<th>${label(c)}</th>`).join('')} ${S.role==='control_escolar'&&add?'<th>Acciones</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${formatCell(c,r[c])}</td>`).join('')}${S.role==='control_escolar'&&add?`<td><button class="btn" onclick='formFor(${JSON.stringify(res)},${JSON.stringify(r)})'>Editar</button> <button class="btn danger" onclick='removeRow(${JSON.stringify(res)},${r.id})'>Eliminar</button></td>`:''}</tr>`).join('')||`<tr><td colspan="${cols.length+1}" class="text-center text-[#8FA3B5]">Sin registros.</td></tr>`}</tbody></table></div></div>`}
 async function studentsModule(){const rows=await api('students');const canReset=['servicios_estudiantiles','direccion_escolar','control_escolar'].includes(S.role);return `<div class="card"><div class="flex flex-col md:flex-row justify-between gap-3 mb-4"><div><h3>Alumnos</h3><p class="text-sm text-[#8FA3B5]">Grupo escolar independiente del taller extracurricular.</p></div>${S.role==='control_escolar'?'<button class="btn primary" onclick="formFor(\'students\')">+ Alumno</button>':''}</div><div class="scroll"><table class="table"><thead><tr><th>Matrícula</th><th>Nombre</th><th>Grado</th><th>Grupo</th><th>CURP</th><th>Estado</th>${S.role==='control_escolar'||canReset?'<th>Acciones</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.matricula||'—')}</td><td>${esc(r.nombre_completo)}</td><td>${esc(r.grupos?.grado||r.grado_ingreso||'—')}°</td><td><span class="chip">${esc(r.grupos?.clave||'Sin grupo')}</span></td><td>${esc(r.curp||'—')}</td><td>${(r.suspension_fecha||r.suspension_motivo)?'<span class="chip">Suspendido</span>':(r.activo?'Activo':'Inactivo')}</td>${S.role==='control_escolar'||canReset?`<td>${S.role==='control_escolar'?`<button class="btn" onclick='studentExpediente(${r.id})'>Expediente</button> <button class="btn" onclick='formFor("students",${JSON.stringify(r)})'>Editar</button>`:''}${canReset&&r.auth_user_id?` <button class="btn" onclick='resetPassword(${JSON.stringify(r.auth_user_id)})'>🔑 Restablecer</button>`:''}</td>`:''}</tr>`).join('')||`<tr><td colspan="${S.role==='control_escolar'||canReset?7:6}">Sin alumnos.</td></tr>`}</tbody></table></div></div>`}
-async function groupListsModule(){if(!['control_escolar','direccion_escolar'].includes(S.role))return '<div class="card">Módulo disponible para Dirección o Control Escolar.</div>';const groups=await api('groups');return `<div class="card"><div class="flex justify-between items-center gap-3 mb-4"><div><h3>Listas completas por grupo</h3><p class="text-sm text-[#8FA3B5]">Excel con el formato escolar: nombre completo de la materia, grado y grupo en letra, matrícula y correo institucional de acceso.</p></div></div><div class="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">${groups.filter(g=>g.activo).sort((a,b)=>a.grado-b.grado||a.letra.localeCompare(b.letra)).map(g=>`<button class="btn text-left" onclick='downloadGroupExcel(${g.id})'>📥 ${esc(g.clave)} <span class="text-xs text-[#8FA3B5]">— ${g.grado}° ${esc(g.letra)}</span></button>`).join('')}</div></div>`}
+async function groupListsModule(){
+ if(!['control_escolar','direccion_escolar'].includes(S.role))return '<div class="card">Módulo disponible para Dirección o Control Escolar.</div>';
+ const groups=await api('groups');
+ const active=groups.filter(g=>g.activo).sort((a,b)=>a.grado-b.grado||String(a.letra).localeCompare(String(b.letra),'es'));
+ return `<div class="space-y-5"><div class="card"><span class="chip">CONTROL ESCOLAR · DOCUMENTOS V4</span><h2 class="text-2xl font-extrabold mt-3">Listas institucionales por grupo</h2><p class="text-sm text-[#8FA3B5] mt-2">Descarga una matriz Excel editable con las asignaturas reales o imprime una lista formal en PDF con el estilo ITHLA. Ninguna opción cambia los datos del grupo.</p></div>
+ <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">${active.map(g=>`<div class="card"><div class="flex items-center gap-3"><div class="rounded-xl p-3" style="background:rgba(177,138,50,.12);color:#b18a32;font-size:20px">▤</div><div><div class="text-xl font-extrabold">${esc(g.clave)}</div><div class="text-xs text-[#8FA3B5]">${g.grado}° · Grupo ${esc(g.letra)} · ${esc(g.turno||'Turno no especificado')}</div></div></div><div class="flex gap-2 flex-wrap mt-4"><button class="btn primary flex-1" onclick="downloadGroupExcel(${Number(g.id)})">📥 Excel</button><button class="btn flex-1" onclick="downloadGroupFormalPdf(${Number(g.id)})">📄 PDF</button></div></div>`).join('')||'<div class="card">No hay grupos activos.</div>'}</div></div>`;
+}
+async function downloadGroupFormalPdf(groupId){
+ try{
+  if(!['control_escolar','direccion_escolar'].includes(S.role))throw Error('No autorizado.');
+  const [groups,students]=await Promise.all([api('groups'),api('students')]);
+  const g=groups.find(x=>Number(x.id)===Number(groupId));if(!g)throw Error('Grupo no encontrado.');
+  const rows=sortStudents(students.filter(x=>Number(x.grupo_id)===Number(groupId)));
+  jaguarFormalListMenu(g,rows,'');
+ }catch(e){toast(e.message)}
+}
+
 async function downloadGroupExcel(groupId){
  try{
   if(!window.XLSX)throw Error('No se pudo cargar el generador de Excel.');
@@ -358,7 +374,7 @@ async function downloadGroupExcel(groupId){
   for(let c=0;c<=lastCol;c++){const a=ws[XLSX.utils.encode_cell({r:0,c})],b=ws[XLSX.utils.encode_cell({r:1,c})],d=ws[XLSX.utils.encode_cell({r:3,c})],h=ws[XLSX.utils.encode_cell({r:4,c})];if(a)a.s={font:{name:'Arial',bold:true,sz:14,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF1B365D'}},alignment:{horizontal:'center',vertical:'center'}};if(b)b.s={font:{name:'Arial',bold:true,sz:10,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF008080'}},alignment:{horizontal:'center',vertical:'center'}};if(d)d.s={font:{name:'Arial',bold:true,sz:11,color:{rgb:'FF1B365D'}},fill:{fgColor:{rgb:'FFF4F6F9'}},alignment:{horizontal:'center',vertical:'center'}};if(h){const materia=ordered[c-4],rgb= colorMap[String(materia?.id)]||'D8B45A';h.s={font:{name:'Arial',bold:true,sz:9,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF'+rgb}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border};}}
   for(let r=5;r<lastRow;r++)for(let c=0;c<=lastCol;c++){const cell=ws[XLSX.utils.encode_cell({r,c})];if(!cell)continue;cell.s={font:{name:'Arial',sz:10,color:{rgb:'FF2C3E50'}},fill:{fgColor:{rgb:r%2?'FFF7FAF9':'FFFFFFFF'}},alignment:{horizontal:c===1||c===3?'left':'center',vertical:'center',wrapText:true},border};}
   ws['!freeze']='A5';ws['!autofilter']={ref:`A5:${xlsxColName(lastCol+1)}${lastRow}`};
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,`GRUPO ${g.letra}`.slice(0,31));XLSX.writeFile(wb,`ITHLA-Lista-${g.grado}${g.letra}.xlsx`,{bookType:'xlsx',cellStyles:true});toast(`Excel de ${g.clave} generado con formato institucional.`)
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,`GRUPO ${g.letra}`.slice(0,31));XLSX.writeFile(jaguarPolishWorkbook(wb,{kind:"lista-grupo"}),`ITHLA-Lista-${g.grado}${g.letra}.xlsx`,{bookType:'xlsx',cellStyles:true});toast(`Excel de ${g.clave} generado con formato institucional.`)
  }catch(e){toast(e.message)}
 }
 async function groupsModule(){const rows=await api('groups');return `<div class="card"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4"><div><h3>Grupos escolares</h3><p class="text-sm text-[#8FA3B5]">Grupos independientes del taller extracurricular.</p></div><div class="flex flex-wrap gap-2">${S.role==='control_escolar'?'<button class="btn primary" onclick="v3NewStudent()">➕ Agregar alumno</button><button class="btn" onclick="formFor(\'groups\')">+ Grupo</button>':''}</div></div><div class="grid grid-cols-2 md:grid-cols-6 gap-3">${rows.map(g=>`<div class="card"><div class="text-2xl font-bold">${esc(g.clave)}</div><div class="text-xs text-[#8FA3B5] mt-1">${g.activo?'Activo':'Inactivo'}</div>${S.role==='control_escolar'?`<button class="btn mt-3 w-full" onclick='formFor("groups",${JSON.stringify(g)})'>Editar</button>`:''}</div>`).join('')}</div></div>`}
@@ -720,7 +736,7 @@ function evaluationWorkbook(d){
   const vw={};mkHeader(vw);xlsxSet(vw,'A3','No.',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'B3','NOMBRE COMPLETO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'C3','MATRÍCULA',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));comps.forEach((c,i)=>{const col=4+i;xlsxSet(vw,`${dailyCol(col)}3`,c.nombre,dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(col)}4`,Number(c.ponderacion)/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(col)}5`,Number(c.id),{font:{sz:8,color:{rgb:'FF64748B'}}});});const tc=4+comps.length;xlsxSet(vw,`${dailyCol(tc)}3`,'VALOR TOTAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(tc)}4`,Number(comps.reduce((a,c)=>a+Number(c.ponderacion||0),0))/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(tc)}5`,10,{numFmt:'0.00'});students.forEach((st,i)=>{const r=6+i;xlsxSet(vw,`A${r}`,i+1);xlsxSet(vw,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(vw,`C${r}`,st.matricula||'');comps.forEach((c,j)=>xlsxSet(vw,`${dailyCol(4+j)}${r}`,scoreMap.get(`${st.id}|${c.id}`)??'',{numFmt:'0.00',alignment:{horizontal:'center'}}));});vw['!freeze']='D6';vw['!autofilter']={ref:`A3:${dailyCol(tc)}${5+students.length}`};vw['!cols']=[{wch:5},{wch:42},{wch:22},...Array.from({length:comps.length+1},()=>({wch:18}))];XLSX.utils.book_append_sheet(wb,vw,'VALORES PONDERACION');
   const meta=XLSX.utils.aoa_to_sheet([['JAGUAR_EVALUACION','VALOR'],['formato_version',4],['rubrica_id',d.rubrica.id],['grupo_materia_id',gm.id],['periodo_id',d.rubrica.periodo_id],['version',d.rubrica.version||1],['componentes_json',JSON.stringify(comps.map(c=>({id:c.id,nombre:c.nombre,ponderacion:c.ponderacion,maximo:c.maximo})))] ]);XLSX.utils.book_append_sheet(wb,meta,'ITHLA_META');if(wb.Workbook?.Sheets){const sh=wb.Workbook.Sheets.find(x=>x.name==='ITHLA_META');if(sh)sh.Hidden=1}return wb;
 }
-async function downloadEvaluationTemplate(gmId,periodoId){try{const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});if(!d.rubrica)return toast('Primero configura la rúbrica.');const wb=evaluationWorkbook(d);const subject=d.grupo_materia?.materias?.nombre||'materia',group=d.grupo_materia?.grupos?.clave||'grupo';XLSX.writeFile(wb,`ITHLA-${group}-${subject}-${d.periodo?.nombre||'periodo'}-EVALUACION.xlsx`,{bookType:'xlsx',cellStyles:true});toast('Plantilla institucional generada.')}catch(e){toast(e.message)}}
+async function downloadEvaluationTemplate(gmId,periodoId){try{const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});if(!d.rubrica)return toast('Primero configura la rúbrica.');const wb=evaluationWorkbook(d);const subject=d.grupo_materia?.materias?.nombre||'materia',group=d.grupo_materia?.grupos?.clave||'grupo';XLSX.writeFile(jaguarPolishWorkbook(wb,{kind:"evaluacion"}),`ITHLA-${group}-${subject}-${d.periodo?.nombre||'periodo'}-EVALUACION.xlsx`,{bookType:'xlsx',cellStyles:true});toast('Plantilla institucional generada.')}catch(e){toast(e.message)}}
 async function uploadAndCloseEvaluation(gmId,periodoId){try{const file=document.getElementById('ev_file')?.files?.[0];if(!file)return;const ext=file.name.toLowerCase();if(!/\.(xlsx|xls|csv)$/.test(ext))return toast('Sube XLSX, XLS o CSV.');if(file.size>5*1024*1024)return toast('El archivo no debe superar 5 MB.');const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});const metaSheet=wb.Sheets['ITHLA_META'];if(!metaSheet)throw Error('Este archivo no contiene la hoja ITHLA_META de ITHLA. Descarga la plantilla actualizada.');const meta=XLSX.utils.sheet_to_json(metaSheet,{header:1,raw:true});const findMeta=k=>meta.find(r=>r?.[0]===k)?.[1];if(Number(findMeta('formato_version'))!==3)throw Error('Este Excel pertenece a una versión anterior. Descarga nuevamente la plantilla.');if(Number(findMeta('grupo_materia_id'))!==Number(gmId)||Number(findMeta('periodo_id'))!==Number(periodoId))throw Error('El archivo pertenece a otro grupo o periodo.');const comps=JSON.parse(findMeta('componentes_json')||'[]');const sheet=wb.Sheets['VALORES PONDERACION'];if(!sheet)throw Error('Falta la hoja VALORES PONDERACION.');const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});const byMat=new Map((d.students||[]).map(s=>[String(s.matricula),s]));const parsed=[];for(let r=5;r<rows.length;r++){const row=rows[r]||[];const matricula=String(row[2]||'').trim();if(!matricula)continue;const st=byMat.get(matricula);if(!st)throw Error(`La matrícula ${matricula} no pertenece al grupo.`);for(let i=0;i<comps.length;i++){const c=comps[i],value=row[3+i];if(value===''||value==null)continue;const n=Number(value);if(!Number.isFinite(n)||n<0||n>10)throw Error(`Valor inválido para ${matricula} en ${c.nombre}.`);parsed.push({alumno_id:st.id,componente_id:Number(c.id),valor:n});}}if(!parsed.length)throw Error('No se encontraron valores de ponderación en el Excel.');const scoreMap=new Map(parsed.map(x=>[`${x.alumno_id}|${x.componente_id}`,x.valor]));const calc=(st)=>{let sum=0,wt=0,missing=0;for(const c of d.componentes||[]){const v=scoreMap.get(`${st.id}|${c.id}`);if(v===undefined){missing++;continue;}sum+=Number(v)*Number(c.ponderacion||0);wt+=Number(c.ponderacion||0);}return {value:wt?Number((sum/wt).toFixed(2)):null,missing};};window._pendingEvaluationImport={gmId,periodoId,file,parsed,d,comps,calculations:new Map((d.students||[]).map(st=>[st.id,calc(st)]))};showEvaluationImportReview();}catch(e){toast(e.message)}}
 function showEvaluationImportReview(){const p=window._pendingEvaluationImport;if(!p)return;const rows=(p.d.students||[]).map(st=>{const c=p.calculations.get(st.id)||{value:null,missing:p.comps.length};const value=c.value==null?'—':c.value.toFixed(2);const warn=c.missing?`<div class="text-xs text-amber-300">Faltan ${c.missing} aspecto(s)</div>`:'';return `<tr><td><b>${esc(st.nombre_completo)}</b><div class="text-xs text-[#8FA3B5]">${esc(st.matricula||'')}</div></td><td class="text-center">${value}${warn}</td><td><input id="adj_${st.id}" class="input text-center" type="number" min="0" max="10" step="0.1" placeholder="Sin ajuste"></td><td><input id="reason_${st.id}" class="input" placeholder="Motivo obligatorio si cambia el valor"></td></tr>`}).join('');modal('Revisión antes de registrar calificaciones',`<div class="space-y-4"><div class="card border-[#D4AF3744] bg-[#D4AF370d]"><b>Información recopilada</b><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 text-sm"><span>Alumnos: <b>${p.d.students?.length||0}</b></span><span>Aspectos: <b>${p.comps.length}</b></span><span>Ponderación: <b>${p.comps.reduce((a,c)=>a+Number(c.ponderacion||0),0).toFixed(2)}%</b></span><span>Archivo: <b>${esc(p.file.name)}</b></span></div><p class="text-xs text-[#A9BAC8] mt-3">El valor calculado proviene exclusivamente de la rúbrica. Si necesitas subir o bajar un valor, captura el nuevo valor y explica el motivo. El motivo queda en el sistema y no aparece en la boleta.</p></div><div class="scroll"><table class="table"><thead><tr><th>Alumno</th><th>Valor calculado</th><th>Valor registrado</th><th>Motivo del ajuste</th></tr></thead><tbody>${rows}</tbody></table></div><div class="flex flex-wrap justify-end gap-2"><button class="btn" onclick="closeModal();window._pendingEvaluationImport=null">Cancelar</button><button class="btn primary" onclick="confirmEvaluationImport()">✅ Guardar y cerrar periodo</button></div></div>`)}
 async function confirmEvaluationImport(){const p=window._pendingEvaluationImport;if(!p)return;try{const adjustments=[];for(const st of p.d.students||[]){const input=document.getElementById(`adj_${st.id}`),reason=document.getElementById(`reason_${st.id}`);const raw=input?.value?.trim()||'';if(raw==='')continue;const nuevo=Number(raw),base=p.calculations.get(st.id)?.value;if(!Number.isFinite(nuevo)||nuevo<0||nuevo>10)throw Error(`El valor registrado de ${st.nombre_completo} debe estar entre 0 y 10.`);if(base==null)throw Error(`No se puede ajustar a ${st.nombre_completo} porque su valor calculado está incompleto.`);if(Math.abs(nuevo-base)>.001&&!String(reason?.value||'').trim())throw Error(`Indica el motivo del ajuste de ${st.nombre_completo}.`);if(Math.abs(nuevo-base)>.001)adjustments.push({alumno_id:st.id,valor_nuevo:Number(nuevo.toFixed(2)),motivo:String(reason.value).trim()});}const prep=await apiPost('prepareEvaluationUpload',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,filename:p.file.name});const evaluationUpload=prep?.data||prep;if(!evaluationUpload?.bucket||!evaluationUpload?.path||!evaluationUpload?.token)throw Error('El servidor no preparó correctamente la evidencia.');const up=await supabaseClient.storage.from(evaluationUpload.bucket).uploadToSignedUrl(evaluationUpload.path,evaluationUpload.token,p.file,{contentType:p.file.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});if(up.error)throw up.error;await apiPost('saveEvaluationScores',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,rows:p.parsed});const digest=await crypto.subtle.digest('SHA-256',await p.file.arrayBuffer());const sha=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');const done=await apiPost('submitEvaluationPeriod',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,file_path:evaluationUpload.path,file_name:p.file.name,file_sha256:sha,adjustments});toast(done.message||'Periodo cerrado y respaldado.');window._pendingEvaluationImport=null;closeModal();await loadPage('calificaciones')}catch(e){toast(e.message)}}
@@ -1182,15 +1198,23 @@ async function downloadSchedulesExcel(){
   for(let c=0;c<7;c++){const a=xlsxColName(c+1)+'1',b=xlsxColName(c+1)+'2',h=xlsxColName(c+1)+'3';if(ws[a])ws[a].s=xlsxStyle({font:{name:'Arial',sz:14,bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF1B365D'}},alignment:{horizontal:'center',vertical:'center'}});if(ws[b])ws[b].s=xlsxStyle({font:{name:'Arial',sz:10,bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF008080'}},alignment:{horizontal:'center',vertical:'center'}});if(ws[h])ws[h].s=xlsxStyle({font:{name:'Arial',sz:10,bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FFD4AF37'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border});}
   for(let r=4;r<=last;r++)for(let c=0;c<7;c++){const a=xlsxColName(c+1)+r;if(!ws[a])ws[a]={v:'',t:'s'};ws[a].s=xlsxStyle({font:{name:'Arial',sz:10,color:{rgb:'FF2C3E50'}},fill:{fgColor:{rgb:r%2?'FFF7FAF9':'FFFFFFFF'}},alignment:{horizontal:c>=4?'left':'center',vertical:'center',wrapText:true},border});}
   ws['!freeze']='A4';ws['!autofilter']={ref:`A3:G${last}`};
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'HORARIOS');XLSX.writeFile(wb,'ITHLA-Horarios.xlsx',{bookType:'xlsx',cellStyles:true});toast('Excel de horarios generado con formato institucional.');
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'HORARIOS');XLSX.writeFile(jaguarPolishWorkbook(wb,{kind:"horarios"}),'ITHLA-Horarios.xlsx',{bookType:'xlsx',cellStyles:true});toast('Excel de horarios generado con formato institucional.');
  }catch(e){toast(e.message)}
 }
 
 
 
 async function formFor(resource,row={}){let title=(row.id?'Editar ':'Nuevo ')+labelResource(resource);let fields=[];if(resource==='groups')fields=[['clave','Clave','text'],['grado','Grado','number'],['letra','Letra','text']];if(resource==='teachers')fields=[['nombre_completo','Nombre completo','text'],['correo','Correo','email'],['numero_empleado','Número de empleado','text'],['especialidad','Especialidad','text']];if(resource==='students')fields=[['nombre_completo','Nombre completo','text'],['matricula','Matrícula','text'],['curp','CURP','text'],['fecha_nacimiento','Fecha de nacimiento','date']];if(resource==='subjects')fields=[['nombre','Nombre','text'],['clave','Clave','text'],['grado','Grado','number']];if(resource==='periods')fields=[['nombre','Nombre','text'],['numero_periodo','Número de periodo','number'],['fecha_inicio','Inicio','date'],['fecha_fin','Fin','date']];if(resource==='workshops')fields=[['nombre','Nombre','text'],['descripcion','Descripción','text'],['cupo','Cupo','number']];if(resource==='notices')fields=[['titulo','Título','text'],['contenido','Contenido','textarea']];if(resource==='grades')fields=[['alumno_id','ID alumno','number'],['grupo_materia_id','ID grupo-materia','number'],['periodo_id','ID periodo','number'],['calificacion','Calificación','number'],['observaciones','Observaciones','text']];if(resource==='attendance')fields=[['alumno_id','ID alumno','number'],['grupo_materia_id','ID grupo-materia','number'],['fecha','Fecha','date'],['estado','Estado (presente/retardo/falta/justificada)','text'],['observaciones','Observaciones','text']];if(resource==='schedules')fields=[['grupo_materia_id','ID grupo-materia','number'],['dia_semana','Día 1-7','number'],['hora_inicio','Hora inicio','time'],['hora_fin','Hora fin','time'],['aula','Aula','text'],['docente_id','ID docente','number']];if(resource==='groupSubjects')fields=[['grupo_id','ID grupo','number'],['materia_id','ID materia','number']];if(resource==='assignments')fields=[['docente_id','ID docente','number'],['grupo_materia_id','ID grupo-materia','number'],['ciclo_escolar','Ciclo escolar','text']];if(resource==='workshopEnrollments')fields=[['alumno_id','ID alumno','number'],['taller_id','ID taller','number'],['ciclo_escolar','Ciclo escolar','text'],['estado','Estado','text']];if(!fields.length){toast('Módulo sin formulario');return}
+let periodCycleInfo='';
+if(resource==='periods'){
+  const ctx=await api('periodContext');
+  const cycle=String(ctx?.ciclo_escolar||'').trim();
+  if(!/^\d{4}-\d{4}$/.test(cycle))return toast('Configura el ciclo escolar activo antes de registrar periodos.');
+  if(!row.id){const nums=(ctx.periodos||[]).map(p=>Number(p.numero_periodo)||0);row={...row,numero_periodo:Math.max(0,...nums)+1};}
+  periodCycleInfo=`<div class="card md:col-span-2"><span class="text-xs" style="color:var(--j-muted)">CICLO ESCOLAR ACTIVO</span><div class="font-bold mt-1">${esc(cycle)}</div><p class="text-xs mt-1" style="color:var(--j-muted)">El servidor asignará este ciclo automáticamente. El periodo nuevo quedará disponible sin sustituir al periodo actual.</p></div>`;
+}
 let groupOptions='';if(resource==='students'&&!row.id){const groups=await api('groups');groupOptions=`<div><label class="text-xs text-[#8FA3B5]">Grupo escolar</label><select id="f_grupo_id" class="input mt-1">${groups.filter(g=>g.activo).sort((a,b)=>a.grado-b.grado||a.letra.localeCompare(b.letra)).map(g=>`<option value="${g.id}" ${String(row.grupo_id||'')===String(g.id)?'selected':''}>${esc(g.clave)} — ${g.grado}°</option>`).join('')}</select></div>`;}
-const renderedFields=fields.map(([k,l,t])=>`<div><label class="text-xs text-[#8FA3B5]">${l}</label>${t==='textarea'?`<textarea id="f_${k}" class="textarea mt-1" rows="4">${esc(row[k]??'')}</textarea>`:`<input id="f_${k}" class="input mt-1" type="${t}" value="${esc(row[k]??'')}">`}</div>`).join('');modal(title,`<div class="grid md:grid-cols-2 gap-4">${renderedFields}${groupOptions}</div><button class="btn primary w-full mt-5" onclick='saveForm(${JSON.stringify(resource)},${JSON.stringify(row.id||null)},${JSON.stringify([...fields.map(f=>f[0]),...(resource==='students'?['grupo_id']:[])])})'>Guardar</button>`)}
+const renderedFields=fields.map(([k,l,t])=>`<div><label class="text-xs text-[#8FA3B5]">${l}</label>${t==='textarea'?`<textarea id="f_${k}" class="textarea mt-1" rows="4">${esc(row[k]??'')}</textarea>`:`<input id="f_${k}" class="input mt-1" type="${t}" value="${esc(row[k]??'')}">`}</div>`).join('');modal(title,`<div class="grid md:grid-cols-2 gap-4">${periodCycleInfo}${renderedFields}${groupOptions}</div><button class="btn primary w-full mt-5" onclick='saveForm(${JSON.stringify(resource)},${JSON.stringify(row.id||null)},${JSON.stringify([...fields.map(f=>f[0]),...(resource==='students'?['grupo_id']:[])])})'>Guardar</button>`)}
 async function saveForm(resource,id,keys){try{const data={};keys.forEach(k=>{const x=document.getElementById('f_'+k);if(x){data[k]=x.value===''?null:(['grado','cupo','calificacion','alumno_id','grupo_id','materia_id','grupo_materia_id','periodo_id','docente_id','dia_semana','taller_id'].includes(k)?Number(x.value):x.value)}});await api(resource,id?{method:'PUT',id,body:data}:{method:'POST',body:{resource,data}});closeModal();toast('Guardado correctamente');await loadPage(S.page)}catch(e){toast(e.message)}}
 async function removeRow(resource,id){if(!confirm('¿Eliminar este registro?'))return;try{await api(resource,{method:'DELETE',id});toast('Eliminado');await loadPage(S.page)}catch(e){toast(e.message)}}
 
@@ -1246,8 +1270,30 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()});initA
 async function apiQuery(resource,params={}){const {data:{session}}=await supabaseClient.auth.getSession();if(!session)throw Error('Sesión inválida.');const qs=new URLSearchParams({resource,...Object.fromEntries(Object.entries(params).map(([k,v])=>[k,String(v)]))});const r=await fetch('/api/data?'+qs.toString(),{headers:{Authorization:'Bearer '+session.access_token}});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'Error de servidor.');return d.data}
 async function apiPost(resource,body={}){return api(resource,{method:'POST',body:{resource,...body}})}
 function sortStudents(rows){return [...(rows||[])].sort((a,b)=>String(a.nombre_completo||'').localeCompare(String(b.nombre_completo||''),'es',{sensitivity:'base'}))}
-function printPdf(title,html){const w=window.open('','_blank','width=1000,height=800');if(!w){toast('El navegador bloqueó la ventana de PDF. Permite ventanas emergentes.');return}w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:Arial,sans-serif;padding:28px;color:#111}h1,h2{margin:0 0 8px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #bbb;padding:7px;text-align:left;font-size:12px}th{background:#eef1f4}.meta{color:#555;margin:6px 0 15px}@media print{button{display:none}}</style></head><body>${html}<script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
-`);w.document.close()}
+function printPdf(title,html){
+ const w=window.open('','_blank','width=1100,height=850');
+ if(!w){toast('El navegador bloqueó la ventana de PDF. Permite ventanas emergentes.');return}
+ const safeTitle=esc(title);
+ w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${safeTitle}</title><style>
+ @font-face{font-family:Garet;src:url('/assets/fonts/Garet-Book.ttf') format('truetype');font-display:swap}
+ @font-face{font-family:Garet;src:url('/assets/fonts/Garet-Heavy.ttf') format('truetype');font-weight:700;font-display:swap}
+ :root{--navy:#1b365d;--teal:#008080;--gold:#b18a32;--line:#d9dfdf}
+ *{box-sizing:border-box}body{font-family:Garet,Arial,sans-serif;background:#e9edf1;color:#172c44;padding:24px;margin:0;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+ h1,h2,h3{font-family:Georgia,'Times New Roman',serif;margin:0 0 10px;color:var(--navy)}
+ table{width:100%;border-collapse:collapse;margin-top:15px;table-layout:auto}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}
+ th{background:var(--navy);color:#fff;text-transform:uppercase;font-size:9px;letter-spacing:.35px;padding:9px 7px;text-align:left}
+ td{border-bottom:1px solid var(--line);padding:8px 7px;text-align:left;font-size:10px;overflow-wrap:anywhere}
+ tbody tr:nth-child(even){background:#f4f8f8}.meta{color:#526476;margin:6px 0 15px}
+ .doc{max-width:850px;margin:auto;background:white;box-shadow:0 8px 26px #10283c20}
+ .doc .head{border-bottom:1px solid #d9cfb5}.doc .title{font-family:Georgia,'Times New Roman',serif;color:var(--navy)}
+ .print-tools{max-width:850px;margin:0 auto 12px;display:flex;gap:10px}.print-tools button{border:0;border-radius:6px;background:var(--navy);color:#fff;padding:10px 18px;cursor:pointer;font-weight:700}
+ @page{size:letter portrait;margin:12mm}
+ @media print{body{background:#fff;padding:0}.print-tools{display:none}.doc{max-width:none;margin:0;box-shadow:none}th,td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+ </style></head><body><div class="print-tools"><button onclick="window.print()">Imprimir / guardar PDF</button><button onclick="window.close()">Cerrar</button></div>${html}<script>
+ window.onload=async()=>{try{await document.fonts.ready}catch{}setTimeout(()=>window.print(),250)};
+ <\/script></body></html>`);
+ w.document.close();
+}
 
 function jaguarFormalListPdf(group,students,opts={}){
   const inst=S.institution||ITHLA_DEFAULT_INSTITUTION,cycle=S.activeCycle||'2026-2027';
@@ -1266,16 +1312,26 @@ function jaguarFormalListPdf(group,students,opts={}){
     : '<tr><th>No. prog.</th><th>Matrícula</th><th>Nombre del alumno</th><th>Sexo</th><th>Estado</th></tr>';
   const teacherLine=teacher?`<div class="field"><b>PROFESOR(A):</b> ${esc(teacher)}</div>`:'';
   const html=`<style>
-    @page{size:letter portrait;margin:12mm}
-    body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:0}
-    .doc{border:1px solid #1B365D;padding:18px 20px 22px;min-height:250mm;box-sizing:border-box}
-    .head{display:grid;grid-template-columns:78px 1fr 78px;gap:10px;align-items:center;border-bottom:2px solid #1B365D;padding-bottom:10px}
-    .head img{max-width:68px;max-height:68px;object-fit:contain}
-    .center{text-align:center}.gov{font-size:12px;letter-spacing:.2px}.school{font-size:15px;font-weight:800;text-transform:uppercase;margin-top:4px}.data{font-size:10px;line-height:1.45;margin-top:3px}.title{font-size:18px;font-weight:800;letter-spacing:.5px;margin:14px 0 10px;text-align:center}
-    .subhead{display:grid;grid-template-columns:1fr 1fr;gap:8px;border:1px solid #777;padding:9px;margin-bottom:12px;font-size:11px}.field{padding:2px 4px}
-    table{width:100%;border-collapse:collapse;margin-top:5px}th{background:#1B365D;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.2px}td{font-size:10px}th,td{border:1px solid #555;padding:5px 6px;text-align:center;vertical-align:middle}td.name{text-align:left;font-weight:600}
-    .footer{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:45px}.sig{text-align:center;padding-top:28px;border-top:1px solid #333;font-size:10px}.note{font-size:9px;color:#444;margin-top:12px;line-height:1.4}.folio{text-align:right;font-size:9px;color:#555;margin-top:8px}
-    @media print{button{display:none}}
+    @page{size:letter portrait;margin:13mm}
+    body{padding:0;color:#243349;background:#fff}
+    .doc{position:relative;border:1px solid #d7dddf;border-top:8px solid #b18a32;padding:22px 24px 26px;min-height:246mm;box-sizing:border-box;background:#fff}
+    .head{display:grid;grid-template-columns:80px 1fr;gap:14px;align-items:center;border-bottom:1px solid #d6c69b;padding-bottom:16px}
+    .head img{max-width:68px;max-height:72px;object-fit:contain}
+    .center{text-align:left}.gov{font-size:8px;font-weight:700;letter-spacing:2px;color:#9a7a34}
+    .school{font-family:Georgia,'Times New Roman',serif;font-size:15px;font-weight:700;text-transform:none;color:#1b365d;margin-top:6px}
+    .data{font-size:8.2px;line-height:1.6;margin-top:3px;color:#546272}
+    .title{font-family:Georgia,'Times New Roman',serif;font-size:20px;font-weight:700;letter-spacing:0;margin:20px 0 13px;text-align:left;color:#1b365d}
+    .subhead{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;border:1px solid #dce3e6;border-left:3px solid #b18a32;background:#f7fafb;padding:12px 13px;margin-bottom:15px;font-size:9px}
+    .field{padding:3px 2px}.field b{font-size:8px;letter-spacing:.4px;color:#52677e}
+    table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed}
+    th{background:#1b365d;color:#fff;font-size:8px;letter-spacing:.4px;text-transform:uppercase}
+    td{font-size:9px;color:#1b365d}
+    th,td{border:1px solid #d6dee3;padding:7px 6px;text-align:center;vertical-align:middle;overflow-wrap:break-word}th:nth-child(1){width:11%}th:nth-child(2){width:21%}th:nth-child(3){width:39%}th:nth-child(4){width:17%}th:nth-child(5){width:12%}
+    tbody tr:nth-child(even){background:#f3f8f8}td.name{text-align:left;font-weight:700}
+    .footer{margin-top:42px;display:grid;grid-template-columns:1fr 1fr;gap:45px}.sig{text-align:center;padding-top:11px;border-top:1px solid #526577;font-size:9px}
+    .note{font-size:8px;color:#59697b;margin-top:17px;line-height:1.55;border-left:2px solid #b18a32;padding-left:9px}
+    .folio{text-align:right;font-size:8px;color:#5d6872;margin-top:14px}
+    @media print{body{padding:0}.doc{box-shadow:none}button{display:none}}
   </style>
   <div class="doc">
     <div class="head">
@@ -1321,7 +1377,7 @@ function excelFile(name,headers,rows,sheet='Datos'){
  for(let c=0;c<lastCol;c++){const a=xlsxColName(c+1)+'1';if(ws[a])ws[a].s=xlsxStyle({font:{name:'Arial',sz:10,bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF176B5A'}},alignment:{horizontal:'center',vertical:'center',wrapText:true},border});}
  for(let r=2;r<=lastRow;r++)for(let c=0;c<lastCol;c++){const a=xlsxColName(c+1)+r;if(!ws[a])ws[a]={v:'',t:'s'};ws[a].s=xlsxStyle({font:{name:'Arial',sz:10,color:{rgb:'FF2C3E50'}},fill:{fgColor:{rgb:r%2?'FFF7FAF9':'FFFFFFFF'}},alignment:{horizontal:c===1?'left':'center',vertical:'center',wrapText:true},border});}
  ws['!freeze']='A2';ws['!autofilter']={ref:`A1:${xlsxColName(lastCol)}${lastRow}`};
- const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,String(sheet).slice(0,31));XLSX.writeFile(wb,name,{bookType:'xlsx',cellStyles:true});
+ const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,String(sheet).slice(0,31));XLSX.writeFile(jaguarPolishWorkbook(wb,{kind:(typeof kind!=="undefined"?kind:"general")}),name,{bookType:'xlsx',cellStyles:true});
 }
 
 function xlsxBorder(){return {top:{style:'thin',color:{rgb:'FF1F1F1F'}},bottom:{style:'thin',color:{rgb:'FF1F1F1F'}},left:{style:'thin',color:{rgb:'FF1F1F1F'}},right:{style:'thin',color:{rgb:'FF1F1F1F'}}}}
@@ -1334,11 +1390,25 @@ async function studentCredentialsModule(){
   const groups=v22GroupSort(await api('groups')).filter(g=>g.activo!==false);
   setTimeout(()=>{const g=document.getElementById('cred_group');if(g) jaguarFilterCredentialStudents();},0);
   return `<div class="space-y-5">
-   <div class="card border-[#d8b55a55]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"><div><span class="chip">SERVICIOS ESTUDIANTILES</span><h2 class="text-3xl font-extrabold mt-3">🪪 Credenciales escolares</h2><p class="text-sm text-[#A9BAC8] mt-2">El trámite tiene dos pasos: solicitar el cargo al alumno y después validar el folio del ticket emitido por Recursos Monetarios.</p></div><div class="text-4xl">🎓</div></div></div>
+   <div class="card border-[#d8b55a55]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"><div><span class="chip">SERVICIOS ESTUDIANTILES</span><h2 class="text-3xl font-extrabold mt-3">🪪 Credenciales escolares</h2><p class="text-sm text-[#A9BAC8] mt-2">El trámite incluye fotografía del alumno, solicitud de pago y emisión con QR de validación.</p></div><div class="text-4xl">🎓</div></div></div>
    <div class="card"><div class="grid md:grid-cols-2 gap-4"><div><label class="text-xs text-[#8FA3B5]">1. Grupo</label><select id="cred_group" class="select mt-1" onchange="jaguarFilterCredentialStudents()"><option value="">Selecciona un grupo</option>${groups.map(g=>`<option value="${g.id}">${esc(g.clave)} — ${g.grado}° ${esc(g.letra||'')} · ${esc(g.turno||'')}</option>`).join('')}</select></div><div><label class="text-xs text-[#8FA3B5]">2. Alumno</label><select id="cred_student" class="select mt-1" disabled onchange="jaguarCredentialStudentChanged()"><option value="">Primero selecciona un grupo</option></select></div></div>
    <div id="cred_selected_info" class="mt-4 text-sm text-[#A9BAC8]">Ningún alumno seleccionado.</div>
+   <div class="card mt-4" style="border:1px solid rgba(212,175,55,.35)">
+     <div class="flex flex-wrap gap-4 items-center">
+       <div class="shrink-0" style="width:100px;height:124px;border:2px solid #d4af37;border-radius:10px;background:rgba(27,54,93,.08);display:flex;justify-content:center;align-items:center;overflow:hidden">
+         <img id="cred_photo_preview" alt="Fotografía del alumno seleccionado" style="width:100%;height:100%;object-fit:cover;display:none" />
+         <span id="cred_photo_placeholder" style="font-size:12px;text-align:center;padding:6px;opacity:.8">Sin fotografía</span>
+       </div>
+       <div class="flex-1" style="min-width:220px">
+         <b>3. Fotografía del alumno (obligatoria)</b>
+         <p class="text-sm mt-1" style="opacity:.82">Sube un retrato frontal, individual y reciente. Se recorta a proporción 4:5 y se guarda de manera privada para la credencial. JPG, PNG o WebP, hasta 8 MB.</p>
+         <input id="cred_photo_file" type="file" class="input mt-3" accept="image/jpeg,image/png,image/webp" onchange="jaguarCredentialPhotoChanged(this)" aria-label="Seleccionar fotografía de credencial" />
+         <p id="cred_photo_status" class="text-sm mt-2" role="status">Selecciona un alumno para consultar su fotografía.</p>
+       </div>
+     </div>
+   </div>
    <div class="grid md:grid-cols-2 gap-3 mt-4"><button class="btn primary" onclick="jaguarRequestCredentialPayment()">💳 Solicitar pago de credencial</button><button class="btn" onclick="jaguarGenerateSelectedCredential()">🪪 Validar folio y descargar</button></div>
-   <div class="card mt-4 border-emerald-400/20"><b>Cómo funciona</b><ol class="list-decimal ml-5 mt-2 text-sm text-[#A9BAC8] space-y-1"><li>Servicios Estudiantiles solicita el cargo.</li><li>El alumno paga en Recursos Monetarios y recibe un ticket con folio.</li><li>Servicios Estudiantiles captura ese folio.</li><li>Jaguar valida que sea un pago registrado de <b>CREDENCIAL</b> para ese alumno y genera la credencial.</li></ol></div></div>
+   <div class="card mt-4 border-emerald-400/20"><b>Cómo funciona</b><ol class="list-decimal ml-5 mt-2 text-sm text-[#A9BAC8] space-y-1"><li>Servicios Estudiantiles captura la fotografía del alumno y solicita el cargo.</li><li>El alumno paga en Recursos Monetarios y recibe un ticket con folio.</li><li>Servicios Estudiantiles captura ese folio.</li><li>Jaguar valida que sea un pago registrado de <b>CREDENCIAL</b> para ese alumno y genera la credencial.</li></ol></div></div>
    <div class="card"><h3>Alumnos del grupo seleccionado</h3><p class="text-sm text-[#8FA3B5] mt-1">${rows.length} alumnos activos disponibles.</p></div>
   </div>`;
  }catch(e){return `<div class="card"><b>No se pudo cargar el módulo.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`}
@@ -1346,12 +1416,70 @@ async function studentCredentialsModule(){
 async function jaguarFilterCredentialStudents(){
  const gid=Number(document.getElementById('cred_group')?.value||0),sel=document.getElementById('cred_student'),info=document.getElementById('cred_selected_info');
  if(!sel)return;
- if(!gid){sel.disabled=true;sel.innerHTML='<option value="">Primero selecciona un grupo</option>';if(info)info.textContent='Ningún alumno seleccionado.';return;}
+ jaguarCredentialPhotoReset();
+ if(!gid){sel.disabled=true;sel.innerHTML='<option value="">Primero selecciona un grupo</option>';if(info)info.textContent='Ningún alumno seleccionado.';jaguarCredentialPhotoReset();return;}
  try{const rows=sortStudents((await api('students')).filter(x=>x.activo!==false&&Number(x.grupo_id)===gid));sel.disabled=!rows.length;sel.innerHTML='<option value="">Selecciona un alumno</option>'+rows.map(s=>`<option value="${s.id}">${esc(s.nombre_completo)} — ${esc(s.matricula||'Sin matrícula')}</option>`).join('');if(info)info.textContent=rows.length?`${rows.length} alumnos en este grupo.`:'No hay alumnos activos en este grupo.';}catch(e){sel.innerHTML='<option value="">No se pudieron cargar los alumnos</option>';toast(e.message)}
 }
-async function jaguarCredentialStudentChanged(){const id=Number(document.getElementById('cred_student')?.value||0);if(!id)return;try{const rows=await api('financeDashboard');const charges=(rows.charges||[]).filter(c=>Number(c.alumno_id)===id&&c.recursos_conceptos?.codigo==='CREDENCIAL'&&Number(c.remaining||0)>0);const info=document.getElementById('cred_selected_info');if(info)info.innerHTML=charges.length?`Cargo de credencial pendiente: <b>${financeMoney(charges[0].remaining)}</b> · folio ${esc(charges[0].folio)}`:'Alumno seleccionado. Puedes solicitar el cargo de credencial.';}catch{}}
+async function jaguarCredentialStudentChanged(){const id=Number(document.getElementById('cred_student')?.value||0);jaguarCredentialPhotoReset();if(!id)return;await jaguarCredentialPhotoStatus(id);try{const rows=await api('financeDashboard');const charges=(rows.charges||[]).filter(c=>Number(c.alumno_id)===id&&c.recursos_conceptos?.codigo==='CREDENCIAL'&&Number(c.remaining||0)>0);const info=document.getElementById('cred_selected_info');if(info)info.innerHTML=charges.length?`Cargo de credencial pendiente: <b>${financeMoney(charges[0].remaining)}</b> · folio ${esc(charges[0].folio)}`:'Alumno seleccionado. Puedes solicitar el cargo de credencial.';}catch{}}
+function jaguarCredentialPhotoReset(){
+ const img=document.getElementById('cred_photo_preview'),empty=document.getElementById('cred_photo_placeholder'),status=document.getElementById('cred_photo_status'),file=document.getElementById('cred_photo_file');
+ if(img){img.style.display='none';img.removeAttribute('src');}
+ if(empty)empty.style.display='block';
+ if(status)status.textContent='Selecciona un alumno para consultar su fotografía.';
+ if(file)file.value='';
+}
+async function jaguarCredentialReport(action,alumnoId,extra={}){
+ const {data:{session}}=await supabaseClient.auth.getSession();
+ if(!session?.access_token)throw Error('Tu sesión expiró. Vuelve a iniciar sesión.');
+ const response=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action,alumno_id:alumnoId,...extra})});
+ const payload=await response.json();
+ if(!response.ok||!payload.ok)throw Error(payload.error||'No se pudo completar el trámite.');
+ return payload.data||payload;
+}
+async function jaguarCredentialPhotoStatus(id){
+ const status=document.getElementById('cred_photo_status'),img=document.getElementById('cred_photo_preview'),empty=document.getElementById('cred_photo_placeholder');
+ if(status)status.textContent='Consultando fotografía almacenada...';
+ try{
+  const data=await jaguarCredentialReport('student_credential_photo_status',id);
+  if(Number(document.getElementById('cred_student')?.value||0)!==id)return;
+  if(img){if(data.registered&&data.photo_base64){img.src='data:image/jpeg;base64,'+data.photo_base64;img.style.display='block';}else{img.removeAttribute('src');img.style.display='none';}}
+  if(empty)empty.style.display=data.registered?'none':'block';
+  if(status)status.textContent=data.registered?'✓ Fotografía registrada. Puedes reemplazarla seleccionando otra.':'No hay fotografía. Es necesario cargarla antes de solicitar el pago.';
+ }catch(e){if(status)status.textContent='No se pudo consultar la fotografía: '+e.message;}
+}
+async function jaguarCredentialPhotoChanged(input){
+ const id=Number(document.getElementById('cred_student')?.value||0),file=input?.files?.[0],status=document.getElementById('cred_photo_status');
+ if(!id){if(status)status.textContent='Primero selecciona un alumno.';if(input)input.value='';return;}
+ if(!file)return;
+ if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>8*1024*1024){toast('Usa una fotografía JPG, PNG o WebP de máximo 8 MB.');input.value='';return;}
+ if(status)status.textContent='Procesando fotografía...';input.disabled=true;
+ let url='';
+ try{
+  url=URL.createObjectURL(file);
+  const image=new Image();
+  await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('No se pudo leer la imagen.'));image.src=url;});
+  if(image.naturalWidth<160||image.naturalHeight<180)throw Error('La fotografía tiene baja resolución. Usa una imagen de al menos 160 × 180 px.');
+  const canvas=document.createElement('canvas');canvas.width=360;canvas.height=450;
+  const ctx=canvas.getContext('2d');if(!ctx)throw Error('Tu navegador no permite procesar fotografías.');
+  const scale=Math.max(360/image.naturalWidth,450/image.naturalHeight);
+  const w=image.naturalWidth*scale,h=image.naturalHeight*scale;
+  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,360,450);ctx.drawImage(image,(360-w)/2,(450-h)/2,w,h);
+  const jpeg=canvas.toDataURL('image/jpeg',.84).split(',')[1];
+  if(jpeg.length>860000)throw Error('La fotografía procesada es demasiado grande.');
+  if(status)status.textContent='Guardando fotografía privada...';
+  await jaguarCredentialReport('student_credential_photo_upload',id,{photo_base64:jpeg});
+  if(Number(document.getElementById('cred_student')?.value||0)===id){
+   const img=document.getElementById('cred_photo_preview'),empty=document.getElementById('cred_photo_placeholder');
+   if(img){img.src='data:image/jpeg;base64,'+jpeg;img.style.display='block';}
+   if(empty)empty.style.display='none';
+   if(status)status.textContent='✓ Fotografía guardada para este alumno.';
+   toast('Fotografía guardada. Ya puedes solicitar el pago de credencial.');
+  }
+ }catch(e){if(status)status.textContent='No se guardó la fotografía: '+e.message;toast(e.message);}
+ finally{if(url)URL.revokeObjectURL(url);input.disabled=false;input.value='';}
+}
 async function jaguarRequestCredentialPayment(){const id=Number(document.getElementById('cred_student')?.value||0);if(!id)return toast('Selecciona primero un alumno.');const amount=prompt('Importe de la credencial (deja vacío para usar el monto configurado):','');try{const body={alumno_id:id};if(amount!==null&&amount.trim())body.importe=Number(amount);const r=await api('financeRequestCredentialPayment',{method:'POST',body:{resource:'financeRequestCredentialPayment',data:body}});toast(`Cargo ${r.folio||r.data?.folio||'creado'} solicitado. El alumno debe pagarlo en Recursos Monetarios.`);await jaguarCredentialStudentChanged();}catch(e){toast(e.message)}}
-async function jaguarGenerateSelectedCredential(){const id=Number(document.getElementById('cred_student')?.value||0);if(!id)return toast('Selecciona primero un alumno.');const folio=prompt('Ingresa el folio EXACTO del ticket de Recursos Monetarios:','');if(!folio?.trim())return;try{const {data:{session}}=await supabaseClient.auth.getSession();const r=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'student_credential',alumno_id:id,payment_folio:folio.trim()})});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'No se pudo generar la credencial.');downloadPdf(d.pdf_base64,d.filename||'ITHLA-Credencial.pdf');toast('Pago validado y credencial generada.');}catch(e){toast(e.message)}}
+async function jaguarGenerateSelectedCredential(){const id=Number(document.getElementById('cred_student')?.value||0);if(!id)return toast('Selecciona primero un alumno.');const folio=prompt('Ingresa el folio EXACTO del ticket de Recursos Monetarios:','');if(!folio?.trim())return;try{const {data:{session}}=await supabaseClient.auth.getSession();const r=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'student_credential',alumno_id:id,payment_folio:folio.trim()})});const d=await r.json();if(!r.ok||!d.ok)throw Error(d.error||'No se pudo generar la credencial.');downloadPdf(d.pdf_base64,d.filename||'ITHLA-Credencial.pdf');toast(d.reimpresion?'Se descargó la credencial previamente emitida.':'Pago validado y credencial generada.');}catch(e){toast(e.message)}}
 function normalizeTeacherAssignmentRows(rows){
   const unique=[];
   const seen=new Set();
@@ -2872,7 +3000,7 @@ function jaguarDownloadBulkTemplate(){
   ws['!freeze']='A3';ws['!autofilter']={ref:`A1:Q2`};
   ws['!cols']=headers.map((_,i)=>({wch:i===0?32:i===7?28:20}));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'ALUMNOS');
-  XLSX.writeFile(wb,'JAGUAR-Plantilla-Alta-Masiva-Alumnos.xlsx',{bookType:'xlsx',cellStyles:true});
+  XLSX.writeFile(jaguarPolishWorkbook(wb,{kind:(typeof kind!=="undefined"?kind:"general")}),'JAGUAR-Plantilla-Alta-Masiva-Alumnos.xlsx',{bookType:'xlsx',cellStyles:true});
 }
 function jaguarBulkCell(row,key){
   const wanted=String(key).toLowerCase().trim();
@@ -2906,7 +3034,7 @@ function jaguarDownloadBulkRejected(rows=window._jaguarBulkRejected||[]){
   if(!rows?.length)return;
   const ws=XLSX.utils.json_to_sheet(rows);ws['!cols']=Object.keys(rows[0]).map(k=>({wch:Math.min(36,Math.max(14,String(k).length+4))}));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'SIN_CUPO');
-  XLSX.writeFile(wb,`JAGUAR-Alumnos-Sin-Cupo-${new Date().toISOString().slice(0,10)}.xlsx`,{bookType:'xlsx',cellStyles:true});
+  XLSX.writeFile(jaguarPolishWorkbook(wb,{kind:(typeof kind!=="undefined"?kind:"general")}),`JAGUAR-Alumnos-Sin-Cupo-${new Date().toISOString().slice(0,10)}.xlsx`,{bookType:'xlsx',cellStyles:true});
 }
 async function jaguarProcessBulkStudents(){
   const rows=window._jaguarBulkRows||[];if(!rows.length)return toast('Selecciona primero un archivo con alumnos.');
@@ -3697,7 +3825,7 @@ async function jaguarArchiveModule(section='expedientes',kind='',ownerId=0){
   if(section==='planeaciones'){
     const rows=await api('teacherPlans');
     const canReview=academic.includes(S.role);
-    body=`<div class="card"><div class="flex flex-col md:flex-row md:justify-between gap-3"><div><h3>📝 Planeaciones docentes</h3><p class="text-sm text-[#A9BAC8] mt-1">Las versiones no se sobreescriben. Cada envío queda conservado.</p></div>${S.role==='docente'?'<button class="btn primary" onclick="jaguarPlanningModal()">＋ Nueva planeación</button>':''}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>Docente</th><th>Grupo / materia</th><th>Tipo</th><th>Fecha</th><th>Versión</th><th>Estado</th><th>Archivo</th>${(canReview||S.role==='docente')?'<th>Acciones</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.docentes?.nombre_completo||'—')}</td><td>${esc(r.grupo_materias?.grupos?.clave||'—')} · ${esc(r.grupo_materias?.materias?.nombre||'—')}</td><td>${esc(r.tipo)}</td><td>${esc(r.fecha_planeada||'—')}</td><td>v${esc(r.version)}</td><td><span class="chip">${esc(r.estado)}</span>${r.revision_observaciones?`<div class="text-xs text-[#8FA3B5] mt-1">${esc(r.revision_observaciones)}</div>`:''}</td><td>${r.archivo_path?`<button class="btn" onclick="jaguarArchivePathOpen(${JSON.stringify(r.archivo_path)})">🔎 Abrir</button>`:'—'}</td>${S.role==='docente'?`<td class="flex gap-2">${['borrador','devuelta'].includes(r.estado)?`<button class="btn primary" onclick="jaguarPlanningSend(${Number(r.id)})">Enviar</button>`:''}</td>`:canReview?`<td class="flex gap-2">${['enviada','devuelta'].includes(r.estado)?`<button class="btn primary" onclick="jaguarPlanningReview(${Number(r.id)},'revisada')">Revisada</button><button class="btn" onclick="jaguarPlanningReview(${Number(r.id)},'devuelta')">Devolver</button>`:''}</td>`:''}</tr>`).join('')||'<tr><td colspan="8">No hay planeaciones.</td></tr>'}</tbody></table></div></div>`;
+    body=`<div class="card"><div class="flex flex-col md:flex-row md:justify-between gap-3"><div><h3>📝 Planeaciones docentes</h3><p class="text-sm text-[#A9BAC8] mt-1">Las versiones no se sobreescriben. Cada envío queda conservado.</p></div>${S.role==='docente'?'<button class="btn primary" onclick="jaguarPlanningModal()">＋ Nueva planeación</button>':''}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>Docente</th><th>Grupo / materia</th><th>Tipo</th><th>Fecha</th><th>Versión</th><th>Estado</th><th>Archivo</th>${(canReview||S.role==='docente')?'<th>Acciones</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.docentes?.nombre_completo||'—')}</td><td>${esc(r.grupo_materias?.grupos?.clave||'—')} · ${esc(r.grupo_materias?.materias?.nombre||'—')}</td><td>${esc(r.tipo)}</td><td>${esc(r.fecha_planeada||'—')}</td><td>v${esc(r.version)}</td><td><span class="chip">${esc(r.estado)}</span>${r.revision_observaciones?`<div class="text-xs text-[#8FA3B5] mt-1">${esc(r.revision_observaciones)}</div>`:''}</td><td><div class="flex flex-wrap gap-1"><button class="btn" onclick='jaguarPlanningPrint(${JSON.stringify(r).replace(/'/g,"&#39;")})'>📄 Formato PDF</button>${r.archivo_path?`<button class="btn" onclick="jaguarArchivePathOpen(${JSON.stringify(r.archivo_path)})">🔎 Adjunto</button>`:''}</div></td>${S.role==='docente'?`<td class="flex gap-2">${['borrador','devuelta'].includes(r.estado)?`<button class="btn primary" onclick="jaguarPlanningSend(${Number(r.id)})">Enviar</button>`:''}</td>`:canReview?`<td class="flex gap-2">${['enviada','devuelta'].includes(r.estado)?`<button class="btn primary" onclick="jaguarPlanningReview(${Number(r.id)},'revisada')">Revisada</button><button class="btn" onclick="jaguarPlanningReview(${Number(r.id)},'devuelta')">Devolver</button>`:''}</td>`:''}</tr>`).join('')||'<tr><td colspan="8">No hay planeaciones.</td></tr>'}</tbody></table></div></div>`;
   }
   return `<div class="space-y-5"><div class="card"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3"><div><span class="chip">ARCHIVO ESCOLAR</span><h2 class="text-2xl font-extrabold mt-3">📁 Expedientes y trazabilidad documental</h2><p class="text-sm text-[#A9BAC8] mt-2">Custodia, versiones, acceso controlado y seguimiento académico. El sistema conserva históricos y no elimina expedientes automáticamente.</p></div><div class="flex flex-wrap gap-2">${nav}</div></div></div>${stats}${body}</div>`;
 }
@@ -3787,7 +3915,7 @@ async function jaguarArchiveResolveAccess(id,decision){try{let expira_at=null;if
 async function jaguarGradeClaimResolve(id,estado){try{const respuesta=prompt('Respuesta que quedará registrada en el expediente:','')||'';if(!respuesta.trim())return toast('La respuesta es obligatoria.');await apiPost('resolveGradeClaim',{id,estado,respuesta});toast('Reclamo actualizado.');await jaguarArchiveOpen('reclamos');}catch(e){toast(e.message)}}
 async function jaguarPlanningModal(){
   if(S.role!=='docente')return toast('Solo docentes pueden crear planeaciones.');
-  try{const groups=await api('teacherGroups'),periods=await api('periods'),cycle=currentCycleLabel();const options=[...new Map((groups||[]).filter(x=>x.grupo_materias).map(x=>[x.grupo_materias.id,x.grupo_materias])).values()].map(g=>`<option value="${g.id}">${esc(g.grupos?.clave||'—')} · ${esc(g.materias?.nombre||'—')}</option>`).join('');const p=(periods||[]).find(x=>x.es_periodo_actual===true)||(periods||[]).find(x=>x.activo!==false)||periods?.[0];modal('📝 Nueva planeación',`<div class="space-y-4"><div><label class="text-xs text-[#8FA3B5]">Grupo · materia</label><select id="pl_gm" class="select mt-1">${options}</select></div><div class="grid md:grid-cols-3 gap-4"><div><label class="text-xs text-[#8FA3B5]">Tipo</label><select id="pl_tipo" class="select mt-1"><option value="anual">Anual</option><option value="periodo" selected>Periodo</option><option value="semanal">Semanal</option><option value="diaria">Diaria</option></select></div><div><label class="text-xs text-[#8FA3B5]">Periodo</label><select id="pl_periodo" class="select mt-1">${(periods||[]).map(x=>`<option value="${x.id}" ${x.id===p?.id?'selected':''}>${esc(x.nombre||x.ciclo_escolar)}</option>`).join('')}</select></div><div><label class="text-xs text-[#8FA3B5]">Fecha planeada</label><input id="pl_fecha" class="input mt-1" type="date"></div></div><input id="pl_titulo" class="input" placeholder="Título de la planeación"><textarea id="pl_snapshot" class="input min-h-32" placeholder="Contenido estructurado / observaciones. Puedes dejarlo vacío si adjuntas archivo."></textarea><input id="pl_file" class="input" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"><button class="btn primary w-full" onclick="jaguarPlanningSave()">Guardar borrador</button></div>`)}catch(e){toast(e.message)}}
+  try{const groups=await api('teacherGroups'),periods=await api('periods'),cycle=currentCycleLabel();const options=[...new Map((groups||[]).filter(x=>x.grupo_materias).map(x=>[x.grupo_materias.id,x.grupo_materias])).values()].map(g=>`<option value="${g.id}">${esc(g.grupos?.clave||'—')} · ${esc(g.materias?.nombre||'—')}</option>`).join('');const p=(periods||[]).find(x=>x.es_periodo_actual===true)||(periods||[]).find(x=>x.activo!==false)||periods?.[0];modal('📝 Nueva planeación',`<div class="space-y-4"><div><label class="text-xs text-[#8FA3B5]">Grupo · materia</label><select id="pl_gm" class="select mt-1">${options}</select></div><div class="grid md:grid-cols-3 gap-4"><div><label class="text-xs text-[#8FA3B5]">Tipo</label><select id="pl_tipo" class="select mt-1"><option value="anual">Anual</option><option value="periodo" selected>Periodo</option><option value="semanal">Semanal</option><option value="diaria">Diaria</option></select></div><div><label class="text-xs text-[#8FA3B5]">Periodo</label><select id="pl_periodo" class="select mt-1">${(periods||[]).map(x=>`<option value="${x.id}" ${x.id===p?.id?'selected':''}>${esc(x.nombre||x.ciclo_escolar)}</option>`).join('')}</select></div><div><label class="text-xs text-[#8FA3B5]">Fecha planeada</label><input id="pl_fecha" class="input mt-1" type="date"></div></div><input id="pl_titulo" class="input" placeholder="Título de la planeación"><textarea id="pl_snapshot" class="input min-h-32" placeholder="Contenido estructurado / observaciones. Puedes dejarlo vacío si adjuntas archivo."></textarea><input id="pl_file" class="input" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"><div class="flex flex-wrap gap-2"><button class="btn primary flex-1" onclick="jaguarPlanningSave()">Guardar borrador</button><button class="btn flex-1" onclick="jaguarPlanningPreview()">📄 Vista previa PDF</button></div></div>`)}catch(e){toast(e.message)}}
 async function jaguarPlanningSave(){try{const file=document.getElementById('pl_file')?.files?.[0]||null;let up=null;if(file){if(file.size>20*1024*1024)throw Error('El archivo supera 20 MB.');up=await apiPost('prepareArchiveUpload',{tipo_expediente:'docente',expediente_id:Number(S.profile?.docente_id||0)||0,filename:file.name});}let sha=null;if(file){const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());sha=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');const u=await supabaseClient.storage.from(up.bucket).uploadToSignedUrl(up.path,up.token,file,{contentType:file.type||'application/octet-stream',upsert:false});if(u.error)throw u.error;}const snapshotRaw=String(document.getElementById('pl_snapshot')?.value||'').trim();const saved=await apiPost('saveTeacherPlanning',{grupo_materia_id:Number(document.getElementById('pl_gm')?.value||0)||null,periodo_id:Number(document.getElementById('pl_periodo')?.value||0)||null,tipo:document.getElementById('pl_tipo')?.value||'periodo',fecha_planeada:document.getElementById('pl_fecha')?.value||null,titulo:document.getElementById('pl_titulo')?.value||'Planeación docente',snapshot:{texto:snapshotRaw},archivo_path:up?.path||null,archivo_nombre:file?.name||null,archivo_sha256:sha,ciclo_escolar:currentCycleLabel()});closeModal();toast(saved.message||'Planeación guardada.');await jaguarArchiveOpen('planeaciones');}catch(e){toast(e.message)}}
 async function jaguarPlanningSend(id){try{if(!confirm('¿Enviar esta planeación a revisión? Después solo podrás corregirla si es devuelta.'))return;await apiPost('sendTeacherPlanning',{id:Number(id)});toast('Planeación enviada a revisión.');await jaguarArchiveOpen('planeaciones');}catch(e){toast(e.message)}}
 async function jaguarPlanningReview(id,estado){try{const observaciones=prompt(estado==='devuelta'?'Indica qué debe corregirse:':'Observaciones de revisión (opcional):','')||'';await apiPost('reviewTeacherPlanning',{id,estado,observaciones});toast('Planeación actualizada.');await jaguarArchiveOpen('planeaciones');}catch(e){toast(e.message)}}
@@ -3988,7 +4116,7 @@ function dailyWorkbook(d){
   XLSX.utils.book_append_sheet(wb,meta,'JAGUAR_META');if(wb.Workbook?.Sheets){const sh=wb.Workbook.Sheets.find(x=>x.name==='JAGUAR_META');if(sh)sh.Hidden=1}
   return wb;
 }
-async function downloadTeacherDailyExcel(gmId,periodoId,fecha){try{const d=await apiQuery('teacherDailyGradebook',{grupo_materia_id:gmId,periodo_id:periodoId,fecha:fecha||new Date().toISOString().slice(0,10)});const wb=dailyWorkbook(d);XLSX.writeFile(wb,`JAGUAR-${d.grupo_materia?.grupos?.clave||'grupo'}-${dailySafeName(d.grupo_materia?.materias?.nombre||'materia')}-${d.fecha}.xlsx`,{bookType:'xlsx',cellStyles:true});toast('Excel institucional generado: Asistencias, Actividades y Valores de Ponderación.')}catch(e){toast(e.message)}}
+async function downloadTeacherDailyExcel(gmId,periodoId,fecha){try{const d=await apiQuery('teacherDailyGradebook',{grupo_materia_id:gmId,periodo_id:periodoId,fecha:fecha||new Date().toISOString().slice(0,10)});const wb=dailyWorkbook(d);XLSX.writeFile(jaguarPolishWorkbook(wb,{kind:"diario"}),`JAGUAR-${d.grupo_materia?.grupos?.clave||'grupo'}-${dailySafeName(d.grupo_materia?.materias?.nombre||'materia')}-${d.fecha}.xlsx`,{bookType:'xlsx',cellStyles:true});toast('Excel institucional generado: Asistencias, Actividades y Valores de Ponderación.')}catch(e){toast(e.message)}}
 async function openDailyGradebook(gmId){try{const periods=await api('periods');const p=periods.find(x=>x.es_periodo_actual===true)||periods.find(x=>x.activo!==false)||periods[0];if(!p)return toast('No hay periodo escolar disponible.');const fecha=prompt('Fecha de clase para descargar el Excel:',new Date().toISOString().slice(0,10));if(fecha===null)return;if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha))return toast('Usa formato AAAA-MM-DD.');await downloadTeacherDailyExcel(gmId,p.id,fecha)}catch(e){toast(e.message)}}
 async function uploadTeacherDailyExcel(gmId,periodoId){try{const file=document.getElementById('daily_excel_file')?.files?.[0];if(!file)return;if(file.size>10*1024*1024)throw Error('El archivo no debe superar 10 MB.');const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});const d=await apiQuery('teacherDailyGradebook',{grupo_materia_id:gmId,periodo_id:periodoId,fecha:document.getElementById('daily_date')?.value||new Date().toISOString().slice(0,10)});const state=dailyStateFromWorkbook(wb,d);const prep=await apiPost('prepareTeacherDailyUpload',{grupo_materia_id:gmId,periodo_id:periodoId,fecha:d.fecha,filename:file.name});const up=await supabaseClient.storage.from(prep.bucket).uploadToSignedUrl(prep.path,prep.token,file,{contentType:file.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});if(up.error)throw up.error;const digest=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());const sha=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');const r=await apiPost('commitTeacherDailyUpload',{grupo_materia_id:gmId,periodo_id:periodoId,fecha:d.fecha,file_path:prep.path,file_name:file.name,file_sha256:sha,state});toast(r.message||'Respaldo guardado.');closeModal();await loadPage('bitacora_calificaciones')}catch(e){toast(e.message)}}
 async function jaguarDailyGradebookModule(){
@@ -4068,7 +4196,18 @@ async function jaguarFinanceApproveBudget(id){if(!confirm('¿Aprobar este presup
 function jaguarFinanceConfigForm(current,meta){modal('⚙ Parámetros financieros',`<form id="jfCfg" class="space-y-4"><div><label class="text-xs">Umbral de aprobación de egresos</label><input id="jf_cfg_amount" class="input" type="number" min="0" step="0.01" value="${Number(current||1000).toFixed(2)}"></div><div><label class="text-xs">Meta de ingresos del ciclo</label><input id="jf_cfg_target" class="input" type="number" min="0" step="0.01" value="${Number(meta||0).toFixed(2)}"><p class="text-xs text-[#A9BAC8] mt-1">La diferencia se calcula automáticamente: ingresos reales − meta. Si falta dinero, aparecerá como valor negativo.</p></div><button class="btn primary w-full" type="submit">Guardar parámetros</button></form>`);document.getElementById('jfCfg')?.addEventListener('submit',async e=>{e.preventDefault();try{await api('financeSaveConfig',{method:'POST',body:{resource:'financeSaveConfig',data:{monto_requiere_aprobacion:Number(document.getElementById('jf_cfg_amount').value),meta_ingresos:Number(document.getElementById('jf_cfg_target').value)}}});closeModal();toast('Parámetros financieros actualizados.');await loadPage('recursos_monetarios')}catch(err){toast(err.message)}})}
 function jaguarFinanceExpenseTicket(id){
  const d=window._jaguarFinance||{},e=(d.expenses||[]).find(x=>Number(x.id)===Number(id));if(!e)return toast('Egreso no encontrado.');
- const html=`<!doctype html><html><head><meta charset="utf-8"><title>${esc(e.folio)} · Ticket</title><style>body{font-family:Arial,sans-serif;background:#eee;margin:0;padding:20px}.ticket{width:80mm;max-width:100%;margin:auto;background:#fff;padding:18px 14px;color:#111;font-size:12px}.c{text-align:center}.line{border-top:1px dashed #111;margin:10px 0}.row{display:flex;justify-content:space-between;gap:10px;margin:5px 0}.total{font-size:20px;font-weight:700}.muted{font-size:10px;color:#555}.print{display:block;margin:10px auto;padding:8px 14px}@media print{body{background:#fff;padding:0}.print{display:none}.ticket{width:80mm;margin:0;padding:12px}}</style></head><body><button class="print" onclick="print()">Imprimir ticket</button><div class="ticket"><div class="c"><b>ITHLA</b><br><b>TICKET DE EGRESO</b><br><span class="muted">RECURSOS MONETARIOS</span></div><div class="line"></div><div class="row"><span>Folio</span><b>${esc(e.folio)}</b></div><div class="row"><span>Fecha</span><span>${esc(e.fecha_egreso||'—')}</span></div><div class="line"></div><b>${esc(e.recursos_conceptos?.nombre||'EGRESO')}</b><p>${esc(e.descripcion||'')}</p><div class="row"><span>Proveedor</span><span>${esc(e.proveedor||'—')}</span></div><div class="row"><span>Método</span><span>${esc(e.metodo_pago||'—')}</span></div><div class="row"><span>Referencia</span><span>${esc(e.referencia_pago||'—')}</span></div><div class="line"></div><div class="row total"><span>TOTAL</span><span>${financeMoney(e.importe)}</span></div><div class="line"></div><div class="c muted">Estado: ${esc(e.estado)}<br>Documento interno de Recursos Monetarios<br>Conservar junto con la comprobación del gasto.</div></div></body></html>`;
+ const html=`<!doctype html><html><head><meta charset="utf-8"><title>${esc(e.folio)} · Ticket</title><style>
+@font-face{font-family:Garet;src:url('/assets/fonts/Garet-Book.ttf') format('truetype')}
+@font-face{font-family:Garet;src:url('/assets/fonts/Garet-Heavy.ttf') format('truetype');font-weight:bold}
+*{box-sizing:border-box}body{font-family:Garet,Arial,sans-serif;background:#e9edf1;margin:0;padding:24px;color:#203349}
+.ticket{width:80mm;max-width:100%;margin:auto;background:#fff;padding:17px 14px 20px;color:#203349;font-size:11px;border-top:7px solid #1b365d;border-bottom:4px solid #b18a32;box-shadow:0 12px 28px #17283b20;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.ticket .c:first-child{border-bottom:1px solid #d1b470;padding-bottom:12px}.ticket .c:first-child b:first-child{font-family:Georgia,serif;color:#1b365d;font-size:17px}
+.c{text-align:center}.line{border-top:1px dashed #b7c5c8;margin:14px 0}.row{display:flex;justify-content:space-between;gap:14px;margin:7px 0;overflow-wrap:anywhere}
+.total{font-size:17px;font-weight:700;color:#1b365d}.muted{font-size:9px;line-height:1.5;color:#64748b}
+.print{display:block;margin:10px auto;padding:10px 16px;background:#1b365d;color:white;border:0;border-radius:5px;cursor:pointer}
+@page{margin:0}
+@media print{body{background:#fff;padding:0}.print{display:none}.ticket{width:80mm;margin:0;padding:13px;box-shadow:none}}
+</style></head><body><button class="print" onclick="print()">Imprimir ticket</button><div class="ticket"><div class="c"><b>ITHLA</b><br><b>TICKET DE EGRESO</b><br><span class="muted">RECURSOS MONETARIOS</span></div><div class="line"></div><div class="row"><span>Folio</span><b>${esc(e.folio)}</b></div><div class="row"><span>Fecha</span><span>${esc(e.fecha_egreso||'—')}</span></div><div class="line"></div><b>${esc(e.recursos_conceptos?.nombre||'EGRESO')}</b><p>${esc(e.descripcion||'')}</p><div class="row"><span>Proveedor</span><span>${esc(e.proveedor||'—')}</span></div><div class="row"><span>Método</span><span>${esc(e.metodo_pago||'—')}</span></div><div class="row"><span>Referencia</span><span>${esc(e.referencia_pago||'—')}</span></div><div class="line"></div><div class="row total"><span>TOTAL</span><span>${financeMoney(e.importe)}</span></div><div class="line"></div><div class="c muted">Estado: ${esc(e.estado)}<br>Documento interno de Recursos Monetarios<br>Conservar junto con la comprobación del gasto.</div></div></body></html>`;
  const w=window.open('','_blank','noopener');if(!w)return toast('El navegador bloqueó la ventana del ticket.');w.document.write(html);w.document.close();
 }
 async function jaguarFinanceReceipt(id){try{const d=await api('financeReceiptUrl',{method:'POST',body:{resource:'financeReceiptUrl',data:{id}}});if(d.url)window.open(d.url,'_blank','noopener');}catch(e){toast(e.message)}}
@@ -4092,6 +4231,91 @@ async function jaguarInstitutionStatisticsModule(){
 async function jaguarStudentPaymentsModule(){try{const [rows,charges]=await Promise.all([api('financeStudentPayments'),api('financeStudentCharges')]);return `<div class="space-y-5"><div class="card"><span class="chip">TRANSPARENCIA FINANCIERA</span><h2 class="text-2xl font-extrabold mt-3">💳 Mis pagos y cargos</h2><p class="text-sm text-[#A9BAC8] mt-2">Aquí puedes ver cargos pendientes y tus tickets emitidos por Recursos Monetarios.</p></div><div class="card"><h3>⏳ Pagos pendientes</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Folio de cargo</th><th>Concepto</th><th>Importe</th><th>Pagado</th><th>Pendiente</th></tr></thead><tbody>${charges.map(x=>`<tr><td><b>${esc(x.folio)}</b></td><td>${esc(x.recursos_conceptos?.nombre||'—')}</td><td>${financeMoney(x.importe)}</td><td>${financeMoney(x.paid)}</td><td><b>${financeMoney(x.remaining)}</b></td></tr>`).join('')||'<tr><td colspan="5">No tienes cargos pendientes.</td></tr>'}</tbody></table></div></div><div class="card"><h3>🧾 Mis comprobantes</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Fecha</th><th>Folio</th><th>Concepto</th><th>Importe</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.fecha_pago||'—')}</td><td><b>${esc(x.folio)}</b></td><td>${esc(x.recursos_conceptos?.nombre||'—')}</td><td>${financeMoney(x.importe)}</td><td><span class="chip">${esc(x.estado)}</span></td><td>${x.archivo_path?`<button class="btn" onclick="jaguarFinanceReceipt(${x.id})">📄 Ver ticket</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="6">No tienes pagos registrados.</td></tr>'}</tbody></table></div></div></div>`}catch(e){return `<div class="card border-red-500/30"><b>No se pudieron consultar tus pagos.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`}}
 </script>
 <script src="/assets/jaguar-premium.js"></script>
+<script id="jaguar-documentos-premium-v4">
+
+/* ITHLA · Suite documental V4. Sólo salida visual; no cambia datos ni metadatos de carga. */
+const JAGUAR_DOC_PALETTE={navy:'1B365D',teal:'008080',gold:'B18A32',ink:'203349',line:'DCE3E8',light:'F2F7F8',white:'FFFFFF'};
+function jaguarPolishWorkbook(wb,{kind='general'}={}){
+  if(!wb?.SheetNames||!window.XLSX)return wb;
+  const C=JAGUAR_DOC_PALETTE;
+  for(const sheetName of wb.SheetNames){
+    if(sheetName==='JAGUAR_META')continue; // No alterar IDs/versión/estructura de importación.
+    const ws=wb.Sheets[sheetName];if(!ws)continue;
+    const keys=Object.keys(ws).filter(k=>/^[A-Z]+[1-9][0-9]*$/.test(k));
+    if(!keys.length)continue;
+    let maxRow=0,maxCol=0;
+    for(const addr of keys){const {r,c}=XLSX.utils.decode_cell(addr);maxRow=Math.max(maxRow,r);maxCol=Math.max(maxCol,c)}
+    const upper=sheetName.toUpperCase();
+    const topRows=kind==='lista-grupo'?2:(kind==='horarios'?2:(kind==='diario'?3:(kind==='evaluacion'?1:0)));
+    const headings=kind==='lista-grupo'?[4]:kind==='horarios'?[2]:kind==='diario'?[4]:(kind==='evaluacion'?[2,3]:[0]);
+    for(const addr of keys){
+      const {r,c}=XLSX.utils.decode_cell(addr),cell=ws[addr];
+      if(!cell||cell.t==='z')continue;
+      const base=cell.s||{},baseFont=base.font||{},baseFill=base.fill||{};
+      const current=(baseFill.fgColor?.rgb||'').replace(/^FF/i,'').toUpperCase();
+      const distinct=current && !['FFFFFF','F7FAF9','F4F6F9','F7F9FB','F2F7F8'].includes(current);
+      const isTitle=r===0&&topRows>0,isMeta=r>0&&r<topRows;
+      const isHeader=headings.includes(r)&&!(kind==='evaluacion'&&r===3&&upper==='ASISTENCIAS');
+      const isSubheading=kind==='lista-grupo'&&r===3;
+      const newFont={...baseFont,name:'Aptos',sz:baseFont.sz||10,color:baseFont.color||{rgb:'FF'+C.ink}};
+      const style={...base,font:newFont,alignment:{horizontal:(c===1||c===3)?'left':'center',vertical:'center',wrapText:true,...base.alignment},border:base.border||{bottom:{style:'hair',color:{rgb:'FF'+C.line}}}};
+      if(isTitle||isMeta||isHeader||isSubheading){
+        const fill=isTitle?C.navy:isMeta?C.teal:isHeader?(distinct?current:C.navy):C.light;
+        style.fill={patternType:'solid',fgColor:{rgb:'FF'+fill}};
+        style.font={...newFont,bold:true,sz:isTitle?14:isMeta?10:isHeader?9:10,color:{rgb:'FF'+(fill===C.light?C.navy:C.white)}};
+        style.alignment={horizontal:isTitle||isMeta?'left':'center',vertical:'center',wrapText:true};
+      }else if(!distinct){
+        style.fill={patternType:'solid',fgColor:{rgb:'FF'+(r%2===0?C.white:C.light)}};
+        style.font={...newFont,color:{rgb:'FF'+C.ink}};
+      }
+      cell.s=style;
+    }
+    if(!ws['!cols'])ws['!cols']=Array.from({length:maxCol+1},(_,i)=>({wch:i===1?40:18}));
+    ws['!cols']=ws['!cols'].map((col,i)=>({...(col||{}),wch:Math.max(i===1?28:8,Math.min(46,Number(col?.wch)||18))}));
+    if(!ws['!rows'])ws['!rows']=Array.from({length:maxRow+1},(_,i)=>({hpt:i===0?30:22}));
+    ws['!rows']=ws['!rows'].map((row,i)=>({...(row||{}),hpt:Math.max(19,Math.min(54,Number(row?.hpt)||22))}));
+    ws['!margins']={left:.3,right:.3,top:.55,bottom:.55,header:.2,footer:.2};
+    ws['!pageSetup']={orientation:maxCol>7?'landscape':'portrait',paperSize:9,fitToWidth:1};
+    ws['!printOptions']={horizontalCentered:true,gridLines:false};
+    if(!ws['!ref'])ws['!ref']=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:maxRow,c:maxCol}});
+  }
+  return wb;
+}
+function jaguarPlanningPrint(row){
+  const r=row||{},g=r.grupo_materias?.grupos||{},subject=r.grupo_materias?.materias?.nombre||'—';
+  const inst=S.institution||ITHLA_DEFAULT_INSTITUTION;
+  const body=String(r.snapshot?.texto||r.snapshot?.contenido||r.snapshot?.observaciones||'').trim();
+  const state=String(r.estado||'Borrador').replace(/_/g,' ');
+  const blocks=body?body.split(/\n\s*\n/).filter(Boolean).map(b=>`<p>${esc(b).replace(/\n/g,'<br>')}</p>`).join(''):'<p class="empty-note">No se registró contenido textual. Si existe un archivo adjunto, consúltalo por separado.</p>';
+  const html=`<style>
+    .planning-document{width:100%;max-width:850px;margin:auto;background:white;padding:30px 36px 38px;border-top:8px solid #b18a32;box-sizing:border-box;min-height:930px}
+    .planning-head{display:flex;align-items:center;gap:18px;padding-bottom:16px;border-bottom:1px solid #d6c69b}
+    .planning-head img{width:68px;height:72px;object-fit:contain}.planning-overline{font-size:9px;letter-spacing:2px;color:#997832;font-weight:700}
+    .planning-school{font-family:Georgia,serif;font-size:17px;color:#1b365d;line-height:1.3}
+    .planning-title{font-family:Georgia,serif;font-size:24px;margin:22px 0 5px;color:#1b365d}
+    .planning-meta{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:17px;background:#f3f8f8;border-left:3px solid #b18a32;margin:20px 0}
+    .planning-field{font-size:10px;color:#1b365d;overflow-wrap:anywhere}.planning-field b{display:block;color:#5c6b78;font-size:8px;letter-spacing:1px;margin-bottom:5px}
+    .planning-body{font-size:11px;line-height:1.75;white-space:normal;overflow-wrap:anywhere;min-height:260px;padding:4px 0}
+    .planning-body p{margin:0 0 13px}.planning-sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:65px}
+    .planning-sign div{border-top:1px solid #84909c;padding-top:9px;font-size:9px;text-align:center}
+    .planning-foot{border-top:1px solid #dce3e8;margin-top:22px;padding-top:10px;color:#677789;font-size:8px}
+    @media print{.planning-document{border-top:7px solid #b18a32;padding:10px 4px 0;min-height:auto;break-inside:auto}.planning-body{min-height:240px}}
+  </style><div class="planning-document"><div class="planning-head"><img src="/assets/ithla-logo.png" alt="ITHLA"><div><div class="planning-overline">PLATAFORMA JAGUAR · PLANEACIÓN DOCENTE</div><div class="planning-school">${esc(inst.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano')}</div><div style="font-size:9px;color:#5d6f7b;margin-top:5px">C.C.T. ${esc(inst.cct||'—')} · ${esc(inst.lema||'Scientia, Humanitas et Progressum')}</div></div></div>
+  <div class="planning-title">${esc(r.titulo||'Planeación docente')}</div>
+  <div class="planning-overline">${esc(String(r.tipo||'periodo').toUpperCase())} · VERSIÓN ${esc(r.version||'—')} · ${esc(state.toUpperCase())}</div>
+  <div class="planning-meta"><div class="planning-field"><b>DOCENTE</b>${esc(r.docentes?.nombre_completo||S.profile?.nombre_completo||'—')}</div><div class="planning-field"><b>GRADO / GRUPO</b>${esc(g.clave||'—')}</div><div class="planning-field"><b>ASIGNATURA</b>${esc(subject)}</div><div class="planning-field"><b>CICLO ESCOLAR</b>${esc(r.ciclo_escolar||S.activeCycle||'—')}</div><div class="planning-field"><b>PERIODO</b>${esc(r.periodos_escolares?.nombre||'—')}</div><div class="planning-field"><b>FECHA PLANEADA</b>${esc(r.fecha_planeada||'—')}</div></div>
+  <h3 style="font-family:Georgia,serif;font-size:15px;color:#1b365d;margin-bottom:12px">Desarrollo de la planeación</h3><div class="planning-body">${blocks}</div>
+  <div class="planning-sign"><div>Docente responsable<br><b>${esc(r.docentes?.nombre_completo||S.profile?.nombre_completo||'')}</b></div><div>Revisión académica<br>Nombre y firma</div></div>
+  <div class="planning-foot">${esc(inst.siglas||'ITHLA')} · Documento de apoyo emitido desde los datos de Plataforma Jaguar · La firma no se presume registrada.</div></div>`;
+  printPdf('Planeación docente · '+String(r.titulo||'Jaguar'),html);
+}
+function jaguarPlanningPreview(){
+  const el=(id)=>document.getElementById(id);
+  const gm=el('pl_gm'),period=el('pl_period');
+  const row={titulo:el('pl_titulo')?.value||'Planeación docente',tipo:el('pl_tipo')?.value||'periodo',fecha_planeada:el('pl_fecha')?.value||null,estado:'vista previa',version:'—',ciclo_escolar:currentCycleLabel(),grupo_materias:{grupos:{clave:gm?.selectedOptions?.[0]?.textContent?.split(' · ')[0]||'—'},materias:{nombre:gm?.selectedOptions?.[0]?.textContent?.split(' · ').slice(1).join(' · ')||'—'}},periodos_escolares:{nombre:period?.selectedOptions?.[0]?.textContent||'—'},docentes:{nombre_completo:S.profile?.nombre_completo||'—'},snapshot:{texto:el('pl_snapshot')?.value||''}};
+  jaguarPlanningPrint(row);
+}
+</script>
 </body>
 </html>
 

@@ -1,4 +1,7 @@
 import {renderBoletaVisual15} from '../lib/boleta_visual15.js';
+import {buildStudentCredentialPDF} from '../lib/credencial_escolar_pdf.js';
+import {readCredentialPhoto,saveCredentialPhoto} from '../lib/credential_photo.js';
+import {buildDailyGradebookPdf} from '../lib/jaguar_gradebook_pdf.js';
 import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
 import { readFile } from 'node:fs/promises';
 import { requireRoles } from '../lib/_admin.js';
@@ -46,6 +49,17 @@ function drawFloral(page,W,H,theme={}){
   }
   page.drawRectangle({x:0,y:0,width:W,height:17,color:primary});
   page.drawRectangle({x:0,y:17,width:W,height:2,color:gold});
+}
+/** Marco editorial para horarios; respeta las mismas coordenadas del contenido. */
+function drawJaguarScheduleChrome(page,W,H,theme={}){
+  const primary=theme.primary||GREEN;
+  page.drawRectangle({x:0,y:0,width:W,height:H,color:PAPER});
+  page.drawRectangle({x:0,y:H-8,width:W,height:8,color:primary});
+  page.drawRectangle({x:0,y:H-12,width:W,height:4,color:GOLD});
+  page.drawRectangle({x:0,y:0,width:W,height:17,color:primary});
+  page.drawRectangle({x:0,y:17,width:W,height:2,color:GOLD});
+  // Una cenefa inferior tenue da identidad sin interferir con las tablas.
+  for(let i=0;i<9;i++)page.drawLine({start:{x:20+i*94,y:29},end:{x:59+i*94,y:29},color:LINE,thickness:.45,opacity:.55});
 }
 async function loadLogo(){
   try{return await readFile(new URL('../assets/ithla-logo.png',import.meta.url));}
@@ -265,7 +279,7 @@ async function drawSchedulePdf({admin,student=null,teacher=null,group:groupInfo=
   const bold=await p.embedFont(StandardFonts.HelveticaBold);
   const W=841.89,H=595.28;
   const theme=teacher?{primary:GOLD_DARK,primary2:GOLD,pale:GOLD_SOFT,gold:GOLD,leaf:rgb(.82,.72,.49),paper:rgb(.995,.99,.965)}:{primary:GREEN,primary2:GREEN2,pale:PALE,gold:GOLD,leaf:rgb(.72,.82,.79),paper:PAPER};
-  drawFloral(page,W,H,theme);
+  drawJaguarScheduleChrome(page,W,H,theme);
 
   const logoBytes=await loadLogo();
   if(logoBytes){
@@ -523,87 +537,50 @@ async function groupSchedulePdf(admin,id,req=null){
 
 async function credentialPdf(admin,id,req=null){
   const institution=await institutionForPdf(admin);
-  const {data:s,error}=await admin.from('alumnos').select('id,nombre_completo,matricula,grupo_id,turno,grado_ingreso,sexo,auth_user_id,grupos(id,clave,grado,letra,turno)').eq('id',id).maybeSingle();
-  if(error) throw error;
-  if(!s) throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
+  const {data:s,error}=await admin.from('alumnos').select('id,nombre_completo,matricula,grupo_id,turno,grado_ingreso,activo,grupos(id,clave,grado,letra,turno)').eq('id',id).maybeSingle();
+  if(error)throw error;
+  if(!s||s.activo===false)throw Object.assign(new Error('Alumno no encontrado o inactivo.'),{status:404});
   const cycle=await activeCycle(admin);
   const paymentFolio=String(req?.body?.payment_folio||'').trim();
-  if(!paymentFolio)throw Object.assign(new Error('Para generar la credencial debes ingresar el folio del ticket de pago.'),{status:400});
-  const paymentQ=await admin.from('recursos_pagos').select('id,folio,importe,estado,alumno_id,recursos_conceptos(codigo,nombre)').eq('folio',paymentFolio).eq('alumno_id',s.id).eq('estado','registrado').maybeSingle();
-  if(paymentQ.error)throw paymentQ.error;
-  if(!paymentQ.data||paymentQ.data.recursos_conceptos?.codigo!=='CREDENCIAL')throw Object.assign(new Error('El folio no corresponde a un pago registrado de credencial para este alumno.'),{status:409});
-  const profileQ=await admin.from('perfiles').select('correo,correo_recuperacion,matricula').eq('matricula',s.matricula).maybeSingle();
-  if(profileQ.error) throw profileQ.error;
-  const email=profileQ.data?.correo||'';
-  const W=242.65,H=153.07; // 85.6 × 54 mm, tamaño de credencial
-  const p=await PDFDocument.create();
-  const regular=await p.embedFont(StandardFonts.Helvetica);
-  const bold=await p.embedFont(StandardFonts.HelveticaBold);
-  const logoBytes=await loadLogo();
-  const logo=logoBytes?await p.embedPng(logoBytes):null;
-  const green=GREEN, dark=rgb(.018,.20,.17), gold=GOLD, goldDark=GOLD_DARK, paper=rgb(.985,.99,.975), muted=GRAY;
-  const group=s.grupos?.clave||'—';
+  if(!paymentFolio)throw Object.assign(new Error('Para generar la credencial ingresa el folio del ticket de pago.'),{status:400});
+  const {data:payment,error:paymentError}=await admin.from('recursos_pagos').select('id,folio,importe,estado,alumno_id,cargo_id,ciclo_escolar,recursos_conceptos(codigo,nombre)').eq('folio',paymentFolio).eq('alumno_id',s.id).eq('estado','registrado').maybeSingle();
+  if(paymentError)throw paymentError;
+  if(!payment||payment.recursos_conceptos?.codigo!=='CREDENCIAL')throw Object.assign(new Error('El folio no corresponde a un pago registrado de CREDENCIAL para este alumno.'),{status:409});
+  if(Number(payment.importe)<=0)throw Object.assign(new Error('El pago de credencial debe tener un importe válido.'),{status:409});
+  if(payment.ciclo_escolar&&payment.ciclo_escolar!==cycle)throw Object.assign(new Error('El pago corresponde a un ciclo escolar distinto. Verifica con Recursos Monetarios.'),{status:409});
+  if(payment.cargo_id){
+    const {data:charge,error:ce}=await admin.from('recursos_cargos').select('id,importe,alumno_id').eq('id',payment.cargo_id).maybeSingle();
+    if(ce)throw ce;
+    if(!charge||Number(charge.alumno_id)!==Number(s.id))throw Object.assign(new Error('El cargo no pertenece a este alumno.'),{status:409});
+    const {data:posted,error:pe}=await admin.from('recursos_pagos').select('importe').eq('cargo_id',charge.id).eq('estado','registrado');
+    if(pe)throw pe;
+    const sum=(posted||[]).reduce((acc,p)=>acc+Number(p.importe||0),0);
+    if(sum+0.005<Number(charge.importe))throw Object.assign(new Error('El pago de credencial aún está incompleto.'),{status:409});
+  }
+  // No se permite usar un mismo comprobante dos veces para emitir una credencial.
+  // Se conserva el folio de pago como clave consultable en datos_publicos.
+  const {data:already,error:alreadyError}=await admin.from('documentos_verificables').select('id,folio').eq('tipo','credencial').eq('alumno_id',s.id).eq('estado','valido').contains('datos_publicos',{pago_folio:paymentFolio}).limit(1);
+  if(alreadyError)throw alreadyError;
+  const archivePath=`credenciales/${cycle.replace(/[^0-9]/g,'')}/${s.id}/${payment.id}.pdf`;
+  if((already||[]).length){
+    const {data:savedPdf,error:savedError}=await admin.storage.from('archivo-escolar').download(archivePath);
+    if(savedError||!savedPdf)throw Object.assign(new Error('La credencial ya fue emitida, pero no se encontró el PDF de reimpresión. Solicita revisión en Control Escolar.'),{status:409});
+    return {folio:already[0].folio,verification_url:null,pdf_base64:Buffer.from(await savedPdf.arrayBuffer()).toString('base64'),filename:`${institution.siglas||'ITHLA'}-Credencial-${safe(s.matricula)}.pdf`,reimpresion:true};
+  }
+  const photo=await readCredentialPhoto(admin,s.id,{required:true});
+  const group=s.grupos?.clave||[s.grupos?.grado,s.grupos?.letra].filter(Boolean).join(' ')||'—';
   const grade=s.grupos?.grado||s.grado_ingreso||'—';
   const turn=s.grupos?.turno||s.turno||'—';
   const folio=`CRD-${cycle.replace(/[^0-9]/g,'')}-${String(s.id).padStart(6,'0')}-${Date.now().toString().slice(-5)}`;
-  const shortName=short(s.nombre_completo||'Alumno',30);
-  const drawBg=(page,back=false)=>{
-    page.drawRectangle({x:0,y:0,width:W,height:H,color:paper});
-    page.drawRectangle({x:0,y:H-34,width:W,height:34,color:dark});
-    page.drawRectangle({x:0,y:H-37,width:W,height:3,color:gold});
-    page.drawRectangle({x:0,y:0,width:7,height:H,color:green});
-    page.drawCircle({x:W-20,y:20,size:38,color:rgb(.85,.91,.88),opacity:.24});
-    page.drawCircle({x:W-36,y:H-10,size:22,color:gold,opacity:.10});
-    if(back) page.drawRectangle({x:W-4,y:0,width:4,height:H,color:gold,opacity:.75});
-  };
-  const text=(page,t,x,y,size,font=regular,color=INK)=>page.drawText(String(t??''),{x,y,size,font,color});
-  const fit=(page,t,x,y,maxW,size,font=regular,color=INK)=>{const z=fitText(font,t,maxW,size,size,4.7);text(page,z.text,x,y,z.size,font,color);return z;};
-  const label=(page,t,x,y)=>text(page,String(t).toUpperCase(),x,y,4.7,bold,muted);
-  const value=(page,t,x,y,maxW=145,size=7)=>fit(page,t,x,y,maxW,size,bold,INK);
-  const box=(page,x,y,w,h,border=LINE,fill=rgb(1,1,1,.82))=>page.drawRectangle({x,y,width:w,height:h,color:fill,borderColor:border,borderWidth:.65});
-
-  // Frente
-  {
-    const page=p.addPage([W,H]);drawBg(page,false);
-    if(logo) page.drawImage(logo,{x:13,y:H-29,width:25,height:27});
-    text(page,institution.siglas||'ITHLA',45,H-14,9,bold,rgb(1,1,1));
-    text(page,'CREDENCIAL ESCOLAR',45,H-24,5.3,regular,rgb(.84,.92,.89));
-    text(page,'ALUMNO(A)',W-65,H-14,5.2,bold,gold);
-    text(page,`CICLO ${cycle}`,W-70,H-24,4.8,bold,rgb(1,1,1));
-
-    // Área de fotografía / identificación visual.
-    box(page,13,48,58,62,green,rgb(.94,.97,.95));
-    page.drawCircle({x:42,y:88,size:12,color:rgb(.80,.85,.82)});
-    page.drawRectangle({x:25,y:55,width:34,height:25,color:rgb(.80,.85,.82)});
-    text(page,'FOTO',31,51,5,bold,green);
-
-    label(page,'Alumno',80,104); value(page,shortName,80,92,147,8.4);
-    label(page,'Matrícula',80,78); value(page,s.matricula||'—',80,67,80,8.2);
-    label(page,'Grupo',168,78); value(page,group,168,67,50,8.2);
-    label(page,'Grado',80,54); value(page,`${grade}°`,80,43,45,7.8);
-    label(page,'Turno',130,54); value(page,turn,130,43,60,7.8);
-    label(page,'Folio de credencial',80,29); value(page,folio,80,18,135,6.3);
-    page.drawLine({start:{x:13,y:37},end:{x:W-13,y:37},color:LINE,thickness:.55});
-    text(page,'VÁLIDA COMO IDENTIFICACIÓN ESCOLAR',13,8,4.7,bold,green);
-    text(page,'Servicios Estudiantiles',W-91,8,4.7,bold,goldDark);
-  }
-  // Reverso
-  {
-    const page=p.addPage([W,H]);drawBg(page,true);
-    text(page,'DATOS DE EMERGENCIA S.O.S',17,H-50,8.2,bold,green);
-    box(page,14,78,W-28,54,green,rgb(1,1,1,.88));
-    label(page,'Contacto institucional',23,119); value(page,'Servicios Estudiantiles',23,108,190,7.5);
-    label(page,'Alumno',23,96); value(page,shortName,23,85,190,7.2);
-    label(page,'Matrícula',23,73); value(page,s.matricula||'—',23,62,75,7.1);
-    label(page,'Correo institucional',108,73); value(page,email||'—',108,62,105,6.3);
-    text(page,'DATOS DE ESCUELA',17,47,7.5,bold,green);
-    box(page,14,14,W-28,27,goldDark,rgb(1,1,1,.9));
-    text(page,short(institution.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano',70),22,31,5.5,bold,rgb(1,1,1));
-    text(page,`${institution.siglas||'ITHLA'} · CONTROL ESCOLAR`,22,22,5.1,regular,rgb(1,1,1));
-    text(page,'FOLIO AUTH.',22,8,4.4,bold,muted);text(page,folio,W-105,8,4.4,bold,green);
-  }
-  const verification=await registerVerifiableDocument(admin,{folio,tipo:'credencial',titulo:'CREDENCIAL ESCOLAR',alumno_id:s.id,req,payload:{alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:group,grado:`${grade}°`,ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion},detalle:[{label:'Turno',value:turn},{label:'Tipo',value:'Credencial escolar'}]}});
-  try{const qr=await qrPng(verification.verificationUrl,{size:150});const qri=await p.embedPng(qr);p.getPages()[1].drawRectangle({x:W-62,y:H-68,width:54,height:54,color:rgb(1,1,1),borderColor:green,borderWidth:.7});p.getPages()[1].drawImage(qri,{x:W-58,y:H-64,width:46,height:46});const bytes=await p.save();return {folio,verification_url:verification.verificationUrl,pdf_base64:Buffer.from(bytes).toString('base64'),filename:`${institution.siglas||'ITHLA'}-Credencial-${safe(s.matricula||s.nombre_completo)}.pdf`};}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
+  const payload={pago_folio:paymentFolio,alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:group,grado:`${grade}°`,ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion},detalle:[{label:'Turno',value:turn},{label:'Tipo',value:'Credencial escolar'}]};
+  const verification=await registerVerifiableDocument(admin,{folio,tipo:'credencial',titulo:'CREDENCIAL ESCOLAR',alumno_id:s.id,req,payload});
+  try{
+    const qrBytes=await qrPng(verification.verificationUrl,{size:200});
+    const pdf=await buildStudentCredentialPDF({institution,cycle,folio,photoBytes:photo,logoBytes:await loadLogo(),qrBytes,student:{name:s.nombre_completo,matricula:s.matricula,grade:`${grade}°`,group,turn}});
+    const {error:storeError}=await admin.storage.from('archivo-escolar').upload(archivePath,pdf,{contentType:'application/pdf',cacheControl:'0',upsert:false});
+    if(storeError)throw storeError;
+    return {folio,verification_url:verification.verificationUrl,pdf_base64:pdf.toString('base64'),filename:`${institution.siglas||'ITHLA'}-Credencial-${safe(s.matricula||s.nombre_completo)}.pdf`};
+  }catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
 }
 
 async function boletaPdf(admin,id,req=null){
@@ -756,16 +733,24 @@ async function dailyGradebookPdf(admin,snapshotId,req){
   if(se) throw se; if(!snap) throw Object.assign(new Error('Respaldo diario no encontrado.'),{status:404});
   const gm=snap.grupo_materias||{},g=gm.grupos||{},m=gm.materias||{},state=snap.snapshot||{},acts=Array.isArray(state.activities)?state.activities:[],activityScores=state.activityScores||{},weighted=state.weightedValues||{},rubric=state.rubric||{components:[],total:snap.ponderacion_total||0};
   const {data:students,error:stErr}=await admin.from('alumnos').select('id,nombre_completo,matricula').eq('grupo_id',gm.grupo_id).eq('activo',true).order('nombre_completo'); if(stErr) throw stErr;
-  const {data:inst}=await admin.from('institucion_config').select('*').limit(1).maybeSingle(); const logo=await loadLogo(); const pdf=await PDFDocument.create(); const awaitEmbedLogo=async(bytes)=>{try{return await pdf.embedPng(bytes)}catch{return await pdf.embedJpg(bytes)}}; const regular=await pdf.embedFont(StandardFonts.Helvetica),bold=await pdf.embedFont(StandardFonts.HelveticaBold); const W=792,H=612;
-  const newPage=()=>{const page=pdf.addPage([W,H]);drawFloral(page,W,H);return page;}; const header=(page,title)=>{if(logo){try{const img=awaitEmbedLogo(pdf,logo);page.drawImage(img,{x:30,y:H-68,width:42,height:42});}catch{}}page.drawText(String(inst?.nombre_institucion||'INSTITUCIÓN EDUCATIVA').toUpperCase(),{x:82,y:H-35,size:11,font:bold,color:INK});page.drawText(`${String(inst?.siglas||'ITHLA').toUpperCase()} · ${title}`,{x:82,y:H-51,size:8.5,font:regular,color:GRAY});page.drawText(`Folio interno: ${snap.id} · ${snap.fecha_clase} · Versión ${snap.version}`,{x:30,y:H-82,size:7,font:regular,color:GRAY});};
-  const table=(page,rows,widths,x,y,rowH=19,fs=6.4)=>{let yy=y;for(let ri=0;ri<rows.length;ri++){let xx=x;for(let ci=0;ci<widths.length;ci++){const w=widths[ci];rect(page,xx,yy-rowH,w,rowH,ri===0?GOLD_SOFT:CELL);drawCentered(page,regular,bold,String(rows[ri][ci]??'—'),xx+w/2,yy-rowH+(rowH-fs)/2,w-4,fs,ri===0);xx+=w;}yy-=rowH;}return yy;};
-  // Página 1: asistencia
-  let page=newPage();header(page,'BITÁCORA DIARIA · ASISTENCIAS');page.drawText(`${String(m.nombre||'Materia').toUpperCase()} · ${g.clave||'—'} · Docente: ${snap.docentes?.nombre_completo||'—'}`,{x:30,y:H-104,size:8.5,font:bold,color:INK});let dates=Object.keys(state.attendance||{}).map(k=>k.split('|')[1]).filter(Boolean);dates=[...new Set(dates)].sort();const head=['#','Alumno','Matrícula',...dates.slice(0,12)];const rows=[head];(students||[]).forEach((st,i)=>rows.push([String(i+1),short(st.nombre_completo,30),short(st.matricula,16),...dates.slice(0,12).map(dt=>state.attendance?.[`${st.id}|${dt}`]||'—')]));table(page,rows,[28,230,105,...dates.slice(0,12).map(()=>42)],30,H-125,20,5.8);page.drawText('Las asistencias históricas forman parte de la evidencia y no se pueden alterar desde una carga posterior.',{x:30,y:30,size:6.5,font:bold,color:GRAY});
-  // Página 2: actividades
-  page=newPage();header(page,'BITÁCORA DIARIA · ACTIVIDADES');page.drawText(`Actividades registradas: ${acts.length} · La ponderación NO se captura por actividad.`,{x:30,y:H-104,size:8,font:regular,color:GRAY});const visible=acts.slice(0,10);const ar=[['#','Alumno','Matrícula',...visible.map(a=>short(a.nombre,14))]];(students||[]).forEach((st,i)=>ar.push([String(i+1),short(st.nombre_completo,30),short(st.matricula,16),...visible.map(a=>{const v=activityScores[`${st.id}|${a.key}`];return v==null?'—':Number(v).toFixed(1)})]));table(page,ar,[28,230,105,...visible.map(()=>40)],30,H-125,20,5.4);if(acts.length>10)page.drawText(`Se muestran 10 actividades por página; el archivo original conserva las ${acts.length}.`,{x:30,y:30,size:6.5,font:regular,color:GRAY});
-  // Página 3: valores de ponderación
-  page=newPage();header(page,'BITÁCORA DIARIA · VALORES DE PONDERACIÓN');page.drawText(`Rúbrica: ${rubric.titulo||'Evaluación del periodo'} · Valor total: ${Number(rubric.total||0).toFixed(2)}% · Máximo: 10 puntos`,{x:30,y:H-104,size:8,font:regular,color:GRAY});const comps=(rubric.components||[]).slice(0,8);const vr=[['#','Alumno','Matrícula',...comps.map(c=>`${short(c.nombre,12)}\n${Number(c.ponderacion||0).toFixed(1)}%`),'VALOR TOTAL']];(students||[]).forEach((st,i)=>{let sum=0,wt=0;const vals=comps.map(c=>{const v=weighted[`${st.id}|${c.id}`];if(v!=null&&v!==''){sum+=Number(v)*Number(c.ponderacion||0);wt+=Number(c.ponderacion||0);return Number(v).toFixed(1)}return '—'});const total=wt?Number((sum/wt).toFixed(2)):'—';vr.push([String(i+1),short(st.nombre_completo,28),short(st.matricula,15),...vals,total]);});table(page,vr,[24,205,100,...comps.map(()=>43),58],30,H-125,24,5.1);let y=30;page.drawText(`Ponderación total oficial: ${Number(rubric.total||0).toFixed(2)}% · Valor máximo: 10 puntos`,{x:30,y,size:6.5,font:bold,color:GRAY});page.drawText(`SHA-256: ${short(snap.archivo_sha256||'no registrado',64)}`,{x:390,y,size:6.5,font:regular,color:GRAY});
-  const bytes=await pdf.save();return {pdf_base64:Buffer.from(bytes).toString('base64'),filename:`JAGUAR-Bitacora-${safe(g.clave||'grupo')}-${safe(m.nombre||'materia')}-${snap.fecha_clase}-v${snap.version}.pdf`};
+  const {data:inst}=await admin.from('institucion_config').select('*').limit(1).maybeSingle();
+  const bytes=await buildDailyGradebookPdf({
+    institution:inst||{},snapshot:snap,group:g,subject:m,teacher:snap.docentes||{},students:students||[],state
+  });
+  return {pdf_base64:Buffer.from(bytes).toString('base64'),filename:`JAGUAR-Bitacora-${safe(g.clave||'grupo')}-${safe(m.nombre||'materia')}-${snap.fecha_clase}-v${snap.version}.pdf`};
 }
 
-export default async function handler(req,res){try{if(req.method!=='POST')return res.status(405).json({ok:false,error:'Método no permitido.'});const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','alumno']);const b=req.body||{};if(b.action==='daily_gradebook_pdf'){if(!['servicios_docentes','control_escolar','control','direccion_escolar','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,...await dailyGradebookPdf(adminClient,Number(b.snapshot_id||0),req)});}if(b.action==='signature_diagnostics'){if(!['direccion_escolar','control_escolar','control','servicios_docentes','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,data:await signatureDiagnostics(adminClient,b)});}if(b.action==='group_schedule'){if(!['direccion_escolar','control_escolar','control','coordinacion_academica','servicios_estudiantiles'].includes(profile.rol))return res.status(403).json({ok:false,error:'Este perfil no puede generar el horario de un grupo.'});const gid=Number(b.grupo_id||0);if(!gid)return res.status(400).json({ok:false,error:'Grupo no válido.'});return res.status(200).json({ok:true,...await groupSchedulePdf(adminClient,gid,req)});}if(b.action==='teacher_schedule'){if(profile.rol!=='docente')return res.status(403).json({ok:false,error:'Solo el docente puede descargar su horario.'});const {data:t}=await adminClient.from('docentes').select('id').eq('auth_user_id',user.id).maybeSingle();if(!t)return res.status(404).json({ok:false,error:'Docente no vinculado.'});return res.status(200).json({ok:true,...await teacherSchedulePdf(adminClient,t.id,req)});}if(b.action==='student_schedule'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su horario.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await studentSchedulePdf(adminClient,s.id,req)});}if(b.action==='student_boleta'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su boleta.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,s.id,req)});}if(b.action==='student_credential'){if(profile.rol!=='servicios_estudiantiles')return res.status(403).json({ok:false,error:'Solo Servicios Estudiantiles puede tramitar y generar credenciales.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await credentialPdf(adminClient,alumnoId,req)});}if(b.action==='student_boleta_admin'){if(!['control_escolar','control','direccion_escolar'].includes(profile.rol))return res.status(403).json({ok:false,error:'Solo Control Escolar o Dirección puede generar la boleta de otro alumno.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,alumnoId,req)});}return res.status(400).json({ok:false,error:'Acción de PDF no reconocida.'});}catch(e){return res.status(e.status||500).json({ok:false,error:e.message||'Error generando PDF.'});}}
+export default async function handler(req,res){try{if(req.method!=='POST')return res.status(405).json({ok:false,error:'Método no permitido.'});const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','alumno']);const b=req.body||{};if(b.action==='daily_gradebook_pdf'){if(!['servicios_docentes','control_escolar','control','direccion_escolar','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,...await dailyGradebookPdf(adminClient,Number(b.snapshot_id||0),req)});}if(b.action==='signature_diagnostics'){if(!['direccion_escolar','control_escolar','control','servicios_docentes','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,data:await signatureDiagnostics(adminClient,b)});}if(b.action==='group_schedule'){if(!['direccion_escolar','control_escolar','control','coordinacion_academica','servicios_estudiantiles'].includes(profile.rol))return res.status(403).json({ok:false,error:'Este perfil no puede generar el horario de un grupo.'});const gid=Number(b.grupo_id||0);if(!gid)return res.status(400).json({ok:false,error:'Grupo no válido.'});return res.status(200).json({ok:true,...await groupSchedulePdf(adminClient,gid,req)});}if(b.action==='teacher_schedule'){if(profile.rol!=='docente')return res.status(403).json({ok:false,error:'Solo el docente puede descargar su horario.'});const {data:t}=await adminClient.from('docentes').select('id').eq('auth_user_id',user.id).maybeSingle();if(!t)return res.status(404).json({ok:false,error:'Docente no vinculado.'});return res.status(200).json({ok:true,...await teacherSchedulePdf(adminClient,t.id,req)});}if(b.action==='student_schedule'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su horario.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await studentSchedulePdf(adminClient,s.id,req)});}if(b.action==='student_boleta'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su boleta.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,s.id,req)});}if(b.action==='student_credential_photo_status'||b.action==='student_credential_photo_upload'){
+  if(profile.rol!=='servicios_estudiantiles')return res.status(403).json({ok:false,error:'Solo Servicios Estudiantiles puede gestionar fotografías de credenciales.'});
+  const alumnoId=Number(b.alumno_id||0);
+  if(!Number.isSafeInteger(alumnoId)||alumnoId<=0)return res.status(400).json({ok:false,error:'Alumno no válido.'});
+  const {data:student,error:se}=await adminClient.from('alumnos').select('id,activo').eq('id',alumnoId).maybeSingle();
+  if(se)throw se;
+  if(!student||student.activo===false)return res.status(404).json({ok:false,error:'Alumno no encontrado o inactivo.'});
+  if(b.action==='student_credential_photo_upload'){
+    const uploaded=await saveCredentialPhoto(adminClient,alumnoId,b.photo_base64);
+    return res.status(200).json({ok:true,data:{registered:true,bytes:uploaded.bytes}});
+  }
+  const photo=await readCredentialPhoto(adminClient,alumnoId);
+  return res.status(200).json({ok:true,data:{registered:!!photo,photo_base64:photo?photo.toString('base64'):null}});
+}if(b.action==='student_credential'){if(profile.rol!=='servicios_estudiantiles')return res.status(403).json({ok:false,error:'Solo Servicios Estudiantiles puede tramitar y generar credenciales.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await credentialPdf(adminClient,alumnoId,req)});}if(b.action==='student_boleta_admin'){if(!['control_escolar','control','direccion_escolar'].includes(profile.rol))return res.status(403).json({ok:false,error:'Solo Control Escolar o Dirección puede generar la boleta de otro alumno.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,alumnoId,req)});}return res.status(400).json({ok:false,error:'Acción de PDF no reconocida.'});}catch(e){return res.status(e.status||500).json({ok:false,error:e.message||'Error generando PDF.'});}}

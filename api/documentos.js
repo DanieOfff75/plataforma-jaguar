@@ -53,7 +53,12 @@ export function documentStatus(row){
   if(!row)return 'no_valido';
   if(row.estado==='cancelado')return 'cancelado';
   if(row.estado==='expirado')return 'expirado';
-  if(row.fecha_expiracion && new Date(row.fecha_expiracion).getTime()<=Date.now())return 'expirado';
+  if(row.estado!=='valido')return 'no_valido';
+  if(row.fecha_expiracion){
+    const expires=new Date(row.fecha_expiracion).getTime();
+    if(!Number.isFinite(expires))return 'no_valido';
+    if(expires<=Date.now())return 'expirado';
+  }
   return 'valido';
 }
 

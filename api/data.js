@@ -6,6 +6,8 @@ import { audit } from '../lib/audit.js';
 import { getInstitution } from './institution.js';
 import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from './documentos.js';
 import { buildOfficialPdf } from '../lib/documentos_oficiales_pdf.js';
+import { readCredentialPhoto } from '../lib/credential_photo.js';
+import { normalizeNewPeriod } from '../lib/periodos_escolares.js';
 
 const resources = {
   groups: 'grupos',
@@ -1808,13 +1810,17 @@ async function financeRequestCredentialPayment(admin,user,profile,body,req){
   if(profile.rol!=='servicios_estudiantiles')throw Object.assign(new Error('Solo Servicios Estudiantiles puede solicitar el pago de una credencial.'),{status:403});
   const alumnoId=Number(body.alumno_id||0);if(!alumnoId)throw Object.assign(new Error('Alumno no válido.'),{status:400});
   const {data:student,error:se}=await admin.from('alumnos').select('id,nombre_completo,matricula,activo').eq('id',alumnoId).maybeSingle();if(se)throw se;if(!student||student.activo===false)throw Object.assign(new Error('Alumno no encontrado o inactivo.'),{status:404});
+  await readCredentialPhoto(admin,alumnoId,{required:true});
   const {data:concept,error:ce}=await admin.from('recursos_conceptos').select('*').eq('codigo','CREDENCIAL').eq('activo',true).maybeSingle();if(ce)throw ce;if(!concept)throw Object.assign(new Error('No existe el concepto financiero CREDENCIAL.'),{status:409});
   const cycle=await activeCycle(admin);const amount=Number(body.importe||concept.monto_sugerido||0);if(!(amount>0))throw Object.assign(new Error('Configura el monto_sugerido del concepto CREDENCIAL o captura el importe.'),{status:400});
   const {data:existing,error:ee}=await admin.from('recursos_cargos').select('*,recursos_conceptos(id,codigo,nombre)').eq('alumno_id',alumnoId).eq('concepto_id',concept.id).eq('ciclo_escolar',cycle).in('estado',['pendiente','parcial']).order('id',{ascending:false}).limit(1).maybeSingle();if(ee)throw ee;if(existing)return existing;
   const folio=financeFolio('CARGO');const row={folio,alumno_id:alumnoId,concepto_id:concept.id,ciclo_escolar:cycle,importe:Number(amount.toFixed(2)),fecha_cargo:new Date().toISOString().slice(0,10),notas:'Solicitud de pago de credencial escolar.',creado_por:user.id};const {data,error}=await admin.from('recursos_cargos').insert(row).select('*,recursos_conceptos(id,codigo,nombre)').single();if(error)throw error;await audit(admin,{userId:user.id,role:profile.rol,action:'credential_payment_request',module:'servicios_estudiantiles',entity:'recursos_cargos',entityId:data.id,description:`Solicitud de pago de credencial para ${student.nombre_completo}.`,after:data,req});return data;
 }
 async function financeVoidPayment(admin,user,profile,body,req){
-  ensureFinanceWrite(profile);const id=Number(body.id||0),motivo=String(body.motivo||'').trim().slice(0,1000);if(!id||!motivo)throw Object.assign(new Error('Indica el pago y un motivo de anulación.'),{status:400});const {data:p,error}=await admin.from('recursos_pagos').select('*').eq('id',id).maybeSingle();if(error)throw error;if(!p)throw Object.assign(new Error('Pago no encontrado.'),{status:404});if(p.estado==='anulado')throw Object.assign(new Error('El pago ya está anulado.'),{status:409});const now=new Date().toISOString();const {data:updated,error:ue}=await admin.from('recursos_pagos').update({estado:'anulado',anulado_por:user.id,anulado_at:now,motivo_anulacion:motivo}).eq('id',id).eq('estado','registrado').select('*').single();if(ue)throw ue;if(p.documento_verificable_id)await admin.from('documentos_verificables').update({estado:'cancelado'}).eq('id',p.documento_verificable_id);if(p.archivo_path){const {data:docs}=await admin.from('expedientes_documentales').select('id').eq('archivo_path',p.archivo_path).limit(10);for(const d of docs||[])await admin.from('expedientes_documentales').update({estado:'anulado',cierre_motivo:motivo,cerrado_por:user.id,cerrado_at:now,actualizado_at:now}).eq('id',d.id);}await admin.from('documentos_oficiales_emitidos').update({estado:'cancelado',actualizado_at:now}).eq('documento_verificable_id',p.documento_verificable_id||0);await audit(admin,{userId:user.id,role:profile.rol,action:'finance_void_payment',module:'recursos_monetarios',entity:'recursos_pagos',entityId:id,description:`Pago ${p.folio} anulado.`,before:p,after:updated,req});return updated;
+  ensureFinanceWrite(profile);const id=Number(body.id||0),motivo=String(body.motivo||'').trim().slice(0,1000);if(!id||!motivo)throw Object.assign(new Error('Indica el pago y un motivo de anulación.'),{status:400});const {data:p,error}=await admin.from('recursos_pagos').select('*').eq('id',id).maybeSingle();if(error)throw error;if(!p)throw Object.assign(new Error('Pago no encontrado.'),{status:404});if(p.estado==='anulado')throw Object.assign(new Error('El pago ya está anulado.'),{status:409});const now=new Date().toISOString();const {data:updated,error:ue}=await admin.from('recursos_pagos').update({estado:'anulado',anulado_por:user.id,anulado_at:now,motivo_anulacion:motivo}).eq('id',id).eq('estado','registrado').select('*').single();if(ue)throw ue;if(p.documento_verificable_id)await admin.from('documentos_verificables').update({estado:'cancelado'}).eq('id',p.documento_verificable_id);
+  // Invalidar también la credencial emitida usando este pago, si existiera.
+  const {error:credVoidError}=await admin.from('documentos_verificables').update({estado:'cancelado'}).eq('tipo','credencial').eq('alumno_id',p.alumno_id||0).contains('datos_publicos',{pago_folio:p.folio});
+  if(credVoidError)throw credVoidError;if(p.archivo_path){const {data:docs}=await admin.from('expedientes_documentales').select('id').eq('archivo_path',p.archivo_path).limit(10);for(const d of docs||[])await admin.from('expedientes_documentales').update({estado:'anulado',cierre_motivo:motivo,cerrado_por:user.id,cerrado_at:now,actualizado_at:now}).eq('id',d.id);}await admin.from('documentos_oficiales_emitidos').update({estado:'cancelado',actualizado_at:now}).eq('documento_verificable_id',p.documento_verificable_id||0);await audit(admin,{userId:user.id,role:profile.rol,action:'finance_void_payment',module:'recursos_monetarios',entity:'recursos_pagos',entityId:id,description:`Pago ${p.folio} anulado.`,before:p,after:updated,req});return updated;
 }
 
 async function financeCreateExpense(admin,user,profile,body,req){
@@ -3265,6 +3271,30 @@ async function writeResource(
   delete clean.created_at;
   delete clean.updated_at;
 
+  if (key === 'periods') {
+    // El formulario no debe decidir el ciclo. Leemos el periodo actual directamente
+    // de la base y aplicamos el ciclo en el INSERT para no violar NOT NULL.
+    const {data:current,error:currentError}=await admin.from('periodos_escolares')
+      .select('ciclo_escolar').eq('es_periodo_actual',true).order('id',{ascending:false}).limit(1).maybeSingle();
+    if(currentError)throw currentError;
+    let cycle=String(current?.ciclo_escolar||'').trim();
+    if(!cycle){
+      const {data:legacy,error:legacyError}=await admin.from('periodos_escolares')
+        .select('ciclo_escolar').eq('activo',true).order('id',{ascending:false}).limit(1).maybeSingle();
+      if(legacyError)throw legacyError;
+      cycle=String(legacy?.ciclo_escolar||'').trim();
+    }
+    const normalized=normalizeNewPeriod(clean,cycle);
+    const {data:duplicate,error:duplicateError}=await admin.from('periodos_escolares')
+      .select('id').eq('ciclo_escolar',normalized.ciclo_escolar)
+      .eq('numero_periodo',normalized.numero_periodo).limit(1);
+    if(duplicateError)throw duplicateError;
+    if(duplicate?.length)throw Object.assign(new Error(`Ya existe el periodo ${normalized.numero_periodo} en el ciclo ${cycle}.`),{status:409});
+    // Sólo enviamos al insert columnas explícitamente permitidas.
+    for(const key of Object.keys(clean))delete clean[key];
+    Object.assign(clean,normalized);
+  }
+
   if (key === 'notices') {
     const noticeDept=profile.rol==='docente'?'SD':departmentKeyForRole(profile.rol);
     const responsible=await validateResponsible(admin,clean.responsable_id,user?.role||profile.rol,noticeDept);
@@ -3383,16 +3413,20 @@ async function updateResource(
   delete clean.updated_at;
 
   if (key === 'periods') {
-    const {data:existing,error:ee}=await admin.from('periodos_escolares').select('id,ciclo_escolar,es_periodo_actual,numero_periodo').eq('id',id).maybeSingle();
-    if(ee) throw ee; if(!existing) throw Object.assign(new Error('Periodo no encontrado.'),{status:404});
-    if(existing.ciclo_escolar!==await activeCycle(admin)) throw Object.assign(new Error('Los periodos de ciclos anteriores son históricos y no se modifican desde esta pantalla.'),{status:409});
-    const nombre=String(clean.nombre||'').trim(); if(!nombre) throw Object.assign(new Error('El nombre del periodo es obligatorio.'),{status:400});
-    if(clean.fecha_inicio && clean.fecha_fin && String(clean.fecha_inicio)>String(clean.fecha_fin)) throw Object.assign(new Error('La fecha de inicio no puede ser posterior a la fecha final.'),{status:400});
-    clean.ciclo_escolar=existing.ciclo_escolar;
-    clean.numero_periodo=Number(clean.numero_periodo||existing.numero_periodo||0);
-    if(!Number.isInteger(clean.numero_periodo)||clean.numero_periodo<1) throw Object.assign(new Error('El número de periodo no es válido.'),{status:400});
-    delete clean.es_periodo_actual;
-    delete clean.activo;
+    const {data:existing,error:ee}=await admin.from('periodos_escolares')
+      .select('id,nombre,ciclo_escolar,es_periodo_actual,numero_periodo,fecha_inicio,fecha_fin').eq('id',id).maybeSingle();
+    if(ee)throw ee;
+    if(!existing)throw Object.assign(new Error('Periodo no encontrado.'),{status:404});
+    if(existing.ciclo_escolar!==await activeCycle(admin))throw Object.assign(new Error('Los periodos de ciclos anteriores son históricos y no se modifican desde esta pantalla.'),{status:409});
+    const normalized=normalizeNewPeriod({...existing,...clean},existing.ciclo_escolar);
+    const {data:dupes,error:de}=await admin.from('periodos_escolares')
+      .select('id').eq('ciclo_escolar',existing.ciclo_escolar)
+      .eq('numero_periodo',normalized.numero_periodo).neq('id',id).limit(1);
+    if(de)throw de;
+    if(dupes?.length)throw Object.assign(new Error(`El periodo ${normalized.numero_periodo} ya existe en el ciclo ${existing.ciclo_escolar}.`),{status:409});
+    for(const k of Object.keys(clean))delete clean[k];
+    for(const k of ['nombre','ciclo_escolar','numero_periodo','fecha_inicio','fecha_fin'])clean[k]=normalized[k];
+    // El estado y la marca "periodo actual" sólo cambian por la acción autorizada.
   }
 
   if (key === 'students') {
