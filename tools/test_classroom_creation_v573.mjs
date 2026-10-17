@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {classroomGroupLabel,classroomCourseLabel,classroomTeacherLabel,classroomCoursePayload,normalizedClassroomName} from '../lib/classroom_naming.js';
+import {GOOGLE_SCOPES} from '../lib/google_classroom_oauth.js';
+const cases=[['1F','1°F'],['1°F','1°F'],['1° F','1°F'],['2ºA','2°A'],['3-B','3°B'],['12AB','12°AB']];
+for(const [clave,result] of cases)assert.equal(classroomGroupLabel({clave}),result);
+assert.equal(classroomCourseLabel({clave:'1F'},'Biología'),'1°F | BIOLOGÍA');
+assert.equal(classroomTeacherLabel('Enrique Islas Luna','PROF.'),'PROF. ENRIQUE ISLAS LUNA');
+assert.equal(classroomTeacherLabel('María de la Concepción Ramírez','PROFA.'),'PROFA. MARÍA DE LA CONCEPCIÓN RAMÍREZ');
+assert.throws(()=>classroomTeacherLabel('Juan',''),/Selecciona PROF/);
+assert.throws(()=>classroomCourseLabel({clave:'???'},'Matemáticas'),/clave/);
+assert.throws(()=>classroomCourseLabel({clave:'1F'},''),/Materia/);
+assert.equal(normalizedClassroomName('1°F | BIOLOGÍA'),normalizedClassroomName('1°F| Biologia'));
+const c=classroomCoursePayload({clave:'1F'},'Artes I','Thiago Ortiz Ortiz','PROF.');
+assert.deepEqual(c,{name:'1°F | ARTES I',section:'PROF. THIAGO ORTIZ ORTIZ',description:'PROF. THIAGO ORTIZ ORTIZ',descriptionHeading:'PROF. THIAGO ORTIZ ORTIZ',ownerId:'me',courseState:'PROVISIONED'});
+assert(GOOGLE_SCOPES.includes('https://www.googleapis.com/auth/classroom.courses'));
+console.log('OK: formato de grupos, nombre de clase, tratamiento explícito, descripción/sección y permiso OAuth de escritura.');

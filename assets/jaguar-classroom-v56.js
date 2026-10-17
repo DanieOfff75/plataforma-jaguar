@@ -31,6 +31,50 @@ async function j57disconnect(){
  try{await j57api('google-oauth','disconnect',{});toast('Google desconectado del servidor.');await loadPage('classroom');}
  catch(e){toast(e.message);}
 }
+// Creación en Google: formato de clase, sección y descripción confirmado por Servicios Docentes.
+function j57creationGms(){
+ const linked=new Set((J56.catalog?.rows||[]).filter(r=>r.google_course_id).map(r=>Number(r.grupo_materia_id)));
+ return (J56.catalog?.gms||[]).filter(g=>!linked.has(Number(g.id))&&g.grupos?.activo!==false);
+}
+function j57creationSelectChanged(){
+ const gmId=Number(document.getElementById('j57createGm')?.value||0);
+ const teachers=j56teachersFor(gmId);
+ const el=document.getElementById('j57createTeacher');if(!el)return;
+ el.innerHTML='<option value="">Seleccionar docente</option>'+teachers.map(t=>`<option value="${Number(t.id)}">${j56esc(t.nombre_completo)}</option>`).join('');
+ if(teachers.length===1)el.value=String(teachers[0].id);
+ j57previewCreate();
+}
+function j57previewCreate(){
+ const preview=document.getElementById('j57createPreview'),submit=document.getElementById('j57createButton');
+ if(!preview||!submit)return;
+ submit.disabled=true;
+ const gm=J56.catalog?.gms?.find(g=>Number(g.id)===Number(document.getElementById('j57createGm')?.value||0));
+ const tid=Number(document.getElementById('j57createTeacher')?.value||0);
+ const name=j56teacherName(tid).trim();
+ const pref=document.getElementById('j57treatment')?.value||'';
+ if(!gm||!name||!pref){preview.textContent='Selecciona una materia, su docente y el tratamiento PROF. o PROFA.';return;}
+ const key=String(gm.grupos?.clave||'').replace(/\s+/g,'').toLocaleUpperCase('es-MX');
+ const match=key.match(/^(\d{1,2})(?:[°º.\-])?([A-ZÑ]{1,3})$/u);
+ if(!match){preview.textContent='La clave del grupo debe tener formato 1F, 1°F o equivalente. Revisa la ficha del grupo.';return;}
+ const full=`${match[1]}°${match[2]} | ${j56matter(gm).trim().toLocaleUpperCase('es-MX')}`;
+ const teacher=`${pref} ${name.toLocaleUpperCase('es-MX')}`;
+ if(full.length>150||teacher.length>800){preview.textContent='Datos demasiado largos para Google Classroom.';return;}
+ preview.innerHTML=`<b>Nombre de clase:</b> ${j56esc(full)}<div class="mt-1"><b>Sección y descripción:</b> ${j56esc(teacher)}</div><div class="text-xs mt-2">Se creará pendiente de activación con el Gmail de Servicios Docentes. No modifica las 9 clases existentes.</div>`;
+ preview.dataset.nombre=full;preview.dataset.docente=teacher;submit.disabled=false;
+}
+async function j57create(){
+ const preview=document.getElementById('j57createPreview'),button=document.getElementById('j57createButton');
+ if(!preview?.dataset.nombre||!preview?.dataset.docente||button?.disabled)return;
+ const gmId=Number(document.getElementById('j57createGm')?.value||0),tid=Number(document.getElementById('j57createTeacher')?.value||0);
+ const treatment=document.getElementById('j57treatment')?.value||'';
+ if(!confirm(`¿Crear esta clase en GOOGLE CLASSROOM?\n\n${preview.dataset.nombre}\n${preview.dataset.docente}\n\nSe creará pendiente de activación y no se duplicarán clases vinculadas.`))return;
+ button.disabled=true;
+ try{
+  const result=await j57api('google-classroom','create',{grupo_materia_id:gmId,docente_id:tid,tratamiento:treatment,nombre_confirmado:preview.dataset.nombre,docente_confirmado:preview.dataset.docente,confirmado:true});
+  toast('Google creó la clase. Abre Classroom con Servicios Docentes y actívala antes de compartir el código.');
+  await loadPage('classroom');
+ }catch(e){toast(e.message||'No se pudo crear Classroom.');button.disabled=false;}
+}
 function j57googleRows(){
  const gm=J56.catalog?.gms||[];
  const linked=new Map((J56.catalog?.rows||[]).filter(r=>r.google_course_id).map(r=>[String(r.google_course_id),Number(r.grupo_materia_id)]));
@@ -130,16 +174,25 @@ async function jaguarClassroomModule(){
  const registered=(J56.catalog.rows||[]).filter(r=>r.estado==='registrada').length;
  const displayed=J56.catalog.gms.length;const pending=displayed-registered;
  const first=J56.catalog.gms[0];
- const googlePanel=manager?`<div class="card"><h3>Conexión con Google · Servicios Docentes</h3><p class="text-sm mt-2">La conexión permite consultar las clases de Classroom existentes sin crear clases nuevas ni modificar calificaciones.</p>
+ const googlePanel=manager?`<div class="card"><h3>Conexión con Google · Servicios Docentes</h3><p class="text-sm mt-2">Consulta las clases actuales y permite crear nuevas clases con confirmación. No modifica calificaciones.</p>
   <div class="mt-3 text-sm"><b>Estado:</b> ${googleStatus?.connected?'Conectada: '+j56esc(googleStatus.correo):(googleStatus?.configured?'Pendiente de conectar':'Faltan variables privadas o la migración de Google OAuth en el servidor')}</div>
   ${googleStatus?.connected?`<div class="flex flex-wrap gap-3 mt-3"><button class="btn primary" onclick="j57list()">Consultar mis Classroom</button><button class="btn" onclick="j57disconnect()">Desconectar Google</button></div><div id="j57list" class="mt-3"></div>`:
   `<button class="btn primary mt-3" ${!googleStatus?.configured?'disabled':''} onclick="j57connect()">Conectar Gmail de Servicios Docentes</button>`}
   <p class="text-xs mt-2">Propiedad institucional centralizada. Las clases se relacionan con Jaguar sólo después de seleccionar y confirmar su materia-grupo.</p>
   </div>`:'';
- const page=`<div class="space-y-5"><div class="card"><span class="chip">SERVICIOS DOCENTES · CLASSROOM</span><h2 class="text-2xl font-extrabold mt-3">Directorio institucional de Google Classroom</h2><p class="text-sm mt-2">Una clase por materia, grupo y ciclo escolar. Propiedad prevista: la cuenta Gmail de Servicios Docentes. El acceso a códigos es interno.</p><div class="mt-3 text-sm"><b>Ciclo:</b> ${j56esc(J56.catalog.cycle)} · <b>Modalidad:</b> Registro manual y sincronización supervisada con Google</div></div>
+ const toCreate=manager&&googleStatus?.connected?j57creationGms():[];
+ const creationPanel=manager&&googleStatus?.connected?`<div class="card"><h3>Crear clase en Google Classroom</h3><p class="text-sm mt-2">El nombre y los datos del docente se generan con el formato institucional. Sólo se puede crear una clase si esa materia y grupo aún no tienen Google Classroom vinculado. Las clases nuevas requieren activación desde Google.</p>
+ <div class="grid md:grid-cols-3 gap-3 mt-4"><label class="text-sm">Grupo y materia<select id="j57createGm" class="input mt-1" onchange="j57creationSelectChanged()"><option value="">Seleccionar materia y grupo</option>${toCreate.map(g=>`<option value="${Number(g.id)}">${j56esc(j56group(g))} · ${j56esc(j56matter(g))}</option>`).join('')}</select></label>
+ <label class="text-sm">Docente asignado<select id="j57createTeacher" class="input mt-1" onchange="j57previewCreate()"><option value="">Seleccionar materia primero</option></select></label>
+ <label class="text-sm">Tratamiento<select id="j57treatment" class="input mt-1" onchange="j57previewCreate()"><option value="">Seleccionar</option><option value="PROF.">PROF.</option><option value="PROFA.">PROFA.</option></select></label></div>
+ <div id="j57createPreview" class="text-sm mt-3" style="padding:12px;border:1px solid rgba(160,178,196,.25);border-radius:8px">Selecciona materia, docente y tratamiento para ver el nombre exacto.</div>
+ <button id="j57createButton" class="btn primary mt-3" onclick="j57create()" disabled>Crear clase en Google</button>
+ <p class="text-xs mt-2">Si acabas de habilitar la creación, desconecta y vuelve a conectar Google para autorizar el permiso nuevo. La cuenta Gmail personal no puede crear cursos directamente en estado ACTIVO mediante la API.</p></div>`:'';
+ const page=`<div class="space-y-5"><div class="card"><span class="chip">SERVICIOS DOCENTES · CLASSROOM</span><h2 class="text-2xl font-extrabold mt-3">Directorio institucional de Google Classroom</h2><p class="text-sm mt-2">Una clase por materia, grupo y ciclo escolar. Propiedad prevista: la cuenta Gmail de Servicios Docentes. El acceso a códigos es interno.</p><div class="mt-3 text-sm"><b>Ciclo:</b> ${j56esc(J56.catalog.cycle)} · <b>Modalidad:</b> Registro, sincronización y creación supervisada con Google</div></div>
  ${googlePanel}
+ ${creationPanel}
  <div class="grid md:grid-cols-3 gap-3"><div class="card"><small>Clases previstas</small><div class="metric">${displayed}</div></div><div class="card"><small>Clases registradas</small><div class="metric">${registered}</div></div><div class="card"><small>Pendientes</small><div class="metric">${pending}</div></div></div>
- ${manager&&first?`<div class="card" id="j56editor"><h3>Crear o actualizar registro de una clase</h3><p class="text-xs mt-2">La clase debe existir en Google Classroom para disponer de código y enlace. Esta pantalla no crea una clase en Google.</p><div class="grid md:grid-cols-2 gap-3 mt-4"><label class="text-sm">Grupo y materia<select id="j56gm" class="input mt-1" onchange="j56selectGroupMatter(this.value)">${j56gmOptions()}</select></label><label class="text-sm">Docente asignado<select id="j56teacher" class="input mt-1"></select></label><label class="text-sm">Nombre de Classroom<input id="j56name" class="input mt-1" maxlength="150" placeholder="Ej. Historia I · 1F"></label><label class="text-sm">Código de unión<input id="j56code" class="input mt-1" maxlength="15" placeholder="Ej. abc12345"></label><label class="text-sm">Enlace del Classroom<input id="j56url" class="input mt-1" type="url" maxlength="500" placeholder="https://classroom.google.com/c/..."></label><label class="text-sm">ID de Google (opcional)<input id="j56gid" class="input mt-1" maxlength="70" placeholder="ID de curso si lo conoces"></label><label class="text-sm">Estado<select id="j56status" class="input mt-1"><option value="pendiente">Pendiente</option><option value="registrada">Registrada</option><option value="archivada">Archivada</option></select></label><label class="text-sm">Datos generales<input id="j56desc" class="input mt-1" maxlength="800" placeholder="Indicaciones, turno, observaciones"></label></div><p id="j56source" class="text-xs mt-3 text-[#8FA3B5]">Registro manual.</p><button id="j56save" class="btn primary mt-4" onclick="j56save()">Guardar clase</button></div>`:''}
+ ${manager&&first?`<div class="card" id="j56editor"><h3>Crear o actualizar registro de una clase</h3><p class="text-xs mt-2">Registra manualmente una clase existente aquí. Para crear una clase nueva utiliza el panel «Crear clase en Google Classroom».</p><div class="grid md:grid-cols-2 gap-3 mt-4"><label class="text-sm">Grupo y materia<select id="j56gm" class="input mt-1" onchange="j56selectGroupMatter(this.value)">${j56gmOptions()}</select></label><label class="text-sm">Docente asignado<select id="j56teacher" class="input mt-1"></select></label><label class="text-sm">Nombre de Classroom<input id="j56name" class="input mt-1" maxlength="150" placeholder="Ej. Historia I · 1F"></label><label class="text-sm">Código de unión<input id="j56code" class="input mt-1" maxlength="15" placeholder="Ej. abc12345"></label><label class="text-sm">Enlace del Classroom<input id="j56url" class="input mt-1" type="url" maxlength="500" placeholder="https://classroom.google.com/c/..."></label><label class="text-sm">ID de Google (opcional)<input id="j56gid" class="input mt-1" maxlength="70" placeholder="ID de curso si lo conoces"></label><label class="text-sm">Estado<select id="j56status" class="input mt-1"><option value="pendiente">Pendiente</option><option value="registrada">Registrada</option><option value="archivada">Archivada</option></select></label><label class="text-sm">Datos generales<input id="j56desc" class="input mt-1" maxlength="800" placeholder="Indicaciones, turno, observaciones"></label></div><p id="j56source" class="text-xs mt-3 text-[#8FA3B5]">Registro manual.</p><button id="j56save" class="btn primary mt-4" onclick="j56save()">Guardar clase</button></div>`:''}
  <div class="card"><div class="flex flex-wrap gap-3 justify-between items-center"><div><h3>Clases por grupo y asignatura</h3><p class="text-xs mt-1">Muestra los datos autorizados, incluidas las clases pendientes.</p></div><input class="input" style="max-width:270px" placeholder="Filtrar grupo o materia" oninput="j56search(this.value)"></div>
  <div class="scroll mt-3"><table class="table"><thead><tr><th>Grupo</th><th>Materia</th><th>Docente</th><th>Estado</th><th>Código</th><th>Enlace</th>${manager?'<th>Acción</th>':''}</tr></thead><tbody id="j56rows">${j56renderRows()}</tbody></table></div></div>
  ${S.role!=='docente'?`<div class="card"><h3>PDF institucional de códigos de unión</h3><p class="text-sm mt-2">Documento privado por grupo: materia, docente y código; incluye las asignaturas que todavía no tienen Classroom.</p><div class="flex flex-wrap gap-3 mt-3"><select class="input" id="j56groupPDF" style="max-width:270px">${groups.map(([id,g])=>`<option value="${id}">${j56esc(g?.clave||id)}</option>`).join('')}</select><button class="btn primary" onclick="j56download()">Descargar directorio PDF</button></div></div>`:''}</div>`;
