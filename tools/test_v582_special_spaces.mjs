@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {planRoomAllocation} from '../lib/room_auto_allocation.js';
+import {normalizeRoom} from '../lib/academic_tools_rules.js';
+const groups=Array.from({length:18},(_,i)=>({id:i+1,clave:'G'+(i+1),turno:i<9?'matutino':'vespertino',activo:true}));
+const classrooms=Array.from({length:10},(_,i)=>({id:i+1,nombre:`AULA ${i+1}`,tipo_espacio:'aula',capacidad:40,activo:true}));
+const extras=[{id:11,nombre:'AUDITORIO',tipo_espacio:'auditorio',activo:true,capacidad:1000},{id:12,nombre:'LAB-C-1',tipo_espacio:'laboratorio',activo:true,capacidad:50},{id:13,nombre:'LAB-Q-1',tipo_espacio:'laboratorio',activo:true,capacidad:50},{id:14,nombre:'LAB-Q-2',tipo_espacio:'laboratorio',activo:true,capacidad:65},{id:15,nombre:'OFICINA ADMINISTRACIÓN',tipo_espacio:'oficina',activo:true,capacidad:10}];
+const schedule=groups.map(g=>({id:g.id,grupo_materias:{grupo_id:g.id},dia_semana:1,hora_inicio:g.id<=9?'07:00':'14:00',hora_fin:g.id<=9?'12:00':'19:00',aula:null}));
+const cfg={groups,rooms:[...classrooms,...extras],schedule,group_counts:Object.fromEntries(groups.map(g=>[g.id,39]))};
+const p=planRoomAllocation({...cfg,seed:5102});assert.equal(p.pairs.length,18);
+assert.equal(p.pairs.filter(r=>extras.some(x=>x.id===r.aula_id)).length,0);
+assert.equal(new Set(p.pairs.map(x=>x.aula_id)).size,9);
+const paired=Object.groupBy?.(p.pairs,x=>x.aula_id)||p.pairs.reduce((a,x)=>((a[x.aula_id]??=[]).push(x),a),{});
+assert.ok(Object.values(paired).every(rows=>rows.length===2&&rows[0].turno!==rows[1].turno));
+assert.throws(()=>planRoomAllocation({...cfg,rooms:[...classrooms.slice(0,8),...extras]}),/al menos 9 aulas ordinarias/);
+assert.throws(()=>planRoomAllocation({...cfg,schedule:schedule.map(h=>h.id===1?{...h,aula:'AUDITORIO'}:h)}),/espacios especiales/);
+assert.equal(normalizeRoom({codigo:'B2',nombre:'Auditorio',capacidad:1000,tipo_espacio:'auditorio'}).tipo_espacio,'auditorio');
+assert.throws(()=>normalizeRoom({codigo:'X2',nombre:'Espacio',capacidad:12}),/Selecciona el tipo/);
+assert.throws(()=>normalizeRoom({codigo:'B2',nombre:'Auditorio',capacidad:500,tipo_espacio:'aula'}),/no puede registrarse/);
+const ui=readFileSync(new URL('../assets/jaguar-academico-v55.js',import.meta.url),'utf8');
+assert.match(ui,/r\.tipo_espacio==='aula'/);
+assert.match(ui,/j55_roomtype/);
+const server=readFileSync(new URL('../routes/academic-tools.js',import.meta.url),'utf8');
+assert.match(server,/payload\.tipo_espacio!=='aula'/);
+for(const [name,token] of [['02_BLOQUEO_HORARIOS','$jgr_tipo$'],['03_PROTEGER_CLASIFICACION','$jgr_clasificacion$']]){
+ const sql=readFileSync(new URL(`../sql/JAGUAR_V5_8_2_${name}.sql`,import.meta.url),'utf8');
+ assert.equal(sql.split(token).length-1,2,`Delimitadores SQL correctos: ${name}`);
+ assert.ok(sql.includes('END;\n'+token+';'),`Cierre completo ${name}`);
+}
+console.log('PASS: 18 grupos, 10 aulas, 5 espacios especiales excluidos, dos turnos, protección por rol de espacio, SQL emparejado.');

@@ -247,6 +247,7 @@ async function loadPage(page){
   try{
     if(page==='notificaciones'&&['alumno','control_escolar','control'].includes(S.role))c.innerHTML=await jaguarNotificationsModule();
     else c.innerHTML=await pageHtml(page);
+    if(page==='calificaciones'&&['control_escolar','control','direccion_escolar'].includes(S.role))jaguarGradesRender();
     if(page==='perfil'&&['docente','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','direccion_escolar','control_escolar','control','recursos_monetarios'].includes(S.role)){requestAnimationFrame(()=>setupSignatureCanvas());setTimeout(setupSignatureCanvas,120);}
     if(typeof jaguarRefreshNotificationBadge==='function')await jaguarRefreshNotificationBadge();
     if(S.role==='alumno'&&typeof applyStudentAccessTheme==='function')applyStudentAccessTheme();
@@ -303,7 +304,7 @@ async function pageHtml(p){
   if(p==='horario'&&S.role==='docente')return v3TeacherSchedule();
   if(p==='calificaciones'&&S.role==='alumno')return v3StudentGrades();
   if(p==='calificaciones'&&S.role==='docente')return teacherGradesModule();
-  if(p==='calificaciones'&&S.role==='control_escolar')return v22ServiceGrades();
+  if(p==='calificaciones'&&['control_escolar','control','direccion_escolar'].includes(S.role))return jaguarAcademicGradesModule();
   if(p==='asistencia'&&S.role==='alumno')return v24StudentAttendance();
   if(p==='asistencia'&&S.role==='docente')return teacherAttendanceModule();
   if(p==='asistencia'&&['direccion_escolar','control_escolar','control','servicios_docentes','prefectura','coordinacion_academica'].includes(S.role))return v23Attendance();
@@ -4494,6 +4495,98 @@ function jaguarPlanningPreview(){
 </script>
 <script src="/assets/jaguar-academico-v55.js"></script>
 <script src="/assets/jaguar-classroom-v56.js"></script>
+<script id="jaguar-calificaciones-por-grupo-v583">
+/* Institucional: Calificaciones > grupo > periodo > materia > desglose PDF / aclaracion. */
+(function(){
+  const gradesAccess=['control_escolar','control','direccion_escolar'];
+  if(!roleNav.direccion_escolar.some(x=>x[0]==='calificaciones')){
+    const pos=roleNav.direccion_escolar.findIndex(x=>x[0]==='horarios');
+    roleNav.direccion_escolar.splice(pos>=0?pos+1:1,0,['calificaciones','📊 Calificaciones']);
+  }
+  if(!roleNav.control)roleNav.control=roleNav.control_escolar;
+})();
+let _jaguarGradeNavigation=null,_jaguarGradeView={group:null,period:null,subject:null,cycle:''},_jaguarGradeDetail=null;
+function jaguarGradePeriodLabel(p){
+  const labels=['','PRIMER PERIODO','SEGUNDO PERIODO','TERCER PERIODO','CUARTO PERIODO','QUINTO PERIODO','SEXTO PERIODO'];
+  return labels[Number(p.numero_periodo||0)]||String(p.nombre||'Periodo').toUpperCase();
+}
+function jaguarGradeButton(title,subtitle,action){return `<button type="button" class="card text-left hover:border-[#D4AF3788] focus:outline-none focus:ring-2 focus:ring-[#D4AF37] min-h-[93px]" onclick="${action}"><h3 class="text-lg font-bold">${esc(title)}</h3>${subtitle?`<p class="text-sm text-[#A9BAC8] mt-2">${esc(subtitle)}</p>`:''}<span class="text-[#D4AF37] text-sm inline-block mt-2">Abrir →</span></button>`}
+async function jaguarAcademicGradesModule(){
+  if(!['control_escolar','control','direccion_escolar'].includes(S.role))return '<div class="card">No autorizado para consultar estas calificaciones.</div>';
+  _jaguarGradeNavigation=await api('academicGradesNavigation');
+  const cycles=[...new Set((_jaguarGradeNavigation.periods||[]).map(p=>p.ciclo_escolar).filter(Boolean))].sort().reverse();
+  if(!_jaguarGradeView.cycle||!cycles.includes(_jaguarGradeView.cycle))_jaguarGradeView.cycle=cycles.includes(S.activeCycle)?S.activeCycle:cycles[0]||'';
+  return `<div class="space-y-5"><div class="card border-[#D4AF3744]"><div class="flex flex-col md:flex-row md:justify-between md:items-center gap-3"><div><span class="chip">CONSULTA ACADÉMICA</span><h2 class="text-2xl font-extrabold mt-2">📊 Calificaciones</h2><p class="text-sm text-[#A9BAC8] mt-2">Grupo → Periodo → Materia → Desglose. Las solicitudes se envían al docente responsable; no alteran la calificación.</p></div><label class="text-xs text-[#A9BAC8]">Ciclo escolar<select id="jg_grade_cycle" class="select mt-1" onchange="jaguarGradesCycleChange(this.value)">${cycles.map(c=>`<option value="${esc(c)}" ${c===_jaguarGradeView.cycle?'selected':''}>${esc(c)}</option>`).join('')}</select></label></div></div><div id="jaguar_grade_explorer"></div></div>`;
+}
+function jaguarGradesCycleChange(c){_jaguarGradeView={group:null,period:null,subject:null,cycle:c};jaguarGradesRender();}
+function jaguarGradesOpenGroup(id){_jaguarGradeView.group=Number(id);_jaguarGradeView.period=null;_jaguarGradeView.subject=null;jaguarGradesRender();}
+function jaguarGradesOpenPeriod(id){_jaguarGradeView.period=Number(id);_jaguarGradeView.subject=null;jaguarGradesRender();}
+async function jaguarGradesOpenSubject(id){
+  _jaguarGradeView.subject=Number(id);
+  const el=document.getElementById('jaguar_grade_explorer');if(!el)return;
+  el.innerHTML='<div class="card">Consultando desglose de la materia…</div>';
+  try{
+    const detail=await apiQuery('academicGradeDetail',{grupo_id:_jaguarGradeView.group,periodo_id:_jaguarGradeView.period,grupo_materia_id:_jaguarGradeView.subject});
+    if(Number(_jaguarGradeView.subject)!==Number(id))return;
+    _jaguarGradeDetail=detail;jaguarGradesRender();
+  }catch(e){el.innerHTML=`<div class="card border-red-500/30"><b>No se pudo consultar esta materia.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p><button class="btn mt-3" onclick="jaguarGradesOpenPeriod(${Number(_jaguarGradeView.period)})">← Volver a materias</button></div>`;}
+}
+function jaguarGradesRender(){
+  const el=document.getElementById('jaguar_grade_explorer'),nav=_jaguarGradeNavigation,v=_jaguarGradeView;
+  if(!el||!nav)return;
+  const g=nav.groups.find(x=>Number(x.id)===v.group),p=nav.periods.find(x=>Number(x.id)===v.period),m=nav.subjects.find(x=>Number(x.id)===v.subject);
+  const crumbs=`<div class="flex flex-wrap gap-2 items-center text-sm mb-4"><button class="btn" onclick="_jaguarGradeView.group=null;_jaguarGradeView.period=null;_jaguarGradeView.subject=null;jaguarGradesRender()">Grupos</button>${g?`<span>›</span><button class="btn" onclick="jaguarGradesOpenGroup(${g.id})">${esc(g.clave)}</button>`:''}${p?`<span>›</span><button class="btn" onclick="jaguarGradesOpenPeriod(${p.id})">${esc(jaguarGradePeriodLabel(p))}</button>`:''}${m?`<span>›</span><span class="chip">${esc(m.nombre)}</span>`:''}</div>`;
+  let content='';
+  if(!g){
+    const groups=[...nav.groups].sort((a,b)=>Number(a.grado)-Number(b.grado)||String(a.letra||'').localeCompare(String(b.letra||''),'es',{numeric:true}));
+    content=`<div class="card"><h3 class="text-xl">Selecciona un grupo</h3><p class="text-sm text-[#A9BAC8] mt-1">Se muestran todos los grupos activos, incluso cuando todavía no tienen calificaciones registradas.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">${groups.map(gr=>jaguarGradeButton(gr.clave||`${gr.grado}°${gr.letra}`,gr.turno||'',`jaguarGradesOpenGroup(${Number(gr.id)})`)).join('')||'<div class="card">No hay grupos activos.</div>'}</div>`;
+  }else if(!p){
+    const periods=(nav.periods||[]).filter(r=>String(r.ciclo_escolar)===String(v.cycle));
+    content=`<div class="card"><h3 class="text-xl">${esc(g.clave)} · Selecciona un periodo</h3><p class="text-sm text-[#A9BAC8] mt-1">Ciclo ${esc(v.cycle||'—')}</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${periods.map(pr=>jaguarGradeButton(jaguarGradePeriodLabel(pr),pr.nombre||'',`jaguarGradesOpenPeriod(${Number(pr.id)})`)).join('')||'<div class="card">No hay periodos configurados para este ciclo.</div>'}</div>`;
+  }else if(!m){
+    const subjects=(nav.subjects||[]).filter(s=>Number(s.grupo_id)===Number(g.id)).sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+    content=`<div class="card"><h3 class="text-xl">${esc(g.clave)} · ${esc(jaguarGradePeriodLabel(p))}</h3><p class="text-sm text-[#A9BAC8] mt-1">Selecciona la materia. Se muestran las materias asignadas aunque no tengan evaluaciones cerradas.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${subjects.map(sb=>jaguarGradeButton(sb.nombre,sb.clave||'',`jaguarGradesOpenSubject(${Number(sb.id)})`)).join('')||'<div class="card">No hay materias asociadas a este grupo.</div>'}</div>`;
+  }else{
+    const detail=_jaguarGradeDetail;
+    if(!detail||Number(detail.materia?.id)!==Number(m.id))return;
+    const rows=(detail.students||[]).map(st=>{
+      const aspects=st.componentes||[];
+      const detailHtml=aspects.length?`<div class="mt-2 space-y-1">${aspects.map(a=>`<div class="flex justify-between gap-3 border-b border-white/5 py-1"><span>${esc(a.nombre)} <small class="text-[#8FA3B5]">${a.ponderacion==null?'':`(${esc(a.ponderacion)}%)`}</small></span><b>${a.valor==null?'—':Number(a.valor).toFixed(2)}${a.unidad==='puntos_ponderados_excel'?(a.maximo==null?' pts':` / ${Number(a.maximo).toFixed(2)} pts`):' / 10'}</b></div>`).join('')}</div>`:'<div class="text-[#A9BAC8] mt-2">Esta calificación no cuenta con un desglose de rúbrica almacenado.</div>';
+      const excel=st.valor_total_excel!=null?`<div class="mt-2 text-[#D4AF37] text-xs">VALOR TOTAL Excel: ${Number(st.valor_total_excel).toFixed(2)}</div>`:'';
+      const adjusted=st.ajuste?.motivo?`<div class="text-xs text-[#E8C877] mt-2">Ajuste justificado: ${esc(st.ajuste.motivo)}</div>`:'';
+      const claim=st.calificacion_id?`<button class="btn" onclick="jaguarGradesClaimModal(${Number(st.calificacion_id)})">Solicitar aclaración</button>`:'<span class="text-xs text-[#8FA3B5]">Sin nota que reclamar</span>';
+      return `<tr><td>${st.numero}</td><td><b>${esc(st.nombre_completo)}</b><div class="text-xs text-[#8FA3B5]">${esc(st.matricula)}</div></td><td><details><summary class="cursor-pointer text-[#D4AF37]">${aspects.length?`${aspects.length} aspectos · Ver desglose`:'Ver información'}</summary>${detailHtml}${excel}${adjusted}${st.observaciones?`<div class="mt-2 text-xs">Observaciones: ${esc(st.observaciones)}</div>`:''}</details></td><td><b class="text-lg">${st.calificacion==null?'Pendiente':Number(st.calificacion).toFixed(2)}</b></td><td>${claim}</td></tr>`;
+    }).join('');
+    content=`<div class="card"><div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3"><div><span class="chip">DESGLOSE ACADÉMICO</span><h3 class="text-2xl font-bold mt-2">${esc(m.nombre)}</h3><p class="text-sm text-[#A9BAC8] mt-1">${esc(g.clave)} · ${esc(jaguarGradePeriodLabel(p))} · ${esc(v.cycle)}</p></div><button class="btn primary" onclick="jaguarGradesDownloadPdf()">📄 Descargar desglose PDF</button></div><div class="grid grid-cols-3 gap-2 mt-4">${[['Alumnos',detail.totals?.total],['Notas registradas',detail.totals?.registered],['Pendientes',detail.totals?.pending]].map(([label,val])=>`<div class="rounded-lg p-3 bg-[#102438]"><small>${esc(label)}</small><div class="text-xl font-bold mt-1">${Number(val||0)}</div></div>`).join('')}</div><p class="text-sm text-[#A9BAC8] mt-4">Los valores se muestran tal como se almacenaron al cerrar la rúbrica o importar el VALOR TOTAL de Excel. Un reclamo sólo abre una solicitud al docente.</p><div class="scroll mt-4"><table class="table"><thead><tr><th>N.º</th><th>Alumno y matrícula</th><th>Desglose</th><th>Total</th><th>Revisión</th></tr></thead><tbody>${rows||'<tr><td colspan="5">Este grupo no tiene alumnos activos.</td></tr>'}</tbody></table></div></div>`;
+  }
+  el.innerHTML=crumbs+`<div class="space-y-4">${content}</div>`;
+}
+function jaguarGradesClaimModal(id){
+  const d=_jaguarGradeDetail,st=d?.students?.find(x=>Number(x.calificacion_id)===Number(id));
+  if(!st)return toast('No se encontró la nota a revisar.');
+  modal('Solicitud de aclaración al docente',`<div class="space-y-4"><div class="card"><div class="font-bold">${esc(st.nombre_completo)} · ${esc(st.matricula)}</div><p class="text-sm mt-1">${esc(d.materia.nombre)} · ${esc(d.periodo.nombre)}</p><p class="mt-2">Nota registrada: <b>${Number(st.calificacion).toFixed(2)}</b></p></div><div><label class="text-sm text-[#A9BAC8]">Motivo de la solicitud</label><textarea id="jaguar_grade_claim_reason" class="textarea mt-2 min-h-32" maxlength="1500" placeholder="Describe la calificación o aspecto que debe revisar el docente."></textarea></div><p class="text-xs text-[#A9BAC8]">La solicitud se envía al docente responsable. No modifica la nota oficial automáticamente.</p><button class="btn primary w-full" onclick="jaguarGradesClaimSubmit(${Number(id)})">Enviar solicitud al docente</button></div>`);
+}
+async function jaguarGradesClaimSubmit(id){
+  try{
+    const motivo=String(document.getElementById('jaguar_grade_claim_reason')?.value||'').trim();
+    if(motivo.length<12)return toast('Describe la aclaración en al menos 12 caracteres.');
+    const result=await apiPost('createInstitutionalGradeClarification',{calificacion_id:Number(id),motivo});
+    closeModal();toast(result.message||'Aclaración enviada al docente.');
+  }catch(e){toast(e.message)}
+}
+async function jaguarGradesDownloadPdf(){
+  const v=_jaguarGradeView;
+  if(!v.group||!v.period||!v.subject)return toast('Selecciona una materia.');
+  try{
+    const {data:{session}}=await supabaseClient.auth.getSession();
+    if(!session?.access_token)throw Error('Tu sesión ha caducado.');
+    const response=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'academic_grades_pdf',grupo_id:v.group,periodo_id:v.period,grupo_materia_id:v.subject})});
+    const result=await response.json();
+    if(!response.ok||!result.ok)throw Error(result.error||'No se pudo generar el reporte.');
+    downloadPdf(result.pdf_base64,result.filename||'ITHLA-Desglose-Calificaciones.pdf');
+  }catch(e){toast(e.message)}
+}
+</script>
 </body>
 </html>
 

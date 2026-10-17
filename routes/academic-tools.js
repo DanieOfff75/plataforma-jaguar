@@ -109,10 +109,11 @@ export default async function handler(req,res){
     const id=input.room?.id?positiveId(input.room.id):null;
     if(id){
       // No permitir renombrar un aula con horarios asignados: alteraría el vínculo del PDF histórico.
-      const old=await checked(db.from('jaguar_aulas').select('id,nombre').eq('id',id).maybeSingle());if(!old)fail('Aula inexistente.',404);
+      const old=await checked(db.from('jaguar_aulas').select('id,nombre,tipo_espacio').eq('id',id).maybeSingle());if(!old)fail('Espacio inexistente.',404);
       const slots=await checked(db.from('horarios').select('id,grupo_materias(grupo_id)').eq('aula',old.nombre).limit(2000));
       if(slots.length && old.nombre!==payload.nombre)fail('El aula tiene horarios; conserva el nombre para evitar desvincularlos.',409);
       if(slots.length && !payload.activo)fail('Antes de desactivar un aula, reasigna sus clases.',409);
+      if(slots.length && old.tipo_espacio==='aula' && payload.tipo_espacio!=='aula')fail('No puedes convertir un aula asignada en laboratorio, auditorio u oficina. Reasigna primero sus grupos.',409);
       const groupIds=[...new Set(slots.map(x=>x.grupo_materias?.grupo_id).filter(Boolean))];
       if(groupIds.length){
         const students=await checked(db.from('alumnos').select('id,grupo_id').in('grupo_id',groupIds).eq('activo',true).limit(5000));

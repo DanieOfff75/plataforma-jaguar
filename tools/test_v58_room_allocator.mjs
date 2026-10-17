@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {planRoomAllocation} from '../lib/room_auto_allocation.js';
 const groups=Array.from({length:18},(_,i)=>({id:i+1,clave:(i<9?'M':'V')+(i%9+1),turno:i<9?'matutino':'vespertino',activo:true}));
-const rooms=Array.from({length:9},(_,i)=>({id:i+1,nombre:'AULA '+(i+1),capacidad:42,activo:true}));
+const rooms=Array.from({length:9},(_,i)=>({id:i+1,nombre:'AULA '+(i+1),capacidad:42,activo:true,tipo_espacio:'aula'}));
 const schedule=groups.map(g=>({id:g.id,grupo_materias:{grupo_id:g.id},dia_semana:1,hora_inicio:g.id<=9?'08:00':'14:00',hora_fin:g.id<=9?'12:00':'18:00',aula:null}));
 const group_counts=Object.fromEntries(groups.map(g=>[g.id,40]));
 const d={groups,rooms,schedule,group_counts};

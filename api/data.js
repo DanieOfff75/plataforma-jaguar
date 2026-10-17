@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
+import { academicGradesNavigation, academicGradeDetail, allowGradeExplorer } from '../lib/academic_grade_explorer.js';
 import { getClients, requireRoles } from '../lib/_admin.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { departmentKeyForRole, validateResponsible, listResponsibleUsers } from '../lib/responsables.js';
@@ -2786,6 +2787,10 @@ async function getResource(
   if (key === 'dailyGradebooks') return await listDailyGradebooks(admin,profile,req.query||{});
   if (key === 'dailyGradebookSnapshot') return await getDailyGradebookSnapshot(admin,user,profile,Number(req.query?.id||0));
 
+  // Navegación institucional de calificaciones; autorizada en servidor.
+  if(key==='academicGradesNavigation')return academicGradesNavigation(admin,profile.rol);
+  if(key==='academicGradeDetail')return academicGradeDetail(admin,profile.rol,req.query||{});
+
   /* -------------------------
      EVALUACIÓN DOCENTE
      ------------------------- */
@@ -4481,6 +4486,32 @@ export default async function handler(
     }
 
     /* ACLARACIONES */
+    // Solicitud institucional de aclaración: no altera la nota ni cierra el periodo.
+    if(req.method==='POST'&&req.body?.resource==='createInstitutionalGradeClarification'){
+      if(!allowGradeExplorer(profile.rol))return res.status(403).json({ok:false,error:'No autorizado para solicitar esta revisión.'});
+      const gradeId=Number(req.body?.calificacion_id||0);
+      const motivo=String(req.body?.motivo||'').trim().slice(0,1500);
+      if(!Number.isSafeInteger(gradeId)||gradeId<1||motivo.length<12)return res.status(400).json({ok:false,error:'Selecciona una calificación y explica el motivo (mínimo 12 caracteres).'});
+      const {data:grade,error:ge}=await adminClient.from('calificaciones').select('id,alumno_id,grupo_materia_id,docente_id,calificacion').eq('id',gradeId).maybeSingle();
+      if(ge)throw ge;
+      if(!grade)return res.status(404).json({ok:false,error:'Calificación no encontrada.'});
+      if(!grade.docente_id)return res.status(409).json({ok:false,error:'La calificación no tiene docente responsable. Asigna primero al profesor.'});
+      const {data:active,error:ae}=await adminClient.from('solicitudes_estudiantiles').select('id').eq('tipo','aclaracion_calificacion').eq('calificacion_id',gradeId).eq('estado','pendiente').limit(1);
+      if(ae)throw ae;
+      if(active?.length)return res.status(409).json({ok:false,error:'Ya existe una aclaración pendiente para esta calificación.'});
+      const msg=`Solicitud registrada por ${profile.rol.replaceAll('_',' ')}. ${motivo}`;
+      const {data:created,error:ce}=await adminClient.from('solicitudes_estudiantiles').insert({
+        alumno_id:grade.alumno_id,tipo:'aclaracion_calificacion',motivo:msg,estado:'pendiente',
+        grupo_materia_id:grade.grupo_materia_id,calificacion_id:grade.id,docente_destino_id:grade.docente_id,
+        valor_actual:String(grade.calificacion??'')
+      }).select('id').single();
+      if(ce)throw ce;
+      const {data:teacher}=await adminClient.from('docentes').select('auth_user_id').eq('id',grade.docente_id).maybeSingle();
+      if(teacher?.auth_user_id){try{await createJaguarNotification(adminClient,teacher.auth_user_id,{titulo:'Solicitud de aclaración de calificación',contenido:`Control Escolar/Dirección solicita revisar la calificación #${grade.id}.`,tipo:'aclaracion_calificacion'});}catch(e){console.warn('Notificación de aclaración:',e.message)}}
+      await audit(adminClient,{userId:user.id,role:profile.rol,action:'create_institutional_grade_clarification',module:'calificaciones',entity:'solicitudes_estudiantiles',entityId:created.id,description:`Solicitud al docente para revisar calificación #${grade.id}`,after:{calificacion_id:grade.id,motivo:msg},req});
+      return res.status(200).json({ok:true,data:created,message:'Solicitud enviada al docente. La calificación oficial no se modificó.'});
+    }
+
     if (req.method === 'POST' && req.body?.resource === 'createClarification') {
       if (profile.rol !== 'alumno') return res.status(403).json({ ok:false, error:'Solo los alumnos pueden crear aclaraciones.' });
       const body = req.body || {};
