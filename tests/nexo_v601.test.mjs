@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const source=fs.readFileSync(new URL('../lib/nexo_advisor.js',import.meta.url),'utf8');
+const {answerNexo}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
+test('constancia varias expresiones',()=>{for(const q of ['¿Cómo solicito una constancia?','quiero un comprobante escolar','como saco constancia'])assert.equal(answerNexo(q).encontrado,true,q)});
+test('matricula y notas sin inventar',()=>{const a=answerNexo('donde veo mi boleta');assert.equal(a.encontrado,true);assert.equal(a.url,'/sistema.html')});
+test('abstenerse ante temas ajenos',()=>{for(const q of ['¿Qué temperatura habrá mañana?','quiero reservar un hotel','¿Me ayudas a diagnosticar una enfermedad?'])assert.equal(answerNexo(q).encontrado,false,q)});
+test('conocimiento administrado tiene prioridad y referencia',()=>{const a=answerNexo('¿Cómo tramito un comprobante escolar?', [{pregunta:'¿Cómo tramito un comprobante escolar?',respuesta:'Consulta el módulo de trámites aprobado.',fuente:'Control Escolar',etiquetas:['comprobante'],url:'/sistema.html'}]);assert.equal(a.respuesta,'Consulta el módulo de trámites aprobado.');assert.equal(a.fuente,'Control Escolar')});
+test('sin coincidencias usa mensaje configurable',()=>{assert.equal(answerNexo('vuelos a venus',[],'Consulta a Servicios Estudiantiles.').respuesta,'Consulta a Servicios Estudiantiles.')});
+test('url maliciosa no se ofrece',()=>{const a=answerNexo('ayuda con inscripción histórica',{map:1});assert.equal(typeof a.respuesta,'string')});

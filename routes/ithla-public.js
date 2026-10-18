@@ -36,7 +36,7 @@ export default async function handler(req,res){
   if(String(req.query?.action||'')==='nexo'){
     res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');
     if(settings.nexo?.activo===false)return res.status(503).json({ok:false,error:'NEXO está temporalmente desactivado.'});
-    return res.status(200).json({ok:true,data:answerNexo(String(req.query?.q||''),settings.nexo?.preguntas)});
+    return res.status(200).json({ok:true,data:answerNexo(String(req.query?.q||''),settings.nexo?.preguntas,settings.nexo?.mensaje_no_encontrado)});
   }
   return res.status(200).json({ok:true,data:selectPublic(settings)});
  }catch(e){const status=[401,403].includes(e?.status)?e.status:503;return res.status(status).json({ok:false,error:status===503?'El contenido institucional aún no está configurado.':(e.message||'Acceso no autorizado.')});}
