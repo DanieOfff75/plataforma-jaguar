@@ -67,6 +67,8 @@ body{overflow-x:hidden;background-attachment:fixed}
 </style>
 <script id="jaguar-premium-theme-boot">try{const m=localStorage.getItem("jaguar_display_mode_v3");document.documentElement.setAttribute("data-jaguar-mode",m==="dark"?"dark":"light")}catch{document.documentElement.setAttribute("data-jaguar-mode","light")}</script>
 <link rel="stylesheet" href="/assets/jaguar-premium.css">
+<link rel="stylesheet" href="/assets/ithla-ecosistema.css">
+<link rel="stylesheet" href="/assets/nexo-companion.css">
 </head>
 <body>
 <div id="login" class="min-h-screen flex items-center justify-center p-5"><div class="glass rounded-3xl p-7 max-w-xl w-full">
@@ -4728,7 +4730,18 @@ async function jaguarBatchDownloadOffice(id){
 }
 
 </script>
-<script src="/assets/nexo-widget.js" defer></script>
+<script>
+/* Sesión visible a NEXO únicamente a través de este proveedor local. */
+window.ithlaNexoAuth=async()=>{
+ try{
+  if(typeof supabaseClient==='undefined'||!supabaseClient)return null;
+  const sid=window.ithlaSessionGuard?.getId();
+  const session=(await supabaseClient.auth.getSession()).data.session;
+  return sid&&session?.access_token?{token:session.access_token,sid}:null;
+ }catch{return null}
+};
+</script>
+<script src="/assets/nexo-companion.js" data-site="jaguar-session" data-endpoint="/api/public" defer></script>
 </body>
 </html>
 

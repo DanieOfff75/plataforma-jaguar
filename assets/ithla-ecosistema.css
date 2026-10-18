@@ -1,0 +1,61 @@
+@font-face{font-family:'Garet Jaguar';src:url('/assets/fonts/Garet-Book.ttf') format('truetype');font-weight:400;font-display:swap}
+@font-face{font-family:'Garet Jaguar';src:url('/assets/fonts/Garet-Heavy.ttf') format('truetype');font-weight:700 900;font-display:swap}
+/* ITHLA Ecosistema v2. Diseño maestro: interfaz autenticada Jaguar Premium.
+   Los estilos están acotados por superficie. No cambian lógica, roles, APIs ni documentos PDF. */
+:root{--eco-bg:#f3f6fa;--eco-card:#fff;--eco-card2:#f7f9fc;--eco-text:#16243b;--eco-muted:#64748b;--eco-line:#dde5ed;--eco-navy:#102943;--eco-teal:#087e83;--eco-gold:#bd923b;--eco-shadow:0 8px 26px rgba(17,35,59,.07);--eco-radius:16px;color-scheme:light}
+@media(prefers-reduced-motion:reduce){.eco-motion,.eco-motion *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+body.eco-public{background:var(--eco-bg)!important;color:var(--eco-text)!important;font-family:'Garet Jaguar','Plus Jakarta Sans',Arial,sans-serif!important}
+.eco-public .hero{background:linear-gradient(140deg,#071d32,#0b2943 66%,#103b53)!important}
+.eco-public h1,.eco-public h2,.eco-public h3{font-family:'Garet Jaguar','Plus Jakarta Sans',sans-serif!important}
+.eco-public header{background:linear-gradient(167deg,#071d32,#0b2943)!important;border-bottom:1px solid #bd923b6b!important}
+.eco-public .heroPanel{background:#122f47ed!important;border:1px solid #cfac6470!important;border-radius:var(--eco-radius)!important}
+.eco-public .action{border-radius:10px!important;background:linear-gradient(130deg,#d4af37,#b98d38)!important;color:#0b2137!important;font-weight:800}
+.eco-public .action.secondary{background:transparent!important;border:1px solid #c3a665!important;color:#fff!important}
+.eco-public section:not(.hero) .card,.eco-public .card,.eco-public .panel,.eco-public .infoCard{border:1px solid var(--eco-line)!important;border-radius:16px!important;box-shadow:var(--eco-shadow)!important;background:var(--eco-card)!important;color:var(--eco-text)!important}
+.eco-public .eyebrow{color:#d8b45c}
+/* Formulario de admisiones: conserva clases existentes, sustituye apariencia esmeralda. */
+body.eco-admisiones{background:radial-gradient(circle at 2% 0%,#dce7f3,transparent 38%),var(--eco-bg)!important;color:var(--eco-text)!important;font-family:'Garet Jaguar','Plus Jakarta Sans',sans-serif!important}
+.eco-admisiones #particleCanvas{opacity:.045!important}
+.eco-admisiones .glass-emerald-pro,.eco-admisiones .glass{background:#fff!important;backdrop-filter:blur(10px)!important;border:1px solid var(--eco-line)!important;box-shadow:var(--eco-shadow)!important;color:var(--eco-text)!important}
+.eco-admisiones :is(.glass-emerald-pro,.glass) :is(h1,h2,h3,.text-white,.text-emerald-100,.text-emerald-200,.text-emerald-300){color:var(--eco-text)!important}
+.eco-admisiones :is(.glass-emerald-pro,.glass) :is(.text-emerald-400,.text-emerald-500){color:var(--eco-teal)!important}
+.eco-admisiones .text-transparent.bg-clip-text{background:linear-gradient(120deg,#bd923b,#087e83)!important;background-clip:text!important;-webkit-background-clip:text!important;color:transparent!important;-webkit-text-fill-color:transparent}
+.eco-admisiones :is(.input-emerald,.input){background:#f7f9fc!important;border:1px solid #d3dce6!important;border-radius:11px!important;color:var(--eco-text)!important;box-shadow:none!important}
+.eco-admisiones :is(.input-emerald,.input):focus{outline:2px solid #bd923b6b!important;border-color:var(--eco-gold)!important}
+.eco-admisiones :is(button.bg-gradient-to-r,button.bg-gradient-to-br,.btn-interactive){background:linear-gradient(120deg,#d4af37,#b98d38)!important;color:#102943!important;border-radius:11px!important}
+.eco-admisiones button:hover{filter:brightness(.98)}
+.eco-admisiones :is(.bg-emerald-900\/50,.bg-emerald-950\/50,.bg-emerald-950\/80,.bg-emerald-950){background:#e9f1f5!important}
+.eco-admisiones :is(.text-emerald-200\/80,.text-emerald-200\/65,.text-emerald-200\/45,.text-emerald-400\/50){color:#64748b!important}
+.eco-admisiones :is(.border-emerald-500\/30,.border-emerald-500\/40,.border-emerald-400\/25){border-color:#dbe3ea!important}
+.eco-admisiones header{color:var(--eco-text)!important}
+.eco-admisiones header .text-white{color:var(--eco-navy)!important}
+.eco-admisiones header .text-emerald-300{color:var(--eco-teal)!important}
+.eco-admisiones footer{color:var(--eco-muted)!important}
+.eco-admisiones #ithlaAdmBanner{max-width:650px!important;background:#fff!important;border:1px solid var(--eco-line)!important;color:var(--eco-muted)!important}
+.eco-admisiones #eco-closed{display:none}
+.eco-admisiones.eco-closed #particleCanvas,.eco-admisiones.eco-closed #ithlaAdmBanner,.eco-admisiones.eco-closed header,.eco-admisiones.eco-closed footer,.eco-admisiones.eco-closed main{display:none!important}
+.eco-admisiones.eco-closed #eco-closed{display:flex;flex-direction:column;gap:16px;justify-content:center;align-items:center;margin:auto;width:min(540px,100%);padding:32px 25px;border:1px solid var(--eco-line);border-radius:20px;background:white;box-shadow:var(--eco-shadow);text-align:center;position:relative;z-index:3}
+.eco-admisiones.eco-closed #eco-closed img{height:75px;width:75px;object-fit:contain}
+.eco-admisiones.eco-closed #eco-closed h1{font-size:clamp(24px,4vw,34px);color:var(--eco-navy);font-weight:800;line-height:1.15}
+.eco-admisiones.eco-closed #eco-closed p{color:var(--eco-muted);line-height:1.55}
+.eco-admisiones.eco-closed #eco-closed button{border:0;border-radius:11px;background:linear-gradient(125deg,#d4af37,#b98d38);padding:13px 22px;color:var(--eco-navy);font-weight:800;cursor:pointer}
+.eco-admisiones.eco-closed #modalConsulta{z-index:500}
+/* Admin de Admisiones: paneles equivalentes a Jaguar (sin afectar PDF). */
+body.eco-admisiones-admin{background:var(--eco-bg)!important;color:var(--eco-text)!important}
+.eco-admisiones-admin .glass{background:#fff!important;color:var(--eco-text)!important;border:1px solid var(--eco-line)!important;box-shadow:var(--eco-shadow)!important}
+.eco-admisiones-admin :is(.glass,.max-w-6xl) :is(.text-white,.text-emerald-100,.text-emerald-200,.text-emerald-300){color:var(--eco-text)!important}
+.eco-admisiones-admin .input{color:var(--eco-text)!important;background:#fff!important;border-color:var(--eco-line)!important}
+.eco-admisiones-admin button.bg-gradient-to-r,.eco-admisiones-admin button.bg-gradient-to-br{background:linear-gradient(120deg,#d4af37,#b98d38)!important;color:#102943!important}
+/* Centro de Control: replica tokens, sombras, bordes y sidebar de Jaguar Premium. */
+body.eco-control{--navy:var(--eco-navy);--night:#071d32;--gold:var(--eco-gold);--ink:var(--eco-text);--muted:var(--eco-muted);--line:var(--eco-line);--surface:var(--eco-card);--bg:var(--eco-bg);--radius:16px;font-family:'Garet Jaguar','Plus Jakarta Sans',Arial,sans-serif!important}
+.eco-control :is(h1,h2,h3){font-family:'Garet Jaguar','Plus Jakarta Sans',sans-serif!important;font-weight:800!important}
+.eco-control .sidebar{background:linear-gradient(167deg,#071d32 0%,#0b2943 62%,#102d48 100%)!important;box-shadow:7px 0 30px #08172a14!important}
+.eco-control :is(.card,.row-card,.list-editor,.login){border:1px solid var(--eco-line)!important;border-radius:16px!important;box-shadow:var(--eco-shadow)!important;background:var(--eco-card)!important}
+.eco-control :is(.primary,.secondary,.danger,.quiet){border-radius:10px!important}
+.eco-control .primary{background:linear-gradient(125deg,#d4af37,#b98d38)!important;color:#102943!important}
+.eco-control .secondary{background:#eef3f7!important;border-color:#dae3ec!important;color:#233c55!important}
+.eco-control .field input,.eco-control .field textarea,.eco-control .field select{border-color:var(--eco-line)!important;border-radius:10px!important;background:#fff!important;color:var(--eco-text)!important}
+.eco-control #auth{background:radial-gradient(circle at 10% 10%,#264963,transparent 34%),linear-gradient(140deg,#071d32,#0b2943)!important}
+.eco-control .sidebar .nav button:hover,.eco-control .sidebar .nav button.active{background:#d4af3720!important;color:#f2e4bd!important}
+/* Panel accesible, y sin movimientos para usuarios que los deshabilitan */
+@media(max-width:640px){.eco-admisiones.eco-closed #eco-closed{margin:22px 10px!important;width:calc(100% - 20px)}}

@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { answerNexo } from '../lib/nexo_advisor.js';
 import { replyNexoAI } from '../lib/nexo_ai.js';
 import { requireRoles } from '../lib/_admin.js';
+import { assertSession } from '../lib/ithla_session.js';
+import { nexoTrustedContext } from '../lib/nexo_context.js';
 const defaults={institucion:{siglas:'ITHLA',nombre_institucion:'Instituto Tecnológico e Histórico Latinoamericano',lema:'Scientia, Humanitas et Progressum',color_primary:'#1B365D',color_accent:'#D4AF37',logo_url:'/assets/ithla-logo.png',url_admisiones:'https://registro-escolar-virid.vercel.app/'},portal:{titulo:'Instituto Tecnológico e Histórico Latinoamericano',subtitulo:'Ciencia, Humanidad y Progreso',avisos:[],eventos:[],enlaces:[]},admisiones:{estado:'cerrado'},nexo:{activo:true,preguntas:[]}};
 function selectPublic(config){const i=config.institucion||{},p=config.portal||{},a=config.admisiones||{};return {
  institucion:Object.fromEntries(['siglas','nombre_institucion','lema','color_primary','color_secondary','color_accent','logo_url','url_admisiones','telefono','direccion','entidad'].map(k=>[k,i[k]??defaults.institucion[k]??null])),
@@ -34,7 +36,17 @@ export default async function handler(req,res){
     if(error)throw error;
     const settings={...defaults,...Object.fromEntries((data||[]).map(r=>[r.clave,r.valor]))};
     if(!(data||[]).some(r=>r.clave==='admisiones'))settings.admisiones={}; // No inferir convocatorias no publicadas.
-    const result=await replyNexoAI({message:req.body?.message,history:req.body?.history,settings,req,
+    let role=null;
+    const bearer=/^Bearer\s+(.+)$/i.exec(String(req.headers?.authorization||''));
+    if(bearer){
+      const {data:{user},error:authError}=await db.auth.getUser(bearer[1].trim());
+      if(authError||!user)return res.status(401).json({ok:false,error:'La sesión caducó; vuelve a iniciar sesión.'});
+      const {data:profile,error:profileError}=await db.from('perfiles').select('rol,activo').eq('id',user.id).maybeSingle();
+      if(profileError||!profile?.activo)return res.status(403).json({ok:false,error:'Perfil institucional no disponible.'});
+      try{await assertSession(req,db,user.id,profile.rol,'jaguar');}catch{return res.status(401).json({ok:false,error:'La sesión protegida expiró.'});}
+      role=profile.rol;
+    }
+    const result=await replyNexoAI({message:req.body?.message,history:req.body?.history,settings,req,trustedContext:nexoTrustedContext('jaguar',role),
       acquireQuota:async hash=>{
         const quota=await db.rpc('ithla_nexo_ai_take_quota',{p_client_hash:hash});
         if(quota.error)throw quota.error;

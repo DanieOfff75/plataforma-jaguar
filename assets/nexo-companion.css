@@ -1,0 +1,51 @@
+/* NEXO AI · Compañero animado institucional. Sin bibliotecas ni servicios de pago. */
+#nexo-floating-root{--nx-navy:#0b2943;--nx-navy2:#102e49;--nx-gold:#d4af37;--nx-teal:#0b9296;--nx-bg:#f3f6fa;--nx-ink:#16243b;position:fixed;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));z-index:9000;color:var(--nx-ink);font-family:'Garet Jaguar','Plus Jakarta Sans',system-ui,sans-serif;line-height:1.45}
+#nexo-floating-root *{box-sizing:border-box}#nexo-floating-root :is(button,input){font:inherit}#nexo-floating-root button{cursor:pointer}#nexo-floating-root :is(button,input):focus-visible{outline:3px solid #d4af37;outline-offset:3px}
+#nx-launcher{display:flex;align-items:center;gap:9px;position:relative;padding:3px 15px 3px 4px;min-height:68px;min-width:74px;border:1px solid #d4af37aa;background:linear-gradient(135deg,#0a263f,#153d59);color:#f8e8bd;border-radius:50px;box-shadow:0 15px 42px #071c3280;transition:transform .2s,box-shadow .2s}
+#nx-launcher:hover{transform:translateY(-3px);box-shadow:0 20px 50px #071c3288}
+#nx-launcher .nx-launch-text{font-weight:850;letter-spacing:.07em;font-size:12px}#nx-launcher .nx-unread{position:absolute;top:7px;right:8px;background:#13d6c4;border:2px solid #112c44;border-radius:50%;width:10px;height:10px}
+.nx-avatar-wrap{position:relative;flex:none;display:grid;place-items:center;width:59px;height:59px;border-radius:50%;isolation:isolate;background:radial-gradient(circle,#245273,#061e33 80%);border:1px solid #e5bc4e80}
+.nx-avatar-wrap img{position:relative;z-index:2;display:block;height:109%;width:109%;object-fit:contain;animation:nx-float 3.2s ease-in-out infinite;filter:drop-shadow(0 4px 9px #0005)}
+.nx-avatar-wrap .nx-orbit{position:absolute;inset:-3px;border-radius:50%;border:2px dashed #d4af3777;animation:nx-orbit 11s linear infinite}
+.nx-avatar-wrap .nx-orbit:after{content:'';position:absolute;top:6px;left:0;width:8px;height:8px;border-radius:50%;background:#41e5dc;box-shadow:0 0 10px #41e5dc}
+#nexo-floating-root[data-state=typing] .nx-avatar-wrap img{animation:nx-nod .75s ease-in-out infinite}
+#nexo-floating-root[data-state=typing] .nx-avatar-wrap{box-shadow:0 0 0 5px #0b929626}
+#nexo-floating-root[data-state=thinking] .nx-avatar-wrap img{animation:nx-think 1.25s ease-in-out infinite}
+#nexo-floating-root[data-state=thinking] .nx-orbit{animation-duration:.9s;border-color:#25cad6}
+#nexo-floating-root[data-state=thinking] .nx-avatar-wrap{box-shadow:0 0 25px #0b929666}
+#nexo-floating-root[data-state=done] .nx-avatar-wrap img{animation:nx-celebrate .5s ease-out 2}
+#nexo-floating-root[data-state=error] .nx-avatar-wrap img{filter:grayscale(.45) drop-shadow(0 4px 5px #0004)}
+#nx-panel{position:absolute;bottom:83px;right:0;width:min(425px,calc(100vw - 24px));height:min(630px,calc(100dvh - 114px));min-height:295px;display:flex;flex-direction:column;overflow:hidden;border-radius:21px;background:var(--nx-bg);border:1px solid #d9e2eb;box-shadow:0 24px 85px #07182b99}
+#nx-panel[hidden]{display:none!important}
+#nx-head{background:linear-gradient(135deg,#071d32,#0b2943 70%,#13425c);display:flex;gap:11px;align-items:center;padding:14px 14px;color:white;border-bottom:3px solid #d4af37}
+#nx-head .nx-avatar-wrap{width:52px;height:52px}
+#nx-head .nx-title{flex:1;min-width:0}#nx-head .nx-title strong{display:block;font-size:16px;letter-spacing:.05em;color:white}
+#nx-head .nx-title small{display:block;margin-top:2px;color:#c6d5e0;font-size:11px}
+#nx-status{display:flex;align-items:center;gap:6px;margin-top:2px;font-size:11px;color:#c5e4e4}
+#nx-status:before{content:'';width:7px;height:7px;background:#21d0b8;border-radius:50%}
+#nexo-floating-root[data-state=thinking] #nx-status:before{background:#d4af37;animation:nx-pulse .6s ease-in-out infinite}
+#nx-actions{display:flex;gap:5px}#nx-actions button{background:#ffffff14;color:white;border:1px solid #ffffff44;border-radius:9px;width:32px;height:32px;font-size:20px}
+#nx-messages{display:flex;flex:1;flex-direction:column;gap:12px;padding:18px 13px;min-height:0;overflow:auto;overscroll-behavior:contain;scroll-behavior:smooth}
+.nx-row{display:flex;gap:8px;max-width:96%;align-items:flex-end}.nx-row.nx-bot{align-self:flex-start}.nx-row.nx-user{align-self:flex-end}
+.nx-mini-avatar{border-radius:50%;width:26px;height:26px;object-fit:contain;background:var(--nx-navy);border:1px solid #d4af37aa;flex:none}
+.nx-msg{padding:11px 13px;border-radius:15px;font-size:13px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:0 4px 14px #213e5210}
+.nx-bot .nx-msg{background:#fff;border:1px solid #dce5ed;border-bottom-left-radius:4px;color:var(--nx-ink)}
+.nx-user .nx-msg{background:linear-gradient(130deg,#0b2943,#175071);border:1px solid #0b2943;color:#fff;border-bottom-right-radius:4px}
+.nx-source{font-size:10px;margin-top:7px;color:#6b798b}.nx-source a{color:#087e83;text-decoration:underline;display:inline-block;margin:4px 7px 0 0}
+.nx-dots{display:flex;gap:5px;align-items:center;min-height:15px}.nx-dots i{width:6px;height:6px;border-radius:50%;background:#087e83;animation:nx-pulse .8s ease-in-out infinite}.nx-dots i:nth-child(2){animation-delay:.14s}.nx-dots i:nth-child(3){animation-delay:.28s}
+#nx-suggestions{display:flex;gap:7px;overflow:auto;scrollbar-width:thin;padding:4px 13px 12px}
+#nx-suggestions button{white-space:nowrap;border:1px solid #d4dfe9;background:#fff;border-radius:40px;padding:7px 11px;font-size:11px;color:#183750;font-weight:700}
+#nx-form{display:flex;gap:8px;padding:11px 13px 8px;border-top:1px solid #dce3eb;background:#fff}
+#nx-input{flex:1;min-width:0;border:1px solid #cad7e2;border-radius:12px;background:#f7f9fc;color:#142b42;padding:11px 12px;font-size:13px}
+#nx-send{border:0;border-radius:11px;background:linear-gradient(135deg,#d4af37,#b88a30);color:#0e2a40;font-weight:800;padding:0 14px}
+#nx-send:disabled{opacity:.55;cursor:wait}
+#nx-disclaimer{text-align:center;margin:0;background:#fff;padding:0 9px 11px;color:#697c8e;font-size:10px}
+#nx-key-tip{color:#b8cad8;font-size:10px}
+@keyframes nx-float{0%,100%{transform:translateY(1px)}50%{transform:translateY(-4px)}}
+@keyframes nx-nod{0%,100%{transform:rotate(-5deg)}50%{transform:rotate(6deg)}}
+@keyframes nx-orbit{to{transform:rotate(360deg)}}
+@keyframes nx-think{0%,100%{transform:rotate(-9deg) scale(.96)}50%{transform:rotate(9deg) scale(1.07)}}
+@keyframes nx-celebrate{0%,100%{transform:scale(1)}45%{transform:scale(1.17)}}
+@keyframes nx-pulse{0%,100%{opacity:.3;transform:scale(.7)}50%{opacity:1;transform:scale(1.25)}}
+@media(max-width:480px){#nexo-floating-root{right:12px;bottom:max(10px,env(safe-area-inset-bottom))}#nx-panel{bottom:82px;width:calc(100vw - 24px);height:min(620px,calc(100dvh - 104px))}}
+@media(prefers-reduced-motion:reduce){#nexo-floating-root *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
