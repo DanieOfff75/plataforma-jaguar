@@ -6,10 +6,11 @@ import {classroomCoursePayload,normalizedClassroomName} from '../lib/classroom_n
 import {topicForPeriod,matchingTopic,gradeEntries} from '../lib/classroom_periods.js';
 import {gradeSelection,gradeReport,gradeProof,verifyProof} from '../lib/classroom_grades.js';
 import {normalizeWorkTypes,classifiedWork} from '../lib/classroom_classification.js';
+import {classroomDbProblem,CLASSROOM_DATA_TABLES} from '../lib/classroom_schema_errors.js';
 const fail=(msg,status=400)=>{throw Object.assign(new Error(msg),{status});};
 const success=(res,data)=>res.status(200).json({ok:true,data});
 const numberId=(v)=>{const n=Number(v);if(!Number.isSafeInteger(n)||n<1)fail('Identificador de asignación inválido.');return n;};
-async function q(p){const {data,error}=await p;if(error){if(/jaguar_classroom_alumnos|jaguar_classroom_importaciones|jaguar_classroom_importar_rubrica|jaguar_classroom_trabajos_tipo/i.test(error.message||''))fail('Falta ejecutar la migración SQL V5.7.4 o V5.7.5 de Classroom en Supabase.',409);fail('No fue posible consultar o guardar datos de Classroom. Revisa los registros del servidor.',409);}return data;}
+async function q(p){const {data,error}=await p;if(error){const problem=classroomDbProblem(error);console.error('Jaguar Classroom DB:',{code:problem.code,resource:problem.resource});fail(problem.message,problem.status);}return data;}
 async function activeCycle(db){
  let rows=await q(db.from('periodos_escolares').select('ciclo_escolar').eq('es_periodo_actual',true).order('id',{ascending:false}).limit(1));
  if(!rows?.length)rows=await q(db.from('periodos_escolares').select('ciclo_escolar').eq('activo',true).order('id',{ascending:false}).limit(1));
@@ -22,6 +23,19 @@ export default async function handler(req,res){
   const {user,profile,adminClient:db}=await requireRoles(req,['servicios_docentes','docente']);
   const manager=profile.rol==='servicios_docentes';
   const action=String((req.method==='GET'?req.query?.action:req.body?.action)||'');
+  // Diagnóstico limitado a Servicios Docentes: comprueba accesibilidad sin devolver datos
+  // personales ni ejecutar funciones que puedan escribir calificaciones.
+  if(req.method==='GET'&&action==='schema_status'){
+   if(!manager)fail('Diagnóstico exclusivo de Servicios Docentes.',403);
+   const tables=[];
+   for(const name of CLASSROOM_DATA_TABLES){
+    const {error}=await db.from(name).select('id',{head:true}).limit(1);
+    tables.push({table:name,status:error?classroomDbProblem(error).message:'disponible',ok:!error});
+   }
+   return success(res,{tables,all_tables_available:tables.every(t=>t.ok),
+    rpc_note:'La función de importación se comprueba con el SQL de sólo lectura; esta pantalla no la ejecuta.'});
+  }
+
   if(req.method==='GET'&&action==='list'){if(!manager)fail('Acceso sólo de Servicios Docentes.',403);
    const {classes}=await googleData(db),cycle=await activeCycle(db);
    const linked=await q(db.from('jaguar_classroom_clases').select('grupo_materia_id,google_course_id').eq('ciclo_escolar',cycle));
