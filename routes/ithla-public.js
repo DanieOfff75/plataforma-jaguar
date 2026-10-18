@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { answerNexo } from '../lib/nexo_advisor.js';
+import { replyNexoAI } from '../lib/nexo_ai.js';
 import { requireRoles } from '../lib/_admin.js';
 const defaults={institucion:{siglas:'ITHLA',nombre_institucion:'Instituto Tecnológico e Histórico Latinoamericano',lema:'Scientia, Humanitas et Progressum',color_primary:'#1B365D',color_accent:'#D4AF37',logo_url:'/assets/ithla-logo.png',url_admisiones:'https://registro-escolar-virid.vercel.app/'},portal:{titulo:'Instituto Tecnológico e Histórico Latinoamericano',subtitulo:'Ciencia, Humanidad y Progreso',avisos:[],eventos:[],enlaces:[]},admisiones:{estado:'cerrado'},nexo:{activo:true,preguntas:[]}};
 function selectPublic(config){const i=config.institucion||{},p=config.portal||{},a=config.admisiones||{};return {
@@ -9,8 +10,38 @@ function selectPublic(config){const i=config.institucion||{},p=config.portal||{}
 };}
 export default async function handler(req,res){
  res.setHeader('Cache-Control', req.method==='POST'||String(req.query?.action||'')==='director-status'?'no-store':'public,max-age=30,s-maxage=60');
+ res.setHeader('X-Content-Type-Options','nosniff');
  if(!['GET','POST'].includes(req.method))return res.status(405).json({ok:false,error:'Método no permitido.'});
  try{
+  if(req.method==='POST'&&req.body?.action==='nexo-chat'){
+    // Ruta pública independiente de operaciones de Dirección. Nunca lee expedientes.
+    const origin=String(req.headers?.origin||'');
+    const host=String(req.headers?.host||'');
+    if(origin){
+      let sameOrigin=false;
+      try{const parsed=new URL(origin);sameOrigin=parsed.host===host&&(['https:','http:'].includes(parsed.protocol));}catch{}
+      if(!sameOrigin)return res.status(403).json({ok:false,error:'Origen no permitido.'});
+    }
+    if(!String(req.headers?.['content-type']||'').toLowerCase().startsWith('application/json'))
+      return res.status(415).json({ok:false,error:'Se requiere application/json.'});
+    if(Number(req.headers?.['content-length']||0)>5000)
+      return res.status(413).json({ok:false,error:'Solicitud demasiado grande.'});
+    if(!process.env.SUPABASE_URL||!(process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY))
+      return res.status(503).json({ok:false,error:'Base institucional no configurada.'});
+    const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY,
+      {auth:{persistSession:false,autoRefreshToken:false}});
+    const {data,error}=await db.from('ithla_config').select('clave,valor').in('clave',['institucion','admisiones','nexo']);
+    if(error)throw error;
+    const settings={...defaults,...Object.fromEntries((data||[]).map(r=>[r.clave,r.valor]))};
+    if(!(data||[]).some(r=>r.clave==='admisiones'))settings.admisiones={}; // No inferir convocatorias no publicadas.
+    const result=await replyNexoAI({message:req.body?.message,history:req.body?.history,settings,req,
+      acquireQuota:async hash=>{
+        const quota=await db.rpc('ithla_nexo_ai_take_quota',{p_client_hash:hash});
+        if(quota.error)throw quota.error;
+        return quota.data===true;
+      }});
+    return res.status(200).json({ok:true,data:result});
+  }
   if(req.method==='POST'){
     const {user,adminClient}=await requireRoles(req,['direccion_escolar']);
     if(req.body?.action!=='set-admissions')return res.status(400).json({ok:false,error:'Operación no permitida.'});

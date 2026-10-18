@@ -1,4 +1,4 @@
-/* NEXO V6.0.1: widget público de orientación; NO autentica ni lee datos escolares. */
+/* NEXO AI 1.0: chat público con historial efímero; no lee datos escolares. */
 (()=>{'use strict';
  if(document.getElementById('nexo-floating-root'))return;
  const styles=`
@@ -32,19 +32,32 @@
  `;
  const sheet=document.createElement('style');sheet.textContent=styles;document.head.append(sheet);
  const root=document.createElement('div');root.id='nexo-floating-root';
- root.innerHTML=`<section id="nx-panel" hidden role="dialog" aria-label="Chat de orientación NEXO"><header id="nx-head"><div id="nx-symbol" aria-hidden="true">N</div><div><strong>NEXO</strong><small>Asesor institucional · ITHLA</small></div><div class="nx-actions"><button type="button" id="nx-min" title="Minimizar" aria-label="Minimizar NEXO">−</button><button type="button" id="nx-close" title="Cerrar" aria-label="Cerrar NEXO">×</button></div></header><div id="nx-messages" role="log" aria-live="polite"></div><div id="nx-examples"><button type="button" data-question="¿Cómo solicito una constancia?">Constancias</button><button type="button" data-question="¿Cómo consulto mi boleta?">Calificaciones</button><button type="button" data-question="¿Cómo funcionan las admisiones?">Admisiones</button></div><form id="nx-form"><input id="nx-input" maxlength="420" autocomplete="off" aria-label="Tu pregunta" placeholder="Escribe tu pregunta..." required><button id="nx-send" type="submit">Enviar</button></form><p id="nx-disclaimer">No escribas contraseñas, CURP, matrículas ni datos sensibles.</p></section><button id="nx-bubble" type="button" aria-label="Abrir NEXO" aria-expanded="false" aria-controls="nx-panel">N<span class="nx-unread" aria-hidden="true"></span></button>`;
+ root.innerHTML=`<section id="nx-panel" hidden role="dialog" aria-label="Chat de orientación NEXO"><header id="nx-head"><div id="nx-symbol" aria-hidden="true">N</div><div><strong>NEXO AI</strong><small>Asistente inteligente · ITHLA</small></div><div class="nx-actions"><button type="button" id="nx-min" title="Minimizar" aria-label="Minimizar NEXO">−</button><button type="button" id="nx-close" title="Cerrar" aria-label="Cerrar NEXO">×</button></div></header><div id="nx-messages" role="log" aria-live="polite"></div><div id="nx-examples"><button type="button" data-question="¿Cómo solicito una constancia?">Constancias</button><button type="button" data-question="¿Cómo consulto mi boleta?">Calificaciones</button><button type="button" data-question="¿Cómo funcionan las admisiones?">Admisiones</button></div><form id="nx-form"><input id="nx-input" maxlength="420" autocomplete="off" aria-label="Tu pregunta" placeholder="Escribe tu pregunta..." required><button id="nx-send" type="submit">Enviar</button></form><p id="nx-disclaimer">No escribas contraseñas, CURP, matrículas ni datos sensibles.</p></section><button id="nx-bubble" type="button" aria-label="Abrir NEXO" aria-expanded="false" aria-controls="nx-panel">N<span class="nx-unread" aria-hidden="true"></span></button>`;
  document.body.append(root);
- const $=id=>root.querySelector('#'+id),bubble=$('nx-bubble'),panel=$('nx-panel'),messages=$('nx-messages'),input=$('nx-input'),send=$('nx-send');let busy=false,historyStarted=false;
+ const $=id=>root.querySelector('#'+id),bubble=$('nx-bubble'),panel=$('nx-panel'),messages=$('nx-messages'),input=$('nx-input'),send=$('nx-send');let busy=false,historyStarted=false,conversation=[];
  const isValidUrl=v=>typeof v==='string'&&(v.startsWith('/')&&!v.startsWith('//')||/^https:\/\/[a-z0-9.-]+(?:\/[^\s<>"'`]*)?$/i.test(v));
- function addMessage(value,who,details){const msg=document.createElement('div');msg.className='nx-msg '+(who==='bot'?'nx-bot':'nx-user');msg.textContent=String(value||'');if(details){const source=document.createElement('div');source.className='nx-src';source.textContent=String(details.fuente||'NEXO');if(isValidUrl(details.url)){const a=document.createElement('a');a.href=details.url;a.textContent='Ver información ↗';a.rel='noopener noreferrer';source.append(a)}msg.append(source)}messages.append(msg);messages.scrollTop=messages.scrollHeight;return msg}
- function open(){panel.hidden=false;bubble.setAttribute('aria-expanded','true');bubble.setAttribute('aria-label','Minimizar NEXO');if(!historyStarted){addMessage('¡Hola! Soy NEXO. Puedo orientarte sobre los servicios y trámites del ITHLA usando información institucional autorizada. Si no encuentro una respuesta fiable, te lo diré.', 'bot');historyStarted=true;}input.focus()}
+ function addMessage(value,who,details){const msg=document.createElement('div');msg.className='nx-msg '+(who==='bot'?'nx-bot':'nx-user');msg.textContent=String(value||'');if(details){const source=document.createElement('div');source.className='nx-src';source.textContent=String(details.modo==='ia'?'NEXO AI · respuesta generada':(details.fuente||'NEXO · orientación'));if(isValidUrl(details.url)){const a=document.createElement('a');a.href=details.url;a.textContent='Ver información ↗';a.rel='noopener noreferrer';source.append(a)}const links=Array.isArray(details.fuentes)?details.fuentes:[];for(const ref of links.slice(0,2)){if(isValidUrl(ref.url)){const a=document.createElement('a');a.href=ref.url;a.textContent=String(ref.fuente||'Fuente');a.rel='noopener noreferrer';source.append(a)}}if(details.aviso){const note=document.createElement('div');note.textContent=String(details.aviso);source.append(note)}msg.append(source)}messages.append(msg);messages.scrollTop=messages.scrollHeight;return msg}
+ function open(){panel.hidden=false;bubble.setAttribute('aria-expanded','true');bubble.setAttribute('aria-label','Minimizar NEXO');if(!historyStarted){addMessage('¡Hola! Soy NEXO AI, tu asistente virtual del ITHLA. Puedes conversar conmigo y hacer preguntas de seguimiento. Para trámites, me baso en información institucional publicada; si algo no está confirmado, te lo diré.', 'bot');historyStarted=true;}input.focus()}
  function close(){panel.hidden=true;bubble.setAttribute('aria-expanded','false');bubble.setAttribute('aria-label','Abrir NEXO');bubble.focus()}
- bubble.addEventListener('click',()=>panel.hidden?open():close());$('nx-min').addEventListener('click',close);$('nx-close').addEventListener('click',()=>{close();messages.replaceChildren();historyStarted=false;});
+ bubble.addEventListener('click',()=>panel.hidden?open():close());$('nx-min').addEventListener('click',close);$('nx-close').addEventListener('click',()=>{close();messages.replaceChildren();historyStarted=false;conversation=[];});
  panel.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();close()}});
- async function question(q){q=String(q||'').trim();if(busy||q.length<3)return;addMessage(q,'user');input.value='';const wait=addMessage('Buscando información institucional…','bot');busy=true;send.disabled=true;
-  try{const r=await fetch('/api/public?action=nexo&q='+encodeURIComponent(q),{cache:'no-store',headers:{Accept:'application/json'}});const result=await r.json();if(!r.ok||!result?.data)throw Error('No se pudo consultar la información.');wait.remove();addMessage(result.data.respuesta||'No encontré información suficiente.','bot',{fuente:result.data.fuente,url:result.data.url});}
-  catch{wait.remove();addMessage('No tengo acceso a la base de orientación por ahora. Puedes consultar al departamento correspondiente o volver a intentarlo más tarde.','bot')}
-  finally{busy=false;send.disabled=false;input.focus()}}
+ async function question(q){
+  q=String(q||'').trim();if(busy||q.length<3||q.length>420)return;
+  addMessage(q,'user');input.value='';const wait=addMessage('NEXO está pensando…','bot');busy=true;send.disabled=true;
+  try{
+    const r=await fetch('/api/public',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json',Accept:'application/json'},
+      body:JSON.stringify({action:'nexo-chat',message:q,history:conversation.slice(-8)})});
+    const result=await r.json();if(!r.ok||!result?.data)throw Error('No se pudo consultar la información.');
+    wait.remove();const d=result.data;
+    addMessage(d.respuesta||'No encontré información suficiente.','bot',{modo:d.modo,fuente:d.fuente,url:d.url,fuentes:d.fuentes,aviso:d.aviso});
+    if(d.modo==='ia'||d.modo==='orientacion'){
+      conversation.push({role:'user',content:q},{role:'assistant',content:String(d.respuesta||'').slice(0,420)});
+      conversation=conversation.slice(-8);
+    }
+  }catch{
+    wait.remove();addMessage('No pude conectarme con NEXO ahora. Intenta de nuevo más tarde o consulta al departamento correspondiente.','bot');
+  }finally{busy=false;send.disabled=false;input.focus()}
+ }
  $('nx-form').addEventListener('submit',e=>{e.preventDefault();question(input.value)});
  root.querySelectorAll('[data-question]').forEach(b=>b.addEventListener('click',()=>question(b.dataset.question)));
  window.NEXO={open,close};
