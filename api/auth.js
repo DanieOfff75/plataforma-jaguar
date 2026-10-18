@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { getClients } from '../lib/_admin.js';
 import { getInstitution } from './institution.js';
+import { createSession,assertSession,revokeSession } from '../lib/ithla_session.js';
 
 function validEmail(x){
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x||'').trim());
@@ -24,11 +25,12 @@ async function login(req,res){
   if(ue||!u?.user?.email) return res.status(401).json({ok:false,error:'La cuenta no está disponible.'});
   const {data,error}=await client.auth.signInWithPassword({email:u.user.email,password});
   if(error) return res.status(401).json({ok:false,error:'Usuario o contraseña incorrectos.'});
-  return res.status(200).json({ok:true,session:data.session,user:data.user,profile});
+  const protectedSession=await createSession(admin,data.user.id,profile.rol,'jaguar');
+  return res.status(200).json({ok:true,session:data.session,user:data.user,profile,protected_session:protectedSession});
 }
 
 async function recovery(req,res){
-  const {identificador,redirectTo}=req.body||{};
+  const {identificador}=req.body||{};
   const alias=String(identificador||'').trim().toLowerCase();
   if(!alias) return res.status(400).json({ok:false,error:'Escribe tu usuario institucional.'});
   const url=process.env.SUPABASE_URL;
@@ -41,7 +43,7 @@ async function recovery(req,res){
   if(!p||!p.activo||!p.correo_recuperacion) return res.status(200).json({ok:true,message:'Si el usuario existe y tiene correo de recuperación configurado, recibirás las instrucciones.'});
   const {data:u,error:ue}=await admin.auth.admin.getUserById(p.id);
   if(ue||!u?.user?.email) throw ue||new Error('Cuenta no disponible.');
-  const institution=await getInstitution(admin); const domain=String(institution.dominio_institucional||'ithla.edu.mx').replace(/^@/,'').trim(); const {error}=await client.auth.resetPasswordForEmail(u.user.email,{redirectTo:redirectTo||process.env.PASSWORD_RESET_REDIRECT_URL||`https://${domain}/`});
+  const institution=await getInstitution(admin); const domain=String(institution.dominio_institucional||'ithla.edu.mx').replace(/^@/,'').trim(); const {error}=await client.auth.resetPasswordForEmail(u.user.email,{redirectTo:process.env.PASSWORD_RESET_REDIRECT_URL||`https://${domain}/sistema.html`});
   if(error) throw error;
   return res.status(200).json({ok:true,message:'Se enviaron las instrucciones al correo de recuperación registrado.'});
 }
@@ -142,6 +144,7 @@ async function firstAccess(req,res){
     ok:true,
     message:'Acceso configurado correctamente.',
     session:reauth.session,
+    protected_session:await createSession(adminClient,user.id,profile.rol,'jaguar'),
     user:updated?.user||user
   });
 }
@@ -174,6 +177,7 @@ async function getMe(req,res) {
     if (profileError) return res.status(500).json({ ok:false, error:profileError.message });
     if (!profile) return res.status(403).json({ ok:false, error:'Tu cuenta no tiene un perfil en ITHLA.' });
     if (!profile.activo) return res.status(403).json({ ok:false, error:'Tu perfil está desactivado.' });
+    await assertSession(req,admin,user.id,profile.rol,'jaguar');
 
     let alumno = null;
     if (profile.rol === 'alumno') {
@@ -209,7 +213,7 @@ async function getMe(req,res) {
     }
     return res.status(200).json({ ok:true, user, profile, ...(alumno || {}) , suspendido: !!(alumno?.suspension_fecha || alumno?.suspension_motivo) });
   } catch (e) {
-    return res.status(500).json({ ok:false, error:e.message || 'Error interno.' });
+    return res.status(e?.status||500).json({ ok:false, error:e.message || 'Error interno.' });
   }
 }
 
@@ -229,6 +233,7 @@ export default async function handler(req,res){
       const mode=String(req.query?.mode||'').trim().toLowerCase();
       if(mode==='config') return publicConfig(req,res);
       if(mode==='me') return await getMe(req,res);
+      if(mode==='heartbeat'){const {token,adminClient}=getClients(req);const {data:{user}}=await adminClient.auth.getUser(token);if(!user)return res.status(401).json({ok:false,error:'Sesión inválida.'});const {data:p}=await adminClient.from('perfiles').select('rol,activo').eq('id',user.id).single();if(!p?.activo)return res.status(403).json({ok:false,error:'Perfil inactivo.'});await assertSession(req,adminClient,user.id,p.rol,'jaguar');return res.status(200).json({ok:true});}
       return res.status(400).json({ok:false,error:'Modo de consulta no válido.'});
     }
     if(req.method!=='POST') return res.status(405).json({ok:false,error:'Método no permitido.'});
@@ -236,6 +241,7 @@ export default async function handler(req,res){
     if(action==='login') return await login(req,res);
     if(action==='recovery') return await recovery(req,res);
     if(action==='first_access') return await firstAccess(req,res);
+    if(action==='logout'){const {token,adminClient}=getClients(req);const {data:{user}}=await adminClient.auth.getUser(token);if(user)await revokeSession(req,adminClient,user.id);return res.status(200).json({ok:true});}
     return res.status(400).json({ok:false,error:'Acción de autenticación no válida.'});
   }catch(e){
     return res.status(e?.status||500).json({ok:false,error:e?.message||'Error de autenticación.'});

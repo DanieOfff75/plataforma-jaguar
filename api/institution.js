@@ -28,7 +28,11 @@ const DEFAULTS={
 export async function getInstitution(admin){
   const {data,error}=await admin.from('institucion_config').select('*').eq('id',1).maybeSingle();
   if(error && !/does not exist|schema cache/i.test(error.message||'')) throw error;
-  return {...DEFAULTS,...(data||{})};
+  // Fuente principal Jaguar 6.0: configuración central aprobada por Dirección.
+  // Las columnas heredadas se conservan para compatibilidad con documentos anteriores.
+  const central=await admin.from('ithla_config').select('valor').eq('clave','institucion').maybeSingle();
+  if(central.error && !/does not exist|schema cache|relation/i.test(central.error.message||''))throw central.error;
+  return {...DEFAULTS,...(data||{}),...(central.data?.valor||{})};
 }
 
 function clean(v,max=300){return String(v??'').trim().slice(0,max);}
@@ -72,6 +76,8 @@ export default async function handler(req,res){
       return res.status(200).json({ok:true,message:'Firma del encargado guardada de forma privada.'});
     }
     if(profile.rol!=='direccion_escolar') return res.status(403).json({ok:false,error:'Solo Dirección Escolar puede modificar los datos de la institución.'});
+    const central=await adminClient.from('ithla_config').select('revision').eq('clave','institucion').maybeSingle();
+    if(!central.error && central.data)return res.status(409).json({ok:false,error:'La identidad institucional ahora se modifica mediante propuestas del Centro de Control y autorización de Dirección Escolar.'});
     const data={
       nombre_institucion:clean(b.nombre_institucion,180), siglas:clean(b.siglas,30).toUpperCase(), cct:clean(b.cct,30).toUpperCase(),
       tipo:clean(b.tipo,60), clave_rvoe:clean(b.clave_rvoe,80), zona_escolar:clean(b.zona_escolar,30), sector:clean(b.sector,30),

@@ -9,13 +9,15 @@ import classroom from '../routes/classroom.js';
 import googleClassroom from '../routes/google-classroom.js';
 import googleOAuth from '../routes/google-oauth.js';
 import teacher from '../routes/teacher.js';
+import ithlaPublic from '../routes/ithla-public.js';
 
 const handlers=Object.freeze({
   'academic-tools':academicTools,
   classroom,
   'google-classroom':googleClassroom,
   'google-oauth':googleOAuth,
-  teacher
+  teacher,
+  'ithla-public':ithlaPublic
 });
 
 export default async function handler(req,res){

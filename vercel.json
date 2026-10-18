@@ -20,6 +20,10 @@
     {
       "source": "/api/teacher",
       "destination": "/api/router?__jaguar_route=teacher"
+    },
+    {
+      "source": "/api/public",
+      "destination": "/api/router?__jaguar_route=ithla-public"
     }
   ]
 }
