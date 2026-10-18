@@ -1,3 +1,4 @@
+import {sortInstitutionalPeople} from '../lib/institutional_names.js';
 import {renderBoletaVisual15} from '../lib/boleta_visual15.js';
 import {buildStudentCredentialPDF} from '../lib/credencial_escolar_pdf.js';
 import {readCredentialPhoto,saveCredentialPhoto} from '../lib/credential_photo.js';
@@ -857,7 +858,7 @@ async function dailyGradebookPdf(admin,snapshotId,req){
   const {data:students,error:stErr}=await admin.from('alumnos').select('id,nombre_completo,matricula').eq('grupo_id',gm.grupo_id).eq('activo',true).order('nombre_completo'); if(stErr) throw stErr;
   const {data:inst}=await admin.from('institucion_config').select('*').limit(1).maybeSingle();
   const bytes=await buildDailyGradebookPdf({
-    institution:inst||{},snapshot:snap,group:g,subject:m,teacher:snap.docentes||{},students:students||[],state
+    institution:inst||{},snapshot:snap,group:g,subject:m,teacher:snap.docentes||{},students:sortInstitutionalPeople(students||[]),state
   });
   return {pdf_base64:Buffer.from(bytes).toString('base64'),filename:`JAGUAR-Bitacora-${safe(g.clave||'grupo')}-${safe(m.nombre||'materia')}-${snap.fecha_clase}-v${snap.version}.pdf`};
 }
@@ -876,7 +877,7 @@ export default async function handler(req,res){try{if(req.method!=='POST')return
       if(Number(t?.id)!==Number(rev.docente_id))return res.status(403).json({ok:false,error:'Este oficio no corresponde a tu materia.'});
     }else if(!allowGradeExplorer(profile.rol))return res.status(403).json({ok:false,error:'No autorizado para ver este oficio.'});
     const [bq,gmq,tq]=await Promise.all([
-      adminClient.from('jaguar_cargas_grupo').select('id,grupo_id,periodo_id,actor_nombre,actor_rol,firma_departamento_path').eq('id',rev.carga_id).maybeSingle(),
+      adminClient.from('jaguar_cargas_grupo').select('id,grupo_id,periodo_id,actor_nombre,actor_rol,firma_departamento_path,creado_at').eq('id',rev.carga_id).maybeSingle(),
       adminClient.from('grupo_materias').select('id,grupo_id,materias(nombre),grupos(clave)').eq('id',rev.grupo_materia_id).maybeSingle(),
       adminClient.from('docentes').select('id,nombre_completo').eq('id',rev.docente_id).maybeSingle()
     ]);

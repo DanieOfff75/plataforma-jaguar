@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {planRoomAllocation} from '../lib/room_auto_allocation.js';
+const file=n=>readFileSync(new URL('../'+n,import.meta.url),'utf8');
+const ddl=file('sql/01_REPARAR_SOLO_BANCO_EXAMENES.sql');
+const routes=file('routes/academic-tools.js');
+const off=file('lib/grade_batch_office_pdf.js');
+const api=file('api/reports.js');
+for(const table of ['jaguar_examenes','jaguar_preguntas']){
+ assert.match(ddl,new RegExp(`CREATE TABLE IF NOT EXISTS public\\.${table}`));
+ assert.match(routes,new RegExp(`db\\.from\\('${table}'\\)`));
+}
+assert.match(ddl,/ENABLE ROW LEVEL SECURITY/);
+assert.match(ddl,/GRANT SELECT,INSERT,UPDATE ON TABLE .* TO service_role/);
+assert.doesNotMatch(ddl,/\$\w*\$/);
+assert.match(off,/OFICIO DE REMISIÓN DE CALIFICACIONES/);
+assert.match(off,/ANEXO DE CALIFICACIONES/);
+assert.match(off,/accepted\?'Aceptación registrada en Jaguar/);
+assert.match(off,/accepted\?revision\.firma_docente_path:null/);
+assert.match(off,/Math\.ceil\(rows\.length\/20\)/);
+assert.match(api,/firma_departamento_path,creado_at/);
+const groups=Array.from({length:18},(_,i)=>({id:i+1,clave:'G'+(i+1),turno:i<9?'matutino':'vespertino',activo:true}));
+const ordinary=Array.from({length:10},(_,i)=>({id:i+1,nombre:`AULA ${i+1}`,tipo_espacio:'aula',capacidad:40,activo:true}));
+const special=[{id:11,nombre:'AUDITORIO',tipo_espacio:'auditorio',capacidad:500,activo:true},{id:12,nombre:'LABORATORIO',tipo_espacio:'laboratorio',capacidad:50,activo:true},{id:13,nombre:'OFICINA',tipo_espacio:'oficina',capacidad:10,activo:true}];
+const schedule=groups.map(g=>({id:g.id,grupo_materias:{grupo_id:g.id},dia_semana:1,hora_inicio:g.id<=9?'07:00':'14:00',hora_fin:g.id<=9?'12:00':'19:00',aula:null}));
+const plan=planRoomAllocation({groups,rooms:[...ordinary,...special],schedule,group_counts:Object.fromEntries(groups.map(g=>[g.id,38])),seed:2026});
+assert.equal(plan.pairs.length,18);
+assert.ok(plan.pairs.every(p=>p.aula_id>=1&&p.aula_id<=10));
+const occ={};for(const r of plan.pairs)(occ[r.aula_id]??=[]).push(r.turno);
+assert.ok(Object.values(occ).every(v=>v.length<=2&&new Set(v).size===v.length));
+console.log('PASS: SQL banco, estructura de oficio, anexo, estado de firmas y asignación 18 grupos sólo a aulas.');
