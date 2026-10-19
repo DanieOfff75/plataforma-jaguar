@@ -36,7 +36,7 @@ export default async function handler(req,res){
     if(error)throw error;
     const settings={...defaults,...Object.fromEntries((data||[]).map(r=>[r.clave,r.valor]))};
     if(!(data||[]).some(r=>r.clave==='admisiones'))settings.admisiones={}; // No inferir convocatorias no publicadas.
-    let role=null;
+    let role=null,actorId=null;
     const bearer=/^Bearer\s+(.+)$/i.exec(String(req.headers?.authorization||''));
     if(bearer){
       const {data:{user},error:authError}=await db.auth.getUser(bearer[1].trim());
@@ -44,9 +44,9 @@ export default async function handler(req,res){
       const {data:profile,error:profileError}=await db.from('perfiles').select('rol,activo').eq('id',user.id).maybeSingle();
       if(profileError||!profile?.activo)return res.status(403).json({ok:false,error:'Perfil institucional no disponible.'});
       try{await assertSession(req,db,user.id,profile.rol,'jaguar');}catch{return res.status(401).json({ok:false,error:'La sesión protegida expiró.'});}
-      role=profile.rol;
+      role=profile.rol;actorId=user.id;
     }
-    const result=await replyNexoAI({message:req.body?.message,history:req.body?.history,settings,req,trustedContext:nexoTrustedContext('jaguar',role),
+    const result=await replyNexoAI({message:req.body?.message,history:req.body?.history,settings,req,trustedContext:nexoTrustedContext('jaguar',role),verifiedActorId:actorId,
       acquireQuota:async hash=>{
         const quota=await db.rpc('ithla_nexo_ai_take_quota',{p_client_hash:hash});
         if(quota.error)throw quota.error;
