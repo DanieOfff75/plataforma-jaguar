@@ -1,0 +1,15 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {publicSiteQuickAnswer,publicPortalFacts} from '../lib/nexo_public_v7.js';
+const portal={institucion:{siglas:'ITHLA'},portal:{directorio_publico:[{publicado:true,nombre:'Persona Pública',departamento:'Control Escolar',cargo:'Encargado'},{publicado:false,nombre:'Persona Privada',departamento:'Dirección'}],avisos:[{titulo:'Aviso oficial',fecha:'2026-10-20'}],eventos:[]},admisiones:{estado:'cerrado'}};
+const visitor={aplicacion:'jaguar',session_verificada:false,rol_verificado:'visitante'};
+test('publica sólo responsables explícitamente autorizados',()=>{const p=publicPortalFacts(portal);assert.equal(p.publicacion.responsables.length,1);assert.doesNotMatch(JSON.stringify(p),/Persona Privada/)});
+test('sin responsables públicos no inventa nombres',()=>{const r=publicSiteQuickAnswer('¿Quién es el encargado de Control Escolar?',{portal:{}},visitor);assert.match(r.respuesta,/todavía no tiene nombres|No hay un responsable/)});
+test('directorio usa la fuente publicada, no el perfil del consultante',()=>{const r=publicSiteQuickAnswer('¿Quién es el encargado de Control Escolar?',portal,visitor);assert.match(r.respuesta,/Persona Pública/);assert.doesNotMatch(r.respuesta,/Persona Privada/)});
+test('citas no promete confirmación sin número de referencia',()=>{const r=publicSiteQuickAnswer('¿Cómo agendo una cita?',portal,visitor);assert.match(r.respuesta,/referencia de confirmación/);assert.match(r.respuesta,/#citas/)});
+test('noticias públicas se basan en publicaciones existentes',()=>{const r=publicSiteQuickAnswer('¿Qué noticias hay?',portal,visitor);assert.match(r.respuesta,/Aviso oficial/)});
+test('rol autenticado no usa atajo de público',()=>assert.equal(publicSiteQuickAnswer('¿Cómo agendo una cita?',portal,{aplicacion:'jaguar',session_verificada:true}),null));
+test('portal tiene navegación seccionada y componentes',()=>{const h=readFileSync(new URL('../index.html',import.meta.url),'utf8');for(const id of ['avisos','calendario','departamentos','citas','admisiones','nexo'])assert.match(h,new RegExp(`id="${id}"`));assert.match(h,/id="appointmentForm"/);assert.match(h,/jaguar-public-v7\.js/)});
+test('la API usa confirmación SQL y no expone un listado de reservas',()=>{const code=readFileSync(new URL('../routes/ithla-public.js',import.meta.url),'utf8');assert.match(code,/ithla_reservar_cita_publica/);assert.doesNotMatch(code,/from\('ithla_cita_solicitudes'\)/);assert.match(code,/directorio_publico/);assert.match(code,/citas_publicas_activas/)});
+test('citas son atómicas en BD y RLS habilitado',()=>{const sql=readFileSync(new URL('../sql/ITHLA_V7_CITAS_PUBLICAS.sql',import.meta.url),'utf8');assert.match(sql,/for update/);assert.match(sql,/enable row level security/);assert.match(sql,/revoke all/)});
