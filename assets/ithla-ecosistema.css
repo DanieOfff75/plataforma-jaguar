@@ -59,3 +59,24 @@ body.eco-control{--navy:var(--eco-navy);--night:#071d32;--gold:var(--eco-gold);-
 .eco-control .sidebar .nav button:hover,.eco-control .sidebar .nav button.active{background:#d4af3720!important;color:#f2e4bd!important}
 /* Panel accesible, y sin movimientos para usuarios que los deshabilitan */
 @media(max-width:640px){.eco-admisiones.eco-closed #eco-closed{margin:22px 10px!important;width:calc(100% - 20px)}}
+
+/* Jaguar Premium 4.0: adaptación Android y microinteracciones ligeras; no altera documentos impresos. */
+@media(prefers-reduced-motion:no-preference){
+ body:is(.eco-public,.eco-admisiones,.eco-admisiones-admin,.eco-control) :is(.card,.glass,.row-card,.infoCard,.login){transition:box-shadow .2s ease,transform .2s ease,border-color .2s ease}
+ @media(hover:hover){body:is(.eco-public,.eco-admisiones,.eco-admisiones-admin,.eco-control) :is(.card,.row-card,.infoCard):hover{transform:translateY(-2px);box-shadow:0 15px 35px #1230501b!important;border-color:#c8d5e0!important}}
+}
+@media(max-width:767px){
+ body:is(.eco-public,.eco-admisiones,.eco-admisiones-admin,.eco-control){overflow-x:hidden;-webkit-text-size-adjust:100%}
+ body:is(.eco-public,.eco-admisiones,.eco-admisiones-admin,.eco-control) :is(input,textarea,select){font-size:16px!important;max-width:100%;min-width:0}
+ body:is(.eco-public,.eco-admisiones,.eco-admisiones-admin,.eco-control) :is(button,[role=button],.action){min-height:43px;touch-action:manipulation}
+ body:is(.eco-admisiones,.eco-admisiones-admin,.eco-control) :is(.grid,.grid3,.form-grid){min-width:0}
+ body:is(.eco-admisiones,.eco-admisiones-admin,.eco-control) :is(table,.table-responsive){max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+ body.eco-control .sidebar .nav{scroll-snap-type:x proximity;scrollbar-width:thin}
+ body.eco-control .sidebar .nav button{scroll-snap-align:start;min-height:43px}
+ body.eco-control .page-head h1{font-size:clamp(23px,5.5vw,30px)}
+ body.eco-control .top{padding:14px 17px}
+ body.eco-control .wrap{padding:18px 14px 95px}
+ body.eco-admisiones-admin{padding:12px!important}
+ body.eco-admisiones-admin .glass{border-radius:16px!important}
+ body.eco-admisiones :is(.glass,.glass-emerald-pro){max-width:100%;min-width:0}
+}

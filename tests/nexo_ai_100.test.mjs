@@ -12,13 +12,13 @@ test('envía preguntas naturales al modelo, mantiene contexto y referencias sin 
  let remote,checked=0;
  const output=await replyNexoAI({message:'¿Y qué sigue después?',history:[{role:'user',content:'¿Cómo solicito mi constancia?'},{role:'assistant',content:'Consulta al departamento responsable.'}],settings,req,env,acquireQuota:async h=>{checked++;assert.match(h,/^[a-f0-9]{64}$/);return true;},fetchImpl:async (url,opts)=>{remote={url,opts};return response('Debes acudir a Control Escolar.');}});
  assert.equal(output.modo,'ia');assert.equal(output.respuesta,'Debes acudir a Control Escolar.');assert.equal(checked,1);
- assert.deepEqual(output.fuentes[0],{fuente:'Reglamento institucional',url:'/sistema.html'});
+ assert.ok(!output.fuentes.some(f=>f.fuente==='Reglamento institucional'),'Un visitante no debe recibir fichas administrativas sin aprobación pública');
  assert.equal(remote.url,'https://api.groq.com/openai/v1/chat/completions');
  assert.equal(remote.opts.headers.Authorization,'Bearer dummy-value-only');
  const body=JSON.parse(remote.opts.body);assert.equal(body.model,'openai/gpt-oss-20b');
  assert.equal(body.messages.at(-1).content,'¿Y qué sigue después?');
  assert.equal(body.messages[1].role,'user');
- assert.ok(body.messages[0].content.includes('Control Escolar'));
+ assert.ok(body.messages[0].content.includes('visitante'));
  assert.equal(body.reasoning_effort,'low');
  assert.ok(!JSON.stringify(output).includes('dummy-value-only'));
 });
