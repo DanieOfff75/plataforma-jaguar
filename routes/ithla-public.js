@@ -5,6 +5,7 @@ import { replyNexoAI } from '../lib/nexo_ai.js';
 import { requireRoles } from '../lib/_admin.js';
 import { assertSession } from '../lib/ithla_session.js';
 import { nexoTrustedContext } from '../lib/nexo_context.js';
+import { publicEditorial, adminEditorialAction, canManagePublic } from '../lib/ithla_public_v8.js';
 const defaults={institucion:{siglas:'ITHLA',nombre_institucion:'Instituto Tecnológico e Histórico Latinoamericano',lema:'Scientia, Humanitas et Progressum',color_primary:'#1B365D',color_accent:'#D4AF37',logo_url:'/assets/ithla-logo.png',url_admisiones:'https://registro-escolar-virid.vercel.app/'},portal:{titulo:'Instituto Tecnológico e Histórico Latinoamericano',subtitulo:'Ciencia, Humanidad y Progreso',avisos:[],eventos:[],enlaces:[],directorio_publico:[]},admisiones:{estado:'cerrado'},nexo:{activo:true,preguntas:[]}};
 function selectPublic(config){const i=config.institucion||{},p=config.portal||{},a=config.admisiones||{};return {
  institucion:Object.fromEntries(['siglas','nombre_institucion','lema','color_primary','color_secondary','color_accent','logo_url','url_admisiones','telefono','direccion','entidad'].map(k=>[k,i[k]??defaults.institucion[k]??null])),
@@ -69,6 +70,14 @@ export default async function handler(req,res){
  if(!['GET','POST'].includes(req.method))return res.status(405).json({ok:false,error:'Método no permitido.'});
  try{
   if(['appointment-slots','book-appointment'].includes(String(req.query?.action||'')))return await appointments(req,res);
+  const action=String(req.method==='GET'?req.query?.action:req.body?.action||'');
+  if(action.startsWith('admin-portal-')){
+    const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','archivo_escolar','recursos_monetarios']);
+    if(!canManagePublic(profile.rol))return res.status(403).json({ok:false,error:'Rol no autorizado.'});
+    if(req.method==='POST'&&!originOK(req))return res.status(403).json({ok:false,error:'Origen no autorizado.'});
+    const data=await adminEditorialAction(adminClient,user,profile,action,req.body||{});
+    res.setHeader('Cache-Control','no-store');return res.status(200).json({ok:true,data});
+  }
   if(req.method==='POST'&&req.body?.action==='nexo-chat'){
     // Ruta pública independiente de operaciones de Dirección. Nunca lee expedientes.
     const origin=String(req.headers?.origin||'');
@@ -135,6 +144,18 @@ export default async function handler(req,res){
     if(settings.nexo?.activo===false)return res.status(503).json({ok:false,error:'NEXO está temporalmente desactivado.'});
     return res.status(200).json({ok:true,data:answerNexo(String(req.query?.q||''),settings.nexo?.preguntas,settings.nexo?.mensaje_no_encontrado)});
   }
-  return res.status(200).json({ok:true,data:selectPublic(settings)});
- }catch(e){const status=[401,403].includes(e?.status)?e.status:503;return res.status(status).json({ok:false,error:status===503?'El contenido institucional aún no está configurado.':(e.message||'Acceso no autorizado.')});}
+  const page=selectPublic(settings);
+  // Fuente única: avisos reales, eventos administrados en Jaguar, responsables actuales autorizados.
+  const content=await publicEditorial(db);
+  // Compatibilidad con publicaciones que ya estaban visibles en V7.
+  // No borra ni vuelve públicos avisos internos: sólo migra lecturas del JSON que YA era público.
+  const oldNews=Array.isArray(settings.portal?.avisos)?settings.portal.avisos:[];
+  const oldEvents=Array.isArray(settings.portal?.eventos)?settings.portal.eventos:[];
+  const seenNews=new Set(content.avisos.map(x=>String(x.titulo||'').toLocaleLowerCase('es').trim()));
+  page.portal.avisos=[...content.avisos,...oldNews.filter(x=>x&&typeof x==='object'&&typeof x.titulo==='string'&&!seenNews.has(x.titulo.toLocaleLowerCase('es').trim())).slice(0,20).map(x=>({titulo:String(x.titulo).slice(0,180),contenido:String(x.contenido||x.descripcion||'').slice(0,10000),descripcion:String(x.descripcion||x.contenido||'').slice(0,300),fecha_publicacion:x.fecha||x.fecha_publicacion||null,responsable_nombre:'Publicación institucional anterior'}))];
+  const seenEvents=new Set(content.eventos.map(x=>String(x.titulo||'').toLowerCase()+'|'+String(x.fecha_inicio||'')));
+  page.portal.eventos=[...content.eventos,...oldEvents.filter(x=>x&&typeof x==='object'&&typeof x.titulo==='string'&&!seenEvents.has(String(x.titulo).toLowerCase()+'|'+String(x.fecha_inicio||x.fecha||''))).slice(0,20).map(x=>({titulo:String(x.titulo).slice(0,180),descripcion:String(x.descripcion||'').slice(0,1000),fecha_inicio:x.fecha_inicio||x.fecha||null}))];
+  page.portal.directorio_publico=content.directorio_publico;
+  return res.status(200).json({ok:true,data:page});
+ }catch(e){const status=[400,401,403,404,409,503].includes(e?.status)?e.status:503;console.error('ithla-public',req.method,req.query?.action||req.body?.action||'portal',e?.name||'Error');return res.status(status).json({ok:false,error:status===503?'No se pudo consultar el contenido institucional. Comprueba la migración V8 y la conexión a Supabase.':(e.message||'Operación no autorizada.')});}
 }

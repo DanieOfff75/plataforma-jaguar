@@ -84,11 +84,17 @@
    const request=endpoint==='/api/public'?{action:'nexo-chat',message:q,history:history.slice(-8)}:{message:q,history:history.slice(-8)};
    currentAbort=new AbortController();
    const response=await fetch(endpoint,{method:'POST',headers,cache:'no-store',credentials:'same-origin',signal:currentAbort.signal,body:JSON.stringify(request)});
-   const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(response.status===401?'SESSION_REQUIRED':payload.error||'CONNECTION');
+   const payload=await response.json().catch(()=>({}));if(!response.ok){const error=new Error(response.status===401?'SESSION_REQUIRED':response.status===403?'FORBIDDEN':response.status===429?'QUOTA':response.status>=500?'SERVICE':'REQUEST');error.httpStatus=response.status;throw error;}
    const data=payload?.data||payload;if(!data.respuesta)throw new Error('EMPTY');
    pending.remove();add(data.respuesta,'bot',data);mode(data.modo==='ia'?'done':'idle');
    if(['ia','manual','orientacion'].includes(data.modo)){history.push({role:'user',content:q},{role:'assistant',content:String(data.respuesta).slice(0,420)});history=history.slice(-8);}
-  }catch(error){pending.remove();add(error.message==='SESSION_REQUIRED'?'🔐 Necesito una sesión institucional vigente para darte orientación de este panel. Inicia sesión de nuevo y vuelve a intentarlo.':'Uy, no pude completar la consulta en este momento. 😅 Inténtalo de nuevo en unos segundos.','bot');mode('error');}
+  }catch(error){pending.remove();
+   const states={SESSION_REQUIRED:'🔐 Tu sesión institucional terminó. Vuelve a ingresar para continuar.',FORBIDDEN:'🛡️ Tu perfil no tiene autorización para consultar NEXO desde este panel.',QUOTA:'⏳ Llegamos al límite temporal de solicitudes. Podrás intentar nuevamente cuando se restablezca la cuota.',SERVICE:'⚠️ NEXO no pudo completar la consulta en el servidor institucional. Verifica el estado de /api/public en Red/Network; si persiste, consulta los registros de Vercel.',EMPTY:'🧭 El servidor respondió sin texto utilizable. No voy a inventar una respuesta.',REQUEST:'🧭 El servidor rechazó la solicitud. Intenta iniciar otra conversación.'};
+   const explanation=states[error.message]||(error.name==='AbortError'?'⏳ La solicitud tardó demasiado. Inténtalo de nuevo más tarde.':'📡 No logramos conectar con el servidor. Comprueba tu conexión y vuelve a intentarlo.');
+   add(explanation,'bot');mode('error');
+   // Se registra código de estado, nunca tokens, historial ni contenido de la respuesta.
+   console.warn('NEXO: fallo de solicitud',{tipo:error.message||error.name,status:error.httpStatus||null});
+  }
   finally{currentAbort=null;busy=false;send.disabled=false;doneTimer=setTimeout(()=>mode('idle'),2400);if(!panel.hidden)input.focus();}
  }
  $('nx-form').addEventListener('submit',e=>{e.preventDefault();ask(input.value);});

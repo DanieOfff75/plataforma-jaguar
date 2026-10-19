@@ -66,6 +66,8 @@ const noticeWriters = [
   'servicios_estudiantiles',
   'prefectura',
   'coordinacion_academica',
+  'archivo_escolar',
+  'recursos_monetarios',
   'docente'
 ];
 
@@ -3284,7 +3286,7 @@ async function getResource(
       respMap=new Map((rp||[]).map(x=>{const r=names.get(String(x.id));return [String(x.id),{...x,nombre_completo:r?.nombre_responsable||x.nombre_completo,cargo:r?.cargo||null}]}));
     }
     return noticeRows.filter(
-      notice =>
+      notice => notice.destino_publicacion!=='publica' && (
         !Array.isArray(notice.audiencia) ||
         notice.audiencia.length === 0 ||
         notice.audiencia.includes(profile.rol) ||
@@ -3292,7 +3294,7 @@ async function getResource(
           profile.rol === 'control'
             ? 'control_escolar'
             : profile.rol
-        )
+        ))
     ).map(notice=>({...notice,responsable:respMap.get(String(notice.responsable_id))||null}));
   }
 
@@ -3425,6 +3427,10 @@ async function writeResource(
   }
 
   if (key === 'notices') {
+    const destino=String(clean.destino_publicacion||'plataforma');
+    if(!['plataforma','publica','ambas'].includes(destino))throw Object.assign(new Error('Destino de publicación inválido.'),{status:400});
+    if(profile.rol==='docente'&&destino!=='plataforma')throw Object.assign(new Error('Solo un administrador departamental autorizado publica al público.'),{status:403});
+    clean.destino_publicacion=destino;
     const noticeDept=profile.rol==='docente'?'SD':departmentKeyForRole(profile.rol);
     const responsible=await validateResponsible(admin,clean.responsable_id,user?.role||profile.rol,noticeDept);
     clean.responsable_id=responsible.usuario_id;
@@ -3556,6 +3562,18 @@ async function updateResource(
     for(const k of Object.keys(clean))delete clean[k];
     for(const k of ['nombre','ciclo_escolar','numero_periodo','fecha_inicio','fecha_fin'])clean[k]=normalized[k];
     // El estado y la marca "periodo actual" sólo cambian por la acción autorizada.
+  }
+
+  if (key === 'notices') {
+    const {data:before,error:be}=await admin.from('avisos').select('creado_por,publicado_por').eq('id',id).maybeSingle();
+    if(be||!before)throw Object.assign(new Error('Aviso no encontrado.'),{status:404});
+    if(String(before.creado_por||before.publicado_por||'')!==String(user.id))throw Object.assign(new Error('Solo puedes modificar avisos que tú publicaste.'),{status:403});
+    const destino=String(clean.destino_publicacion||'plataforma');
+    if(!['plataforma','publica','ambas'].includes(destino))throw Object.assign(new Error('Destino de publicación inválido.'),{status:400});
+    if(profile.rol==='docente'&&destino!=='plataforma')throw Object.assign(new Error('El docente solamente puede publicar avisos internos.'),{status:403});
+    // Protege responsable y trazabilidad; aquí solo puede editarse el alcance editorial.
+    for(const k of Object.keys(clean))delete clean[k];
+    clean.destino_publicacion=destino;
   }
 
   if (key === 'students') {
