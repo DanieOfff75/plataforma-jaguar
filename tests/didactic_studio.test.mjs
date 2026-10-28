@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {cleanProposals,validExternalLink,validateMaterial,didacticSnapshot,parseNexoJSON} from '../lib/didactic_rules.js';
+const make=(title)=>({titulo:title,enfoque:'trabajo colaborativo',proposito:'resolver un desafío',aprendizaje:'identificar patrones',inicio:'Lluvia de ideas',desarrollo:'Ejercicios colaborativos guiados',cierre:'Socialización y reflexión',evaluacion:'Lista de cotejo',adecuaciones:'Material accesible',recursos:'Libro de texto y pizarra'});
+const options={opciones:[make('Taller'),make('Juego'),make('Proyecto')]};
+test('NEXO ofrece 3 opciones independientes',()=>{const p=cleanProposals(JSON.stringify(options),['https://es.khanacademy.org/']);assert.equal(p.length,3);assert.equal(p[1].titulo,'Juego');assert.deepEqual(p[0].recursos_enlaces,['https://es.khanacademy.org/']);});
+test('bloquea URLs inseguras sin inventar enlaces',()=>{assert.equal(validExternalLink('http://localhost:3000'),null);assert.equal(validExternalLink('https://127.0.0.1/private'),null);assert.equal(validExternalLink('javascript:alert(1)'),null);assert.ok(validExternalLink('https://es.khanacademy.org/'));});
+test('respuesta Markdown JSON se interpreta sin ejecutar HTML',()=>{assert.equal(parseNexoJSON('```json\n'+JSON.stringify(options)+'\n```').opciones.length,3);});
+test('No acepta propuestas incompletas',()=>{assert.throws(()=>cleanProposals(JSON.stringify({opciones:[{titulo:'X'}]})));});
+test('Material sin datos o con CURP rechazado',()=>{assert.throws(()=>validateMaterial({}));assert.throws(()=>validateMaterial({tema:'Ecuaciones',material:'CURP ABCD120101HDFRRS09'}));});
+test('Snapshot deja marca NEXO y conserva etapas escogidas',()=>{const p=make('Plan seleccionado');const snapshot=didacticSnapshot(p,{proveedor:'groq',modelo:'openai/gpt-oss-20b'});assert.match(snapshot.texto,/Elaborada con apoyo de NEXO IA/);assert.match(snapshot.texto,/Ejercicios colaborativos/);assert.equal(snapshot.origen,'nexo_ia');});
+test('Plantilla y ruta de guardado existen en el código',async()=>{const fs=await import('node:fs/promises');const html=await fs.readFile(new URL('../sistema.html',import.meta.url),'utf8');assert.match(html,/centro_didactico/);assert.match(html,/saveTeacherPlanning/);assert.match(html,/ITHLA_Formato_Planeacion_Didactica.docx/);const stat=await fs.stat(new URL('../assets/ITHLA_Formato_Planeacion_Didactica.docx',import.meta.url));assert.ok(stat.size>10_000);});

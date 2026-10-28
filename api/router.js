@@ -9,6 +9,7 @@ import classroom from '../routes/classroom.js';
 import googleClassroom from '../routes/google-classroom.js';
 import googleOAuth from '../routes/google-oauth.js';
 import teacher from '../routes/teacher.js';
+import didacticStudio from '../routes/didactic-studio.js';
 import ithlaPublic from '../routes/ithla-public.js';
 
 const handlers=Object.freeze({
@@ -17,6 +18,7 @@ const handlers=Object.freeze({
   'google-classroom':googleClassroom,
   'google-oauth':googleOAuth,
   teacher,
+  'didactic-studio':didacticStudio,
   'ithla-public':ithlaPublic
 });
 
