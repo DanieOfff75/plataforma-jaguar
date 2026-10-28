@@ -21,3 +21,66 @@
 body .modal .card{background:var(--j-surface)!important;color:var(--j-ink)!important}
 @media(max-width:900px){#app .j-session-counter{font-size:10px;padding:7px 8px}.j-password-wrap input{font-size:16px}}
 @media(prefers-reduced-motion:reduce){.j-session-counter,.j-show-password{transition:none!important}}
+
+/* ITHLA · Jaguar | Reparación de contraste 28/10/2026.
+   Los datos institucionales definen la marca; el modo visual define superficies y tinta.
+   No modifica autenticación, sesiones, permisos ni módulos. */
+html[data-jaguar-mode="light"]{color-scheme:light;--j-bg:#f2f6fb;--j-surface:#fff;--j-surface2:#f5f8fc;--j-ink:#182b43;--j-muted:#51647a;--j-line:#d5dfe9;--j-input:#fff;--j-card:#fff;--j-text:#182b43}
+html[data-jaguar-mode="dark"]{color-scheme:dark;--j-bg:#0b1625;--j-surface:#142438;--j-surface2:#1a3047;--j-ink:#edf4fb;--j-muted:#b5c9db;--j-line:#3c5268;--j-input:#152b42;--j-card:#142438;--j-text:#edf4fb}
+/* Antigua plantilla obligaba body / app / cabeceras oscuras aun en modo claro. */
+html[data-jaguar-mode] body{color:var(--j-ink)!important;background:var(--j-bg)!important}
+html[data-jaguar-mode] body #app.jaguar-v3,
+html[data-jaguar-mode] body #app.jaguar-v3 .main,
+html[data-jaguar-mode] body #app.jaguar-v3 #content{background:var(--j-bg)!important;color:var(--j-ink)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 .main>header{background:var(--j-surface)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #content :is(.card,.glass):not(.jaguar-suspended):not(.jaguar-suspended-strong):not(.jaguar-review-strong):not(.jaguar-review):not(.jaguar-suspended-banner):not(.jaguar-review-banner){background:var(--j-surface)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #content :is(h1,h2,h3,h4,h5,p,td,th,label){color:inherit}
+html[data-jaguar-mode] body #app.jaguar-v3 #content :is(.input,.select,.textarea,input:not([type=checkbox]):not([type=radio]),select,textarea){background:var(--j-input)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 :is(.btn:not(.primary):not(.danger),.chip){color:var(--j-ink)!important;background:var(--j-surface2)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 :is(.btn.primary,.btn.danger),html[data-jaguar-mode] body #app.jaguar-v3 :is(.btn.primary,.btn.danger) *{color:white!important}
+/* Zona lateral y cabeceras con fondo decorativo permanecen oscuras en ambos modos. */
+html[data-jaguar-mode] body #app.jaguar-v3 .side{background:linear-gradient(167deg,#071d32,#0b2943 60%,#102d48)!important;color:#e9f3fc!important}
+html[data-jaguar-mode] body #app.jaguar-v3 .side .nav{color:#c5d7e8!important;background:transparent!important}
+html[data-jaguar-mode] body #app.jaguar-v3 .side .nav:hover{background:rgba(12,135,148,.22)!important;color:white!important}
+html[data-jaguar-mode] body #app.jaguar-v3 .side .nav.active{color:white!important;background:linear-gradient(90deg,#086f82,#07516f)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 .side .side-account,
+html[data-jaguar-mode] body #app.jaguar-v3 .side .side-account.card{background:#17364f!important;color:white!important;border-color:#31546d!important}
+html[data-jaguar-mode] body #app.jaguar-v3 .side .side-account :is(p,span,b,small,label,strong){color:#e1edf8!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #content .j-hero,
+html[data-jaguar-mode] body #app.jaguar-v3 #content #dc-root .dc-hero{color:#fff!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #content .j-hero :is(h1,h2,h3,p,small),
+html[data-jaguar-mode] body #app.jaguar-v3 #content #dc-root .dc-hero :is(h1,h2,h3,p){color:#fff!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #content #dc-root .dc-hero .dc-kicker{color:#ffe0a0!important}
+/* Centro Didáctico tenía superficies blancas fijas y texto del tema oscuro. */
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root{--j-card:var(--j-surface);--j-text:var(--j-ink);color:var(--j-ink)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-panel{background:var(--j-surface)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-panel :is(h3,h4,.dc-label,.dc-tag){color:var(--j-ink)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-panel :is(.dc-help,.dc-empty,.dc-status,.dc-proposal p){color:var(--j-muted)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-empty,
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-proposal{background:var(--j-surface2)!important;border-color:var(--j-line)!important;color:var(--j-ink)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-panel :is(input,select,textarea){background:var(--j-input)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-secondary{background:var(--j-surface2)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-action{background:#087b83!important;color:white!important}
+html[data-jaguar-mode] body #app.jaguar-v3 #dc-root .dc-proposal .dc-badge{color:var(--j-teal)!important}
+/* Login: la tarjeta debe seguir el modo real y no mezclar tinta de un modo con la superficie del otro. */
+html[data-jaguar-mode] body #login{background:linear-gradient(135deg,#07111f,#0d1b2a 60%,#10384a)!important}
+html[data-jaguar-mode] body #login .glass{background:var(--j-surface)!important;color:var(--j-ink)!important;border:1px solid var(--j-line)!important}
+html[data-jaguar-mode] body #login .glass :is(h1,h2,h3,label){color:var(--j-ink)!important}
+html[data-jaguar-mode] body #login .glass :is(p,small,.text-xs):not(.j-login-brand):not(.chip){color:var(--j-muted)!important}
+html[data-jaguar-mode] body #login .glass .j-login-brand,html[data-jaguar-mode] body #login .glass .j-login-brand *{color:var(--j-ink)!important}
+html[data-jaguar-mode] body #login .glass :is(.input,.select,.textarea,input:not([type=checkbox])){background:var(--j-input)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #login .glass .j-show-password{background:var(--j-surface2)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body #login .glass .chip{color:#a2700d!important;background:rgba(212,175,55,.09)!important;border-color:rgba(174,136,45,.35)!important}
+html[data-jaguar-mode="dark"] body #login .glass .chip{color:#ebc977!important}
+html[data-jaguar-mode] body #login .glass button[onclick="forgotPassword()"]{color:var(--j-teal)!important}
+html[data-jaguar-mode] body #login .glass #loginStatus{color:var(--j-muted)!important}
+/* Ventanas con entrada y controles según el modo activo. */
+html[data-jaguar-mode] body .modal>div{background:var(--j-surface)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body .modal :is(h2,h3,h4,label,p){color:inherit}
+html[data-jaguar-mode] body .modal :is(input:not([type=checkbox]):not([type=radio]),textarea,select){background:var(--j-input)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body .modal .btn:not(.primary):not(.danger){color:var(--j-ink)!important;background:var(--j-surface2)!important;border-color:var(--j-line)!important}
+html[data-jaguar-mode] body .modal .btn.primary{color:white!important}
+/* Texto auxiliar y foco accesibles. */
+html[data-jaguar-mode] body :is(input,textarea)::placeholder{color:var(--j-muted)!important;opacity:.95}
+html[data-jaguar-mode] body :is(button,input,select,textarea):focus-visible{outline:2px solid #159d9a!important;outline-offset:3px}
+@media(prefers-reduced-motion:reduce){html[data-jaguar-mode] body :is(.card,.btn,.dc-proposal){transition:none!important;animation:none!important}}
