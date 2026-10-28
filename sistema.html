@@ -70,7 +70,8 @@ body{overflow-x:hidden;background-attachment:fixed}
 <link rel="stylesheet" href="/assets/ithla-ecosistema.css">
 <link rel="stylesheet" href="/assets/nexo-companion.css">
 <link rel="stylesheet" href="/assets/didactic-studio.css">
-<link rel="stylesheet" href="/assets/jaguar-teacher-transitions.css"></head>
+<link rel="stylesheet" href="/assets/jaguar-teacher-transitions.css">
+<link rel="stylesheet" href="/assets/jaguar-session-ui.css"></head>
 <body>
 <div id="login" class="min-h-screen flex items-center justify-center p-5"><div class="glass rounded-3xl p-7 max-w-xl w-full">
 <div class="flex justify-between gap-5 mb-8"><div><span class="chip">● PLATAFORMA JAGUAR</span><h1 class="text-4xl mt-3">Acceso al sistema</h1><p class="text-[#A9BAC8] mt-2">Inicia sesión con tu cuenta institucional.</p></div><div class="text-right"><div class="brand text-2xl j-login-brand"><img src="/assets/ithla-logo.png" alt="Escudo institucional ITHLA"><span>PLATAFORMA<br>JAGUAR</span></div><div class="text-xs text-[#8FA3B5]">Instituto Tecnológico e Histórico Latinoamericano · ITHLA</div></div></div>
@@ -4601,7 +4602,10 @@ function jaguarPlanningPrint(row){
     .planning-field{font-size:10px;color:#1b365d;overflow-wrap:anywhere}.planning-field b{display:block;color:#5c6b78;font-size:8px;letter-spacing:1px;margin-bottom:5px}
     .planning-body{font-size:11px;line-height:1.75;white-space:normal;overflow-wrap:anywhere;min-height:260px;padding:4px 0}
     .planning-body p{margin:0 0 13px}.planning-sign{display:grid;grid-template-columns:1fr 1fr;gap:50px;margin-top:65px}
-    .planning-sign div{border-top:1px solid #84909c;padding-top:9px;font-size:9px;text-align:center}
+    .planning-sign div{border-top:1px solid #84909c;padding-top:9px;font-size:9px;text-align:center;min-width:0;break-inside:avoid;page-break-inside:avoid}
+    /* La firma proviene de PNG con dimensiones variables: NUNCA usar su tamaño original. */
+    .planning-sign img{display:block!important;width:auto!important;height:auto!important;max-width:180px!important;max-height:58px!important;object-fit:contain!important;margin:9px auto 7px!important;vertical-align:middle}
+    @media(max-width:600px){.planning-sign{gap:18px}.planning-sign img{max-width:135px!important;max-height:52px!important}}
     .planning-foot{border-top:1px solid #dce3e8;margin-top:22px;padding-top:10px;color:#677789;font-size:8px}
     @media print{.planning-document{border-top:7px solid #b18a32;padding:10px 4px 0;min-height:auto;break-inside:auto}.planning-body{min-height:240px}}
   </style><div class="planning-document"><div class="planning-head"><img src="/assets/ithla-logo.png" alt="ITHLA"><div><div class="planning-overline">PLATAFORMA JAGUAR · PLANEACIÓN DOCENTE</div><div class="planning-school">${esc(inst.nombre_institucion||'Instituto Tecnológico e Histórico Latinoamericano')}</div><div style="font-size:9px;color:#5d6f7b;margin-top:5px">C.C.T. ${esc(inst.cct||'—')} · ${esc(inst.lema||'Scientia, Humanitas et Progressum')}</div></div></div>
@@ -4846,6 +4850,7 @@ window.ithlaNexoAuth=async()=>{
 <link rel="stylesheet" href="/assets/jaguar-public-admin-v8.css">
 <script src="/assets/jaguar-public-admin-v8.js" defer></script>
 <script src="/assets/didactic-studio.js"></script>
+<script src="/assets/jaguar-session-ui.js" defer></script>
 <script src="/assets/nexo-companion.js" data-site="jaguar-session" data-endpoint="/api/public" defer></script>
 <script src="/assets/jaguar-teacher-transitions.js" defer></script>
 </body>

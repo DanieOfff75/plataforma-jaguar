@@ -1,0 +1,23 @@
+/* Jaguar · refinamiento claro/oscuro, contador y campos de contraseña. */
+.j-password-wrap{display:block;position:relative;min-width:0;width:100%}
+.j-password-wrap input{width:100%!important;padding-right:88px!important}
+.j-show-password{position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 10px;border:1px solid var(--j-line,#52687d);background:var(--j-surface2,#1d354b);color:var(--j-ink,#fff);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer}
+.j-show-password:focus-visible,.j-session-counter:focus-visible{outline:3px solid #008080;outline-offset:2px}
+#app .j-session-counter{background:var(--j-surface2)!important;color:var(--j-muted)!important;border:1px solid var(--j-line)!important;border-radius:9px;padding:7px 9px;font-size:11px;white-space:nowrap;font-weight:600;min-height:34px;cursor:pointer;font-variant-numeric:tabular-nums}
+#app .j-session-counter.j-session-soon{border-color:var(--j-gold)!important;color:var(--j-ink)!important}
+#app .j-session-counter[disabled]{opacity:.7;cursor:progress}
+#ithla-session-notice{position:fixed;z-index:10000;bottom:20px;left:18px;max-width:min(340px,calc(100vw - 36px));padding:14px 16px;background:#13283d;color:#fff;border:1px solid #d4af37;border-radius:14px;box-shadow:0 12px 30px #0008;font:13px/1.5 system-ui}
+#ithla-session-notice strong{font-size:14px}#ithla-session-notice p{margin:7px 0}#ithla-session-notice button{background:#d4af37;color:#172336;border:0;border-radius:7px;padding:8px 11px;font-weight:800;cursor:pointer}
+[data-jaguar-mode=light] #app.jaguar-v3 :is(.card,.glass,.modal,.input,.select,.textarea){--j-ink:#17283c;--j-muted:#52677e}
+[data-jaguar-mode=dark] #app.jaguar-v3 :is(.card,.glass,.modal,.input,.select,.textarea){--j-ink:#eaf3f9;--j-muted:#bbccdd}
+/* Evitar que reglas de texto blanco cambien el contraste de banners o botones primarios. */
+#app.jaguar-v3 #content .j-hero :is(h1,h2,h3,p,.text-white),#app.jaguar-v3 :is(.btn.primary,.btn.danger),#app.jaguar-v3 :is(.btn.primary,.btn.danger) *{color:#fff!important}
+#app.jaguar-v3 .side,#app.jaguar-v3 .side *{--j-ink:#fff;--j-muted:#c6d8e7}
+#app.jaguar-v3 #content .card :is(p,span,td,label),#app.jaguar-v3 #content .card div{border-color:var(--j-line)}
+#login .glass{background:var(--j-surface)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+#login .glass :is(h1,h2,h3,p,label){color:var(--j-ink)!important}
+#login .glass .input{background:var(--j-input)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+#login .j-show-password{color:var(--j-ink)!important}
+body .modal .card{background:var(--j-surface)!important;color:var(--j-ink)!important}
+@media(max-width:900px){#app .j-session-counter{font-size:10px;padding:7px 8px}.j-password-wrap input{font-size:16px}}
+@media(prefers-reduced-motion:reduce){.j-session-counter,.j-show-password{transition:none!important}}

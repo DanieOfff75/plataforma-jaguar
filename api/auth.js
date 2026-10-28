@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { getClients } from '../lib/_admin.js';
 import { getInstitution } from './institution.js';
-import { createSession,assertSession,revokeSession } from '../lib/ithla_session.js';
+import { createSession,assertSession,revokeSession,sessionStatus,renewSession } from '../lib/ithla_session.js';
 
 function validEmail(x){
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x||'').trim());
@@ -218,6 +218,17 @@ async function getMe(req,res) {
 }
 
 
+async function checkedSessionIdentity(req){
+  const {token,adminClient}=getClients(req);
+  if(!token)throw Object.assign(new Error('No autenticado.'),{status:401});
+  const {data:{user},error}=await adminClient.auth.getUser(token);
+  if(error||!user)throw Object.assign(new Error('Sesión de acceso inválida.'),{status:401});
+  const {data:profile,error:pe}=await adminClient.from('perfiles').select('rol,activo').eq('id',user.id).maybeSingle();
+  if(pe)throw Object.assign(new Error('No se pudo comprobar tu perfil.'),{status:503});
+  if(!profile?.activo)throw Object.assign(new Error('Perfil inactivo o no autorizado.'),{status:403});
+  return {adminClient,user,profile};
+}
+
 function publicConfig(req,res){
   res.setHeader('Cache-Control','no-store');
   if(!process.env.SUPABASE_URL||!process.env.SUPABASE_ANON_KEY){
@@ -233,11 +244,13 @@ export default async function handler(req,res){
       const mode=String(req.query?.mode||'').trim().toLowerCase();
       if(mode==='config') return publicConfig(req,res);
       if(mode==='me') return await getMe(req,res);
+      if(mode==='session-status'){res.setHeader('Cache-Control','no-store');const {adminClient,user,profile}=await checkedSessionIdentity(req);return res.status(200).json({ok:true,session:await sessionStatus(req,adminClient,user.id,profile.rol,'jaguar')});}
       if(mode==='heartbeat'){const {token,adminClient}=getClients(req);const {data:{user}}=await adminClient.auth.getUser(token);if(!user)return res.status(401).json({ok:false,error:'Sesión inválida.'});const {data:p}=await adminClient.from('perfiles').select('rol,activo').eq('id',user.id).single();if(!p?.activo)return res.status(403).json({ok:false,error:'Perfil inactivo.'});await assertSession(req,adminClient,user.id,p.rol,'jaguar');return res.status(200).json({ok:true});}
       return res.status(400).json({ok:false,error:'Modo de consulta no válido.'});
     }
     if(req.method!=='POST') return res.status(405).json({ok:false,error:'Método no permitido.'});
     const action=String(req.body?.action||'').trim().toLowerCase();
+    if(action==='extend-session'){res.setHeader('Cache-Control','no-store');const {adminClient,user,profile}=await checkedSessionIdentity(req);return res.status(200).json({ok:true,session:await renewSession(req,adminClient,user.id,profile.rol,'jaguar')});}
     if(action==='login') return await login(req,res);
     if(action==='recovery') return await recovery(req,res);
     if(action==='first_access') return await firstAccess(req,res);

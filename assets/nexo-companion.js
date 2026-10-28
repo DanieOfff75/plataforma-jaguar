@@ -6,7 +6,7 @@
  const protectedSite=['jaguar-session','admisiones-admin','control'].includes(site);
  const presets={
   'jaguar-public':{subtitle:'Orientación pública',welcome:'¡Hola! 👋 Soy NEXO, tu guía para acceder a Jaguar y conocer ITHLA. Para consultas internas tendrás que iniciar sesión. 💛',tips:['¿Cómo inicio sesión?','¿Cómo recupero mi acceso?','¿Qué es ITHLA?']},
-  'jaguar-session':{subtitle:'Copiloto de tu sesión',welcome:'¡Qué gusto verte! 🐆 Soy NEXO, tu copiloto dentro de Jaguar. Puedo ayudarte con las opciones de tu rol, sin revisar tus datos privados.',tips:['¿Qué opciones hay en mi perfil?','Ayúdame a encontrar un módulo','¿Qué funciones tiene mi área?']},
+  'jaguar-session':{subtitle:'Copiloto de tu sesión',welcome:'¡Qué gusto verte! 🐆 Soy NEXO, tu copiloto dentro de Jaguar. Puedo ayudarte con las opciones de tu rol, sin revisar tus datos privados.',tips:['¿Qué opciones hay en mi perfil?','¿Cuánto tiempo me queda de sesión?','Ayúdame a renovar mi sesión']},
   admisiones:{subtitle:'Guía de aspirantes',welcome:'¡Hola, futuro ITHLA! 🎓 Soy NEXO. Puedo ayudarte a entender la convocatoria y los pasos para consultar tu estatus.',tips:['¿Dónde veo mi estatus?','¿Qué pasa si me aceptan?','¿Cómo funciona el registro?']},
   'admisiones-admin':{subtitle:'Asistencia administrativa',welcome:'¡Hola, equipo de Admisiones! 📚 Te oriento con los procesos de tu área y sus autorizaciones, sin acceder a expedientes.',tips:['¿Cómo se revisa una solicitud?','¿Quién confirma la inscripción?','¿Qué funciones tiene mi rol?']},
   control:{subtitle:'Asistente de gobierno técnico',welcome:'¡Hola, equipo ITHLA! ⚙️ Te oriento sobre NEXO, autorizaciones y el Centro de Control según tu sesión verificada.',tips:['¿Cómo se administra NEXO?','¿Quién aprueba los cambios académicos?','¿Qué puedo hacer en mi rol?']}
@@ -72,6 +72,12 @@
  input.addEventListener('input',()=>{if(busy)return;clearTimeout(typingTimer);mode(input.value.trim()?'typing':'idle');typingTimer=setTimeout(()=>{if(!busy)mode('idle');},1600);});
  async function ask(value){
   const q=String(value||'').trim();if(busy||q.length<3||q.length>420)return;
+  // Acción local con confirmación: la IA no recibe ni controla tokens, y la API decide los límites.
+  if(site==='jaguar-session'&&/(?:renov|extend|ampli|prolong)(?:ar|er|ir|ando|aci[oó]n)?[^.!?]{0,45}sesi[oó]n|sesi[oó]n[^.!?]{0,45}(?:renov|extend|ampli|prolong)|(?:cu[aá]nto|tiempo|caduc|expir|vence|vencimiento)[^.!?]{0,45}sesi[oó]n|sesi[oó]n[^.!?]{0,45}(?:cu[aá]nto|tiempo|caduc|expir|vence|vencimiento)/i.test(q)){
+    welcome();add(q,'user');input.value='';let detail='';try{const snap=await window.ithlaSessionGuard.check();detail='Tiempo restante: aproximadamente '+Math.ceil((snap.remainingSeconds||0)/60)+' minutos. ';}catch{detail='Necesitas una sesión activa y válida. ';}const card=add(detail+'Puedo ayudarte a renovar la inactividad. 🔐 El vencimiento máximo institucional no se modifica. Confírmalo con el botón:','bot');
+    const b=document.createElement('button');b.type='button';b.className='nx-copy';b.textContent='Renovar mi sesión';b.addEventListener('click',async()=>{b.disabled=true;b.textContent='Verificando…';try{const state=await window.ithlaSessionGuard.renew();const mins=Math.ceil((state.remainingSeconds||0)/60);add('✅ Tiempo actualizado. Te quedan aproximadamente '+mins+' minutos, respetando el máximo permitido para tu perfil.','bot');b.remove();}catch(e){b.disabled=false;b.textContent='Reintentar renovación';add('No pude renovar tu sesión: '+String(e.message||'').slice(0,140),'bot');}});
+    card.querySelector('.nx-msg').append(b);messages.scrollTop=messages.scrollHeight;return;
+  }
   clearTimeout(typingTimer);clearTimeout(doneTimer);welcome();add(q,'user');input.value='';busy=true;send.disabled=true;mode('thinking');
   const pending=add('Estoy organizando la información…','bot');const dots=document.createElement('div');dots.className='nx-dots';dots.setAttribute('aria-label','NEXO está pensando');dots.innerHTML='<i></i><i></i><i></i>';pending.querySelector('.nx-msg').append(dots);
   try{
