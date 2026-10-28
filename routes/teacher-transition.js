@@ -1,5 +1,7 @@
 /** Flujo de baja y relevo: solo API autenticada, operaciones atómicas en PostgreSQL. */
 import {requireRoles} from '../lib/_admin.js';
+import {buildHandoverRubricPdf} from '../lib/jaguar_relevo_rubrica_pdf.js';
+import {googleConfig,googleAccess,googleRenameTeacher,googleInviteReplacement} from '../lib/google_classroom_oauth.js';
 const MANAGERS=['servicios_docentes','coordinacion_academica','direccion_escolar'];
 const ROLES=[...MANAGERS,'docente'];
 const failure=(status,message)=>Object.assign(new Error(message),{status});
@@ -10,7 +12,32 @@ async function teacherOwn(db,user){return q(db.from('docentes').select('id,nombr
 export default async function handler(req,res){
  try{
   const {user,profile,adminClient:db}=await requireRoles(req,ROLES);
+  res.setHeader('Cache-Control','private, no-store');
   const role=profile.rol,admin=MANAGERS.includes(role);
+  // La vista PDF se sirve sólo tras verificar sesión, vacante, titular actual y materia activa.
+  if(req.method==='GET'&&req.query?.mode==='rubrica_pdf'){
+   if(role!=='docente')throw failure(403,'El PDF sólo está disponible para el docente sustituto');
+   const teacher=await teacherOwn(db,user),vid=id(req.query?.vacante_id),rubricId=id(req.query?.rubrica_id);
+   if(!teacher?.activo||!vid||!rubricId)throw failure(403,'Docente, vacante o rúbrica no autorizados');
+   const v=await q(db.from('jaguar_vacantes_docentes').select('id,estado,docente_nuevo_id,docente_anterior_id,grupo_materia_id,ciclo_escolar').eq('id',vid).maybeSingle());
+   if(!v||v.estado!=='cubierta'||Number(v.docente_nuevo_id)!==Number(teacher.id))throw failure(403,'Relevo ajeno o sin cubrir');
+   const own=await q(db.from('asignaciones_docentes').select('id').eq('docente_id',teacher.id).eq('grupo_materia_id',v.grupo_materia_id).eq('ciclo_escolar',v.ciclo_escolar).eq('activo',true).limit(1));
+   if(!own.length)throw failure(403,'No tienes la asignación vigente');
+   const rubric=await q(db.from('rubricas_evaluacion').select('id,titulo,descripcion,estado,escala_maxima,periodo_id,docente_id,grupo_materia_id').eq('id',rubricId).maybeSingle());
+   const rb=rubric;
+   if(!rb||Number(rb.docente_id)!==Number(v.docente_anterior_id)||Number(rb.grupo_materia_id)!==Number(v.grupo_materia_id))throw failure(404,'La rúbrica no pertenece a ese relevo');
+   const [components,original,gm,period]=await Promise.all([
+    q(db.from('rubrica_componentes').select('nombre,ponderacion,maximo,orden').eq('rubrica_id',rubricId).order('orden')),
+    q(db.from('docentes').select('nombre_completo').eq('id',v.docente_anterior_id).maybeSingle()),
+    q(db.from('grupo_materias').select('grupos(clave),materias(nombre)').eq('id',v.grupo_materia_id).maybeSingle()),
+    q(db.from('periodos_escolares').select('nombre,ciclo_escolar').eq('id',rubric.periodo_id).maybeSingle())
+   ]);
+   const pdf=await buildHandoverRubricPdf({rubric,components,sourceTeacher:original?.nombre_completo||'Docente anterior',group:gm?.grupos?.clave||'',subject:gm?.materias?.nombre||'',period:period?.nombre||''});
+   res.setHeader('Content-Type','application/pdf');
+   res.setHeader('Content-Disposition',`${req.query?.download==='1'?'attachment':'inline'}; filename="rubrica-relevo-${rubricId}.pdf"`);
+   res.setHeader('X-Content-Type-Options','nosniff');
+   return res.status(200).send(pdf);
+  }
   if(req.method==='GET'&&req.query?.mode==='planeacion'){
    if(role!=='docente')throw failure(403,'Solo docentes sustitutos pueden descargar este documento');
    const teacher=await teacherOwn(db,user),planId=id(req.query?.planeacion_id);
@@ -32,10 +59,11 @@ export default async function handler(req,res){
    if(!v||v.estado!=='cubierta'||Number(v.docente_nuevo_id)!==Number(teacher?.id))throw failure(403,'Relevo no autorizado para tu sesión');
    const active=await q(db.from('asignaciones_docentes').select('id').eq('docente_id',teacher.id).eq('grupo_materia_id',v.grupo_materia_id).eq('ciclo_escolar',v.ciclo_escolar).eq('activo',true).limit(1));
    if(!active.length)throw failure(403,'No tienes esta materia asignada actualmente');
+   const adoptions=await q(db.from('jaguar_relevo_adopciones_actividades').select('bitacora_origen_id,bitacora_destino_id,registrado_at').eq('vacante_id',vid).limit(200));
    const booklets=await q(db.from('bitacora_excel_diaria').select('id,periodo_id,fecha_clase,version,estado,snapshot,created_at').eq('docente_id',v.docente_anterior_id).eq('grupo_materia_id',v.grupo_materia_id).order('created_at',{ascending:false}).limit(25));
    const gm=await q(db.from('grupo_materias').select('grupo_id').eq('id',v.grupo_materia_id).single());
    const students=await q(db.from('alumnos').select('id,nombre_completo,matricula').eq('grupo_id',gm.grupo_id).limit(300));
-   return res.status(200).json({ok:true,data:{booklets,students,archival:true}});
+   return res.status(200).json({ok:true,data:{booklets,students,adoptions,archival:true}});
   }
   if(req.method==='GET'&&req.query?.mode==='historial'){
    if(role!=='docente')throw failure(403,'Solo el docente sustituto puede revisar el historial de calificaciones de su grupo');
@@ -94,6 +122,39 @@ export default async function handler(req,res){
     const {error}=await db.auth.admin.updateUserById(target.auth_user_id,{ban_duration:'876000h'});
     if(error)throw failure(502,'No se completó el bloqueo de Auth: '+error.message);
     return res.status(200).json({ok:true,message:'Cuenta de acceso bloqueada. El expediente histórico permanece archivado.'});
+  }
+  if(action==='classroom_actualizar'||action==='classroom_invitar'){
+   if(role!=='servicios_docentes')throw failure(403,'Sólo Servicios Docentes administra la continuidad de Classroom');
+   if(body.confirmado!==true)throw failure(400,'La acción requiere confirmación expresa');
+   const vid=id(body.vacante_id);const v=await q(db.from('jaguar_vacantes_docentes').select('id,estado,docente_nuevo_id,docente_anterior_id,grupo_materia_id,ciclo_escolar').eq('id',vid).maybeSingle());
+   if(!v||v.estado!=='cubierta'||!v.docente_nuevo_id)throw failure(409,'Primero debe estar cubierta formalmente la vacante');
+   const assignment=await q(db.from('asignaciones_docentes').select('id').eq('docente_id',v.docente_nuevo_id).eq('grupo_materia_id',v.grupo_materia_id).eq('ciclo_escolar',v.ciclo_escolar).eq('activo',true).limit(1));
+   if(!assignment.length)throw failure(409,'El docente B ya no tiene asignación activa en ese grupo');
+   const course=await q(db.from('jaguar_classroom_clases').select('id,google_course_id,docente_id').eq('grupo_materia_id',v.grupo_materia_id).eq('ciclo_escolar',v.ciclo_escolar).maybeSingle());
+   if(!course?.google_course_id)throw failure(409,'Este grupo no tiene una clase de Google Classroom vinculada');
+   const teacher=await q(db.from('docentes').select('id,nombre_completo,correo,activo').eq('id',v.docente_nuevo_id).maybeSingle());
+   if(!teacher?.activo)throw failure(409,'Docente sustituto inactivo');
+   const cfg=googleConfig();const token=await googleAccess(db,cfg);
+   if(action==='classroom_invitar'){
+    if(!teacher.correo)throw failure(409,'El docente B necesita un correo de Google registrado para recibir la invitación');
+    const invitation=await googleInviteReplacement(token,course.google_course_id,teacher.correo);
+    return res.status(200).json({ok:true,data:{invitacion_id:invitation.id||null},message:'Invitación enviada. El docente debe aceptarla en Google Classroom.'});
+   }
+   const newName=`${String(teacher.nombre_completo||'').trim()}`;
+   await googleRenameTeacher(token,course.google_course_id,`PROF. ${newName}`);
+   const {error:ue}=await db.from('jaguar_classroom_clases').update({docente_id:teacher.id,actualizado_por:user.id,actualizado_at:new Date().toISOString()}).eq('id',course.id);
+   if(ue)throw failure(409,'Google se actualizó pero Jaguar no pudo guardar el vínculo. Revisa la clase antes de reintentar.');
+   return res.status(200).json({ok:true,data:{google_course_id:course.google_course_id,docente_id:teacher.id},message:'Clase existente actualizada. No se han cambiado alumnos ni propietario.'});
+  }
+  if(action==='adoptar_actividades'){
+   if(role!=='docente')throw failure(403,'Sólo el sustituto puede adoptar actividades');
+   const vacante=id(body.vacante_id),bitacora=id(body.bitacora_id);
+   if(!vacante||!bitacora)throw failure(400,'Selecciona una vacante y bitácora válidas');
+   // La RPC es atómica, valida la asignación con auth user y conserva la bitácora original.
+   const data=await q(db.rpc('jaguar_relevo_adoptar_actividades',{
+     p_vacante_id:vacante,p_bitacora_id:bitacora,p_actor:user.id
+   }));
+   return res.status(200).json({ok:true,data,message:'Actividades adoptadas sin modificar la bitácora original.'});
   }
   if(action==='adoptar_rubrica'){
    if(role!=='docente')throw failure(403,'Solo el docente sustituto puede adoptar una rúbrica');
