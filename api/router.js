@@ -10,6 +10,7 @@ import googleClassroom from '../routes/google-classroom.js';
 import googleOAuth from '../routes/google-oauth.js';
 import teacher from '../routes/teacher.js';
 import didacticStudio from '../routes/didactic-studio.js';
+import teacherTransition from '../routes/teacher-transition.js';
 import ithlaPublic from '../routes/ithla-public.js';
 
 const handlers=Object.freeze({
@@ -19,6 +20,7 @@ const handlers=Object.freeze({
   'google-oauth':googleOAuth,
   teacher,
   'didactic-studio':didacticStudio,
+  'teacher-transition':teacherTransition,
   'ithla-public':ithlaPublic
 });
 

@@ -3095,6 +3095,9 @@ async function getResource(
           .from(table)
           .select('*');
 
+  // La lista operativa muestra únicamente docentes activos; los archivados permanecen en Archivo Escolar.
+  if (key === 'teachers') query=query.eq('activo',true);
+
   if (profile.rol === 'docente') {
     const tid = await teacherId(
       admin,
@@ -3546,6 +3549,14 @@ async function updateResource(
   delete clean.id;
   delete clean.created_at;
   delete clean.updated_at;
+  if(key==='teachers'){
+    for(const blocked of ['activo','estado_profesional','archivado_at','archivado_por','archivado_motivo','auth_user_id']){
+      if(Object.hasOwn(clean,blocked))throw Object.assign(new Error('La baja o reactivación docente se realiza mediante Gestión de bajas y relevos.'),{status:409});
+    }
+    const {data:oldTeacher,error:oldTeacherError}=await admin.from('docentes').select('activo,estado_profesional').eq('id',id).maybeSingle();
+    if(oldTeacherError)throw oldTeacherError;
+    if(!oldTeacher||oldTeacher.activo!==true||oldTeacher.estado_profesional==='archivado')throw Object.assign(new Error('El docente está archivado: no se puede editar su expediente operativo.'),{status:409});
+  }
 
   if (key === 'periods') {
     const {data:existing,error:ee}=await admin.from('periodos_escolares')

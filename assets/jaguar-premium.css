@@ -113,3 +113,16 @@ body .modal small,body .modal .text-\[\#A9BAC8\],body .modal .text-\[\#8FA3B5\]{
 #login .glass .btn.primary{background:linear-gradient(105deg,#087e83,#09676c)!important;color:white!important}
 #login .glass .input{min-height:46px}
 @media(max-width:580px){#login .j-login-brand img{width:38px;height:46px}#login .j-login-brand{font-size:14px!important}#login .glass>div:first-child{flex-wrap:wrap}}
+
+/* Jaguar Auto Theme: lectura uniforme en todos los módulos y ventanas, no solo Inicio. */
+#app.jaguar-v3 #content,#app.jaguar-v3 #content .card,#app.jaguar-v3 #content .glass,#app.jaguar-v3 #content section{color:var(--j-ink)}
+#app.jaguar-v3 #content .text-\[\#A9BAC8\],#app.jaguar-v3 #content .text-\[\#8FA3B5\],#app.jaguar-v3 #content .text-\[\#76988e\],#app.jaguar-v3 #content .text-\[\#94A3B8\],#app.jaguar-v3 #content .text-gray-400{color:var(--j-muted)!important}
+#app.jaguar-v3 #content .text-white{color:var(--j-ink)!important}
+#app.jaguar-v3 .btn.primary,#app.jaguar-v3 .btn.primary *{color:#fff!important}
+#app.jaguar-v3 #content .j-hero .text-white,#app.jaguar-v3 #content .j-hero h1,#app.jaguar-v3 #content .j-hero p{color:#fff!important}
+#app.jaguar-v3 #content textarea,#app.jaguar-v3 #content input,#app.jaguar-v3 #content select,body .modal input,body .modal select,body .modal textarea{background:var(--j-input)!important;color:var(--j-ink)!important;border-color:var(--j-line)!important}
+#app.jaguar-v3 #content ::placeholder,body .modal ::placeholder{color:var(--j-muted)!important;opacity:.86}
+body .modal .text-white{color:var(--j-ink)!important}body .modal .btn.primary,body .modal .btn.primary *{color:#fff!important}
+#app.jaguar-v3 #content .table,#app.jaguar-v3 #content .scroll{max-width:100%}
+#app.jaguar-v3 #content .scroll{overflow-x:auto;scrollbar-color:var(--j-line) transparent}
+@media(prefers-reduced-motion:reduce){html *,html *::before,html *::after{scroll-behavior:auto!important;animation-duration:.001ms!important;transition-duration:.001ms!important}}

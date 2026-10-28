@@ -150,6 +150,7 @@ export default async function handler(req,res){
    return res.status(200).json({ok:true,message:suspended?'Docente suspendido.':'Docente reactivado.',activo:true,nombre_completo:teacher.nombre_completo});
   }
   if(b.action==='set_teacher_status'){
+   return res.status(409).json({ok:false,error:'La baja y reactivación directa están deshabilitadas. Utiliza Gestión de bajas y relevos para conservar el historial y la cobertura.'});
    const teacherId=Number(b.docente_id||0);
    if(!teacherId)return res.status(400).json({ok:false,error:'Docente no válido.'});
    if(!['direccion_escolar','control_escolar','control','servicios_docentes'].includes(profile.rol))return res.status(403).json({ok:false,error:'No tienes permisos para cambiar el estado de un docente.'});
@@ -191,6 +192,7 @@ export default async function handler(req,res){
   }
 
   if(b.action==='delete_student' || b.action==='delete_teacher'){
+   if(b.action==='delete_teacher')return res.status(409).json({ok:false,error:'No se permite archivar docentes fuera del flujo formal de baja y cobertura.'});
    if(!['control_escolar','control','direccion_escolar'].includes(profile.rol)) return res.status(403).json({ok:false,error:'Solo Control Escolar puede eliminar permanentemente usuarios escolares.'});
    const kind=b.action==='delete_student'?'student':'teacher';
    const id=Number(b.id || (kind==='student'?b.alumno_id:b.docente_id) || 0);
@@ -245,6 +247,7 @@ export default async function handler(req,res){
    const id=String(b.user_id||'').trim(); const activo=b.activo===true; if(!id)return res.status(400).json({ok:false,error:'Usuario no válido.'});
    if(id===String(user.id))return res.status(403).json({ok:false,error:'No puedes cambiar el estado de tu propia cuenta desde Usuarios.'});
    const {data:target,error:te}=await adminClient.from('perfiles').select('id,rol').eq('id',id).maybeSingle(); if(te||!target)return res.status(404).json({ok:false,error:'Usuario no encontrado.'});
+   if(target.rol==='docente')return res.status(409).json({ok:false,error:'La baja docente debe registrarse en Bajas y relevos, para conservar cobertura e historial.'});
    if(['direccion_escolar','control_escolar','control'].includes(target.rol))return res.status(403).json({ok:false,error:'Las cuentas de Dirección y Control Escolar requieren una operación administrativa especial.'});
    const {error:pe}=await adminClient.from('perfiles').update({activo}).eq('id',id); if(pe)throw pe;
    if(target.rol==='docente'){const {error:e}=await adminClient.from('docentes').update({activo}).eq('auth_user_id',id);if(e)throw e;}

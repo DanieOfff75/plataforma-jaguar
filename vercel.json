@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    {"source":"/api/teacher-transition","destination":"/api/router?__jaguar_route=teacher-transition"},
     {"source":"/api/didactic-studio","destination":"/api/router?__jaguar_route=didactic-studio"},
     {
       "source": "/api/academic-tools",

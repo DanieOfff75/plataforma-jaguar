@@ -2,17 +2,23 @@
 (() => {
 'use strict';
 const MODE_KEY='jaguar_display_mode_v3';
-const MODE_ALLOWED=['light','dark'];
-function setMode(mode){
-  const choice=MODE_ALLOWED.includes(mode)?mode:'light';
-  document.documentElement.setAttribute('data-jaguar-mode',choice);
-  try{localStorage.setItem(MODE_KEY,choice);}catch{}
+const modes=['system','light','dark'];
+const media=window.matchMedia?.('(prefers-color-scheme: dark)');
+function effective(mode){return mode==='system'?(media?.matches?'dark':'light'):mode;}
+function setMode(mode,persist=true){
+  const choice=modes.includes(mode)?mode:'system';
+  document.documentElement.setAttribute('data-jaguar-preference',choice);
+  document.documentElement.setAttribute('data-jaguar-mode',effective(choice));
+  if(persist)try{localStorage.setItem(MODE_KEY,choice);}catch{}
   const button=document.getElementById('j-mode');
-  if(button){button.textContent=choice==='light'?'☾':'☀';button.title=choice==='light'?'Activar modo oscuro':'Activar modo claro';button.setAttribute('aria-label',button.title)}
+  if(button){button.textContent=choice==='system'?'◐':choice==='light'?'☾':'☀';
+    button.title=choice==='system'?'Tema automático (sistema). Cambiar a claro':choice==='light'?'Modo claro. Cambiar a oscuro':'Modo oscuro. Cambiar a automático';
+    button.setAttribute('aria-label',button.title);}
 }
-let saved='light';try{saved=localStorage.getItem(MODE_KEY)||'light'}catch{}
-setMode(saved);
-window.jaguarToggleMode=()=>setMode(document.documentElement.getAttribute('data-jaguar-mode')==='light'?'dark':'light');
+let saved='system';try{saved=localStorage.getItem(MODE_KEY)||'system'}catch{}
+setMode(saved,false);
+media?.addEventListener?.('change',()=>{if(document.documentElement.getAttribute('data-jaguar-preference')==='system')setMode('system',false)});
+window.jaguarToggleMode=()=>{const current=document.documentElement.getAttribute('data-jaguar-preference')||'system';setMode(modes[(modes.indexOf(current)+1)%modes.length]);};
 window.jaguarToggleSidebar=()=>{
   const on=!document.querySelector('#app .side')?.classList.contains('is-open');
   document.querySelector('#app .side')?.classList.toggle('is-open',on);
