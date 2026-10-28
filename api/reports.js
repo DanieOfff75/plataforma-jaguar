@@ -758,6 +758,25 @@ async function boletaPdf(admin,id,req=null){
     if(g.docente_id&&String(g.grupo_materias?.grupos?.id)===String(s.grupo_id)) x.gradeTeachersFromGroup.add(String(g.docente_id));
     if(g.observaciones) x.observations.push(String(g.observaciones));
   }
+  // Si hubo sustitución formal, el titular vigente proviene de la asignación activa.
+  // Los docentes anteriores aparecen sólo como nota histórica cuando evaluaron este grupo.
+  const activeTeachersBySubject=new Map(),historicalTeachersBySubject=new Map();
+  const groupMatterIds=(groupSubjectsQ.data||[]).map(g=>Number(g.id)).filter(Number.isSafeInteger);
+  if(groupMatterIds.length){
+    try{
+      const {data:active,error}=await admin.from('asignaciones_docentes').select('docente_id,grupo_materia_id').in('grupo_materia_id',groupMatterIds).eq('ciclo_escolar',cycle).eq('activo',true);
+      if(error)throw error;
+      for(const a of active||[]){const gm=(groupSubjectsQ.data||[]).find(g=>Number(g.id)===Number(a.grupo_materia_id));if(!gm)continue;
+        const k=String(gm.materia_id);if(!activeTeachersBySubject.has(k))activeTeachersBySubject.set(k,new Set());activeTeachersBySubject.get(k).add(String(a.docente_id));}
+      const {data:vacancies,error:ve}=await admin.from('jaguar_vacantes_docentes').select('grupo_materia_id,docente_anterior_id,docente_nuevo_id,ciclo_escolar,estado').in('grupo_materia_id',groupMatterIds).eq('ciclo_escolar',cycle).eq('estado','cubierta');
+      if(ve)throw ve;
+      for(const v of vacancies||[]){const gm=(groupSubjectsQ.data||[]).find(g=>Number(g.id)===Number(v.grupo_materia_id));if(!gm)continue;
+        const before=(gradesQ.data||[]).some(g=>Number(g.grupo_materia?.id)===Number(v.grupo_materia_id)&&Number(g.docente_id)===Number(v.docente_anterior_id)&&g.periodos_escolares?.ciclo_escolar===cycle&&g.calificacion!=null);
+        const current=activeTeachersBySubject.get(String(gm.materia_id));if(!before||!current?.has(String(v.docente_nuevo_id)))continue;
+        const k=String(gm.materia_id);if(!historicalTeachersBySubject.has(k))historicalTeachersBySubject.set(k,new Set());historicalTeachersBySubject.get(k).add(String(v.docente_anterior_id));
+      }
+    }catch(e){console.warn('Boleta: historial de relevo no disponible; se conserva el reporte habitual.',e?.message);}
+  }
   // Los docentes oficiales proceden del horario del grupo y las materias de esta boleta.
   // Un docente que sólo participó en una recuperación no debe aparecer por esa calificación.
   const assignedTeachersBySubject=new Map();
@@ -771,12 +790,13 @@ async function boletaPdf(admin,id,req=null){
   }
   for(const x of subjectMap.values()){
     // Sólo si no hay horario para esta materia se usa la evidencia del propio grupo.
-    x.teachers=assignedTeachersBySubject.get(String(x.materia_id))||x.gradeTeachersFromGroup;
+    x.teachers=activeTeachersBySubject.get(String(x.materia_id))||assignedTeachersBySubject.get(String(x.materia_id))||x.gradeTeachersFromGroup;
   }
   const teacherIds=[...new Set([...subjectMap.values()].flatMap(x=>[...x.teachers]))];
+  const historicIds=[...new Set([...historicalTeachersBySubject.values()].flatMap(x=>[...x]))];
   let teacherNames=new Map();
-  if(teacherIds.length){
-    const {data:ts,error:te}=await admin.from('docentes').select('id,nombre_completo,correo,auth_user_id').in('id',teacherIds);
+  if(teacherIds.length||historicIds.length){
+    const {data:ts,error:te}=await admin.from('docentes').select('id,nombre_completo,correo,auth_user_id').in('id',[...new Set([...teacherIds,...historicIds])]);
     if(te)throw te; teacherNames=new Map((ts||[]).map(t=>[String(t.id),t.nombre_completo]));
   }
   const subjects=[...subjectMap.values()].sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
@@ -824,7 +844,12 @@ async function boletaPdf(admin,id,req=null){
     }
     const related=subjects.filter(x=>x.teachers.has(String(tid))).map(x=>x.name);
     if(!related.length)continue; // Nunca imprimir 'Asignatura asignada' ni perfiles ajenos al grupo.
-    teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:related.join(', ')});
+    const histories=[...historicalTeachersBySubject.entries()]
+      .filter(([mid])=>subjects.some(x=>String(x.materia_id)===mid&&x.teachers.has(String(tid))))
+      .flatMap(([,ids])=>[...ids].map(id=>teacherNames.get(String(id)))).filter(Boolean);
+    const historyNames=[...new Set(histories)];
+    const history=historyNames.length?`Antes: ${historyNames.join(', ')}`:'';
+    teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:related.join(', '),history});
   }
   let bytes;
   try{bytes=await renderBoletaVisual15({

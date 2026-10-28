@@ -6,7 +6,8 @@ import path from 'node:path';
 const ROOT=path.resolve(import.meta.dirname,'..');
 const source=fs.readFileSync(path.join(ROOT,'assets/jaguar-admissions-director.js'),'utf8');
 const nav=source.substring(source.indexOf('/* Jaguar V6.0.2:'));
-const control=fs.readFileSync(path.join(ROOT,'centro-control/api/control.js'),'utf8');
+const controlPath=path.join(ROOT,'centro-control/api/control.js');
+const control=fs.existsSync(controlPath)?fs.readFileSync(controlPath,'utf8'):null;
 const html=fs.readFileSync(path.join(ROOT,'sistema.html'),'utf8');
 test('dirección autenticada accede al módulo sin usar window.S',async()=>{
  let calls=0;
@@ -26,7 +27,7 @@ test('menú director añade opción sin depender de window.roleNav',()=>{
  vm.runInNewContext(`const S={role:'direccion_escolar',page:'inicio'};const roleNav=${JSON.stringify(roleNav)};`+nav,sandbox);
  assert.equal(inserted.length,1);assert.match(inserted[0].textContent,/Admisiones/);
 });
-test('código del servidor restringe publicación a Dirección y evita sesiones e inscripciones',()=>{
+test('código del servidor restringe publicación a Dirección y evita sesiones e inscripciones',{skip:!control?'El repositorio Centro de Control se distribuye por separado':false},()=>{
  assert.match(control,/action==='publish-content'/);assert.match(control,/role!=='direccion_escolar'/);
  assert.match(control,/\['institucion','portal','nexo'\]\.includes\(key\)/);
  assert.match(control,/ithla_publicar_contenido_director/);

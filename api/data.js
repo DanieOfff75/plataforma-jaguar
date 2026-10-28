@@ -3,6 +3,7 @@ import {createGroupGradeBatch,listGroupGradeReviews,approveGroupGradeReview} fro
 import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
 import { academicGradesNavigation, academicGradeDetail, allowGradeExplorer } from '../lib/academic_grade_explorer.js';
 import { getClients, requireRoles } from '../lib/_admin.js';
+import {requireEvaluationOpen} from '../lib/jaguar_evaluation_window.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { departmentKeyForRole, validateResponsible, listResponsibleUsers } from '../lib/responsables.js';
 import { audit } from '../lib/audit.js';
@@ -4694,6 +4695,7 @@ export default async function handler(
       return res.status(200).json({ok:true,data});
     }
     if (req.method === 'POST' && req.body?.resource === 'commitTeacherDailyUpload') {
+      await requireEvaluationOpen(adminClient,req.body?.periodo_id);
       if(profile.rol!=='docente') return res.status(403).json({ok:false,error:'Solo el docente puede registrar la bitácora.'});
       const data=await commitTeacherDailyUpload(adminClient,user,req.body||{},profile);
       return res.status(200).json({ok:true,message:'Bitácora diaria respaldada. Las evidencias anteriores permanecen protegidas.',data});
@@ -4749,6 +4751,7 @@ export default async function handler(
     }
 
     if (req.method === 'POST' && req.body?.resource === 'saveEvaluationScores') {
+      await requireEvaluationOpen(adminClient,req.body?.periodo_id);
       if (profile.rol !== 'docente') return res.status(403).json({ok:false,error:'Solo el docente puede capturar evaluaciones.'});
       const gmId=Number(req.body?.grupo_materia_id||0), periodoId=Number(req.body?.periodo_id||0), rows=Array.isArray(req.body?.rows)?req.body.rows:[];
       const {tid}=await teacherOwnAssignment(adminClient,user,gmId,periodoId);
@@ -4781,6 +4784,7 @@ export default async function handler(
     }
 
     if (req.method === 'POST' && req.body?.resource === 'prepareEvaluationUpload') {
+      await requireEvaluationOpen(adminClient,req.body?.periodo_id);
       if (profile.rol !== 'docente') return res.status(403).json({ok:false,error:'Solo el docente puede subir evidencia.'});
       const gmId=Number(req.body?.grupo_materia_id||0), periodoId=Number(req.body?.periodo_id||0);
       const {tid}=await teacherOwnAssignment(adminClient,user,gmId,periodoId);
@@ -4794,6 +4798,7 @@ export default async function handler(
     }
 
     if (req.method === 'POST' && req.body?.resource === 'submitEvaluationPeriod') {
+      await requireEvaluationOpen(adminClient,req.body?.periodo_id);
       if (profile.rol !== 'docente') return res.status(403).json({ok:false,error:'Solo el docente puede cerrar su evaluación.'});
       const gmId=Number(req.body?.grupo_materia_id||0), periodoId=Number(req.body?.periodo_id||0);
       const modoExcel=req.body?.modo_origen==='excel_valor_total';
@@ -4858,14 +4863,17 @@ export default async function handler(
     if (req.method === 'POST' && req.body?.resource === 'saveTeacherGrades') {
       if (profile.rol !== 'docente') return res.status(403).json({ok:false,error:'Solo el docente puede capturar calificaciones.'});
       const gmId=Number(req.body?.grupo_materia_id||0), periodoId=Number(req.body?.periodo_id||0), rows=Array.isArray(req.body?.rows)?req.body.rows:[];
+      await requireEvaluationOpen(adminClient,periodoId);
       const roster=await getTeacherRoster(adminClient,user,gmId,{periodo_id:periodoId});
       const allowed=new Set((roster.students||[]).map(s=>String(s.id)));
+      const currentTeacherId=await teacherId(adminClient,user.id);
       for(const row of rows){
         const alumnoId=Number(row.alumno_id||0); if(!allowed.has(String(alumnoId))) continue;
         const raw=row.calificacion; const hasValue=raw!==''&&raw!=null; const grade=hasValue?Number(raw):null;
         if(grade!==null && (!Number.isFinite(grade)||grade<0||grade>10)) throw Object.assign(new Error(`Calificación inválida para el alumno ${alumnoId}.`),{status:400});
-        const {data:existing,error:ee}=await adminClient.from('calificaciones').select('id').eq('alumno_id',alumnoId).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).maybeSingle(); if(ee) throw ee;
-        const payload={alumno_id:alumnoId,grupo_materia_id:gmId,periodo_id:periodoId,docente_id:await teacherId(adminClient,user.id),calificacion:grade,observaciones:String(row.observaciones||'').trim()||null};
+        const {data:existing,error:ee}=await adminClient.from('calificaciones').select('id,docente_id').eq('alumno_id',alumnoId).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).maybeSingle(); if(ee) throw ee;
+        if(existing?.id&&Number(existing.docente_id)!==Number(currentTeacherId))throw Object.assign(new Error('Calificación histórica de otro docente. La rectificación requiere trámite autorizado.'),{status:409});
+        const payload={alumno_id:alumnoId,grupo_materia_id:gmId,periodo_id:periodoId,docente_id:currentTeacherId,calificacion:grade,observaciones:String(row.observaciones||'').trim()||null};
         if(existing?.id){const {error}=await adminClient.from('calificaciones').update(payload).eq('id',existing.id);if(error)throw error;}
         else {const {error}=await adminClient.from('calificaciones').insert(payload);if(error)throw error;}
       }

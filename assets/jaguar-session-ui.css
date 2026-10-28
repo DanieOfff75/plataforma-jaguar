@@ -84,3 +84,15 @@ html[data-jaguar-mode] body .modal .btn.primary{color:white!important}
 html[data-jaguar-mode] body :is(input,textarea)::placeholder{color:var(--j-muted)!important;opacity:.95}
 html[data-jaguar-mode] body :is(button,input,select,textarea):focus-visible{outline:2px solid #159d9a!important;outline-offset:3px}
 @media(prefers-reduced-motion:reduce){html[data-jaguar-mode] body :is(.card,.btn,.dc-proposal){transition:none!important;animation:none!important}}
+
+/* Jaguar 360 · tarjetas de evaluación y asistencia, compatibles con ambos temas. */
+#app.jaguar-v3 .jaguar-grade-tile{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:8px;text-align:left;min-width:0;width:100%;min-height:112px;padding:18px;border:1px solid var(--j-line);border-radius:15px;background:var(--j-surface2);color:var(--j-ink);cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .2s}
+#app.jaguar-v3 .jaguar-grade-tile:hover{border-color:var(--j-teal);box-shadow:0 10px 24px rgba(0,56,75,.12);transform:translateY(-2px)}
+#app.jaguar-v3 .jaguar-grade-tile:focus-visible{outline:3px solid var(--j-teal);outline-offset:2px}
+#app.jaguar-v3 .jaguar-grade-tile__group{font-size:15px;font-weight:850;color:var(--j-gold)}
+#app.jaguar-v3 .jaguar-grade-tile strong{font-size:14px;color:var(--j-ink);overflow-wrap:anywhere}
+#app.jaguar-v3 .jaguar-grade-tile small{font-size:12px;color:var(--j-muted)}
+#app.jaguar-v3 .jaguar-grade-open{color:var(--j-teal)!important}
+#app.jaguar-v3 .jaguar-grade-closed{color:var(--j-muted)!important}
+@media(max-width:600px){#app.jaguar-v3 .jaguar-grade-tile{min-height:94px;padding:14px}}
+@media(prefers-reduced-motion:reduce){#app.jaguar-v3 .jaguar-grade-tile{transition:none}#app.jaguar-v3 .jaguar-grade-tile:hover{transform:none}}

@@ -314,6 +314,7 @@ async function pageHtml(p){
   if(p==='config_docente')return teacherConfigModule();
   if(p==='relevos_docentes'&&['servicios_docentes','coordinacion_academica','direccion_escolar'].includes(S.role))return jaguarTeacherTransitionPage();
   if(p==='mis_relevos'&&S.role==='docente')return jaguarTeacherHandoverPage();
+  if(p==='ventanas_evaluacion'&&S.role==='direccion_escolar')return jaguarEvaluationDirectionPage();
   if(p==='horas_materias'&&['coordinacion_academica','direccion_escolar','servicios_docentes'].includes(S.role))return jaguarHoursPerSubjectPage();
   if(p==='carga_docente'||p==='cargas')return teacherLoadModule();
   if(p==='credenciales'&&S.role==='servicios_estudiantiles')return studentCredentialsModule();
@@ -1666,11 +1667,88 @@ async function teacherGroupsModule(){
 }
 async function teacherRosterModal(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const students=sortStudents(d.students),g=d.grupo_materia?.grupos||{},teacher=d.teacher?.nombre_completo||S.profile?.nombre_completo||'';modal(`${g.clave||''} · ${d.grupo_materia?.materias?.nombre||''}`,`<div class="flex flex-wrap justify-between gap-3 items-center mb-4"><div><p class="text-sm text-[#A9BAC8]">${students.length} alumnos</p></div><div class="flex flex-wrap gap-2"><button class="btn" onclick='jaguarFormalListMenu(${JSON.stringify(g)},${JSON.stringify(students)},${JSON.stringify(teacher)})'>📄 PDF formal</button><button class="btn primary" onclick='downloadRosterExcel(${gmId})'>📥 Excel</button></div></div><div class="scroll"><table class="table"><thead><tr><th>#</th><th>APELLIDOS Y NOMBRE(S)</th><th>Matrícula</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(jaguarNombreInstitucional(x))}</td><td>${esc(x.matricula||'—')}</td></tr>`).join('')||'<tr><td colspan="3">Sin alumnos.</td></tr>'}</tbody></table></div>`)}catch(e){toast(e.message)}}
 async function downloadRosterExcel(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const st=sortStudents(d.students);excelFile(`ITHLA-${d.grupo_materia?.grupos?.clave||'grupo'}-lista.xlsx`,['No.','APELLIDOS Y NOMBRE(S)','Matrícula'],st.map((x,i)=>[i+1,jaguarNombreInstitucional(x),x.matricula||'']),d.grupo_materia?.grupos?.clave||'Lista');toast('Lista Excel generada.')}catch(e){toast(e.message)}}
-async function teacherGradesModule(){const groups=await api('teacherGroups'), periods=await api('periods');const unique=[];const seen=new Set();for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}const p=periods.filter(x=>x.activo!==false);return `<div class="card"><div><h3>Calificaciones</h3><p class="text-sm text-[#8FA3B5] mt-1">Selecciona un grupo. La lista ya aparece completa y ordenada por apellido/nombre.</p></div><div class="grid md:grid-cols-2 gap-3 mt-5"><div><label class="text-xs text-[#8FA3B5]">Grupo / materia</label><select id="tg_group" class="select mt-1"><option value="">Selecciona…</option>${unique.map(g=>`<option value="${g.id}">${esc(g.grupos?.clave||'')} — ${esc(g.materias?.nombre||'')}</option>`).join('')}</select></div><div><label class="text-xs text-[#8FA3B5]">Periodo</label><select id="tg_period" class="select mt-1"><option value="">Selecciona…</option>${p.map(x=>`<option value="${x.id}">${esc(x.nombre||x.ciclo_escolar||'Periodo')}</option>`).join('')}</select></div></div><button class="btn primary mt-4" onclick="loadTeacherGradesTable()">Abrir lista</button></div><div id="teacherGradesTable" class="mt-5"></div>`}
-async function loadTeacherGradesTable(){try{const gmId=Number(document.getElementById('tg_group').value),periodoId=Number(document.getElementById('tg_period').value);if(!gmId||!periodoId)return toast('Selecciona grupo y periodo.');const d=await apiQuery('teacherGrades',{grupo_materia_id:gmId,periodo_id:periodoId});const students=sortStudents(d.students);document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm text-[#8FA3B5]">${students.length} alumnos</p></div><button class="btn primary" onclick="saveTeacherGradesTable(${gmId},${periodoId})">💾 Guardar todo</button></div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>APELLIDOS Y NOMBRE(S)</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><input id="grade_${x.id}" class="input" type="number" min="0" max="10" step="0.1" value="${x.grade?.calificacion??''}"></td><td><input id="gobs_${x.id}" class="input" value="${esc(x.grade?.observaciones||'')}"></td></tr>`).join('')}</tbody></table></div></div>`}catch(e){toast(e.message)}}
+// Jaguar 360 · Tarjetas por grupo, materia y periodo. La captura se controla en servidor.
+async function jaguarTeacherEvaluationWindows(){
+ const session=(await supabaseClient.auth.getSession()).data.session;
+ if(!session?.access_token)throw Error('Debes iniciar sesión');
+ const rsp=await fetch('/api/evaluation-window?action=list',{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
+ const out=await rsp.json().catch(()=>({}));if(!rsp.ok||!out.ok)throw Error(out.error||'No se pudo verificar la apertura de evaluaciones');
+ return out.data||[];
+}
+async function teacherGradesModule(){
+ const groups=await api('teacherGroups'),periods=await api('periods');
+ const unique=[],seen=new Set();for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}
+ window.__jaguarTeacherGrade={groups:unique,periods:periods.filter(x=>x.activo!==false),groupId:0,periodId:0};
+ return `<div class="space-y-5"><div class="card"><span class="chip">JAGUAR 360 · EVALUACIONES</span><h2 class="text-2xl font-extrabold mt-3">📚 Mis calificaciones por grupo</h2><p class="text-sm mt-2">Selecciona la materia y después el periodo. Consulta tus evaluaciones anteriores y edita solo cuando Dirección Escolar habilite la captura.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${unique.map(g=>`<button type="button" class="card jaguar-grade-tile" onclick="jaguarTeacherGradeGroup(${Number(g.id)})"><span class="jaguar-grade-tile__group">${esc(g.grupos?.clave||'Grupo')}</span><strong>${esc(g.materias?.nombre||'Materia')}</strong><small>Ver periodos y calificaciones →</small></button>`).join('')||'<div class="card">No tienes grupos asignados.</div>'}</div><div id="jaguar-grade-periods" class="mt-5" aria-live="polite"></div><div id="teacherGradesTable" class="mt-4"></div></div>`;
+}
+async function jaguarTeacherGradeGroup(groupId){
+ const state=window.__jaguarTeacherGrade;if(!state)return;state.groupId=Number(groupId);state.periodId=0;
+ const gm=state.groups.find(x=>Number(x.id)===state.groupId),container=document.getElementById('jaguar-grade-periods');
+ document.getElementById('teacherGradesTable').innerHTML='';
+ if(!gm||!container)return;
+ container.innerHTML=`<div class="card"><h3>${esc(gm.grupos?.clave||'')} · ${esc(gm.materias?.nombre||'')}</h3><p class="text-sm">Consultando registros y periodos…</p></div>`;
+ let windows=[];try{windows=await jaguarTeacherEvaluationWindows();state.statusError='';}catch(e){state.statusError=e.message;}
+ if(state.groupId!==Number(groupId))return;
+ state.windows=windows;
+ // En caso de error se bloquea toda edición; la consulta de datos históricos sigue disponible.
+ const known=new Map(windows.map(w=>[Number(w.id),w]));
+ const card=`<div class="card"><h3>Periodos de ${esc(gm.materias?.nombre||'')}</h3><p class="text-sm mt-1">${state.statusError?`⚠️ ${esc(state.statusError)}. Edición desactivada hasta validar Dirección.`:'Elige uno para ver sus notas o continuar la captura autorizada.'}</p><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">${state.periods.map((per,i)=>{const status=known.get(Number(per.id));const open=Boolean(status?.habilitada);return `<button type="button" class="jaguar-grade-tile" onclick="jaguarTeacherGradePeriod(${Number(per.id)})"><span class="jaguar-grade-tile__group">${esc(per.nombre||`Periodo ${i+1}`)}</span><strong class="${open?'jaguar-grade-open':'jaguar-grade-closed'}">${open?'🔓 Captura abierta':'🔒 Solo consulta'}</strong><small id="jaguar-grade-count-${Number(per.id)}">Ver calificaciones →</small></button>`}).join('')}</div></div>`;
+ container.innerHTML=card;
+}
+async function jaguarTeacherGradePeriod(periodId){
+ const state=window.__jaguarTeacherGrade;if(!state?.groupId)return;
+ state.periodId=Number(periodId);
+ const region=document.getElementById('teacherGradesTable');if(region)region.innerHTML='<div class="card">Cargando calificaciones…</div>';
+ await loadTeacherGradesTable();
+}
+async function loadTeacherGradesTable(){try{
+ const state=window.__jaguarTeacherGrade||{};const gmId=Number(state.groupId||document.getElementById('tg_group')?.value||0),periodoId=Number(state.periodId||document.getElementById('tg_period')?.value||0);
+ if(!gmId||!periodoId)return toast('Selecciona grupo y periodo.');
+ const d=await apiQuery('teacherGrades',{grupo_materia_id:gmId,periodo_id:periodoId}),students=sortStudents(d.students),period=state.periods?.find(x=>Number(x.id)===periodoId),windowInfo=state.windows?.find(x=>Number(x.id)===periodoId);
+ const canEdit=Boolean(windowInfo?.habilitada)&&!state.statusError;
+ const registered=students.filter(x=>x.grade?.calificacion!=null&&x.grade?.calificacion!=='').length;
+ const count=document.getElementById('jaguar-grade-count-'+periodoId);if(count)count.textContent=`${registered}/${students.length} calificaciones registradas`;
+ document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><span class="chip">${esc(period?.nombre||'Periodo')}</span><h3 class="mt-2">${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${registered} de ${students.length} notas capturadas · ${canEdit?'✍️ Captura autorizada':'🔒 Consulta histórica'}</p></div>${canEdit?`<button class="btn primary" onclick="saveTeacherGradesTable(${gmId},${periodoId})">💾 Guardar cambios</button>`:'<span class="chip">Dirección no habilitó edición</span>'}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><input id="grade_${x.id}" class="input" type="number" min="0" max="10" step="0.1" value="${x.grade?.calificacion??''}" ${canEdit?'':'disabled'}></td><td><input id="gobs_${x.id}" class="input" value="${esc(x.grade?.observaciones||'')}" ${canEdit?'':'disabled'}></td></tr>`).join('')}</tbody></table></div></div>`;
+ }catch(e){toast(e.message);const region=document.getElementById('teacherGradesTable');if(region)region.innerHTML=`<div class="card">No se pudieron cargar las notas: ${esc(e.message)}</div>`;}}
 async function saveTeacherGradesTable(gmId,periodoId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const rows=sortStudents(d.students).map(s=>({alumno_id:s.id,calificacion:document.getElementById(`grade_${s.id}`)?.value??'',observaciones:document.getElementById(`gobs_${s.id}`)?.value??''}));const r=await apiPost('saveTeacherGrades',{grupo_materia_id:gmId,periodo_id:periodoId,rows});toast(r.message||'Calificaciones guardadas.');await loadTeacherGradesTable()}catch(e){toast(e.message)}}
-async function teacherAttendanceModule(){const groups=await api('teacherGroups'),unique=[],seen=new Set();for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}const today=new Date().toISOString().slice(0,10);return `<div class="card"><div><h3>Asistencia</h3><p class="text-sm text-[#8FA3B5] mt-1">Marca la asistencia de todo el grupo de una sola vez.</p></div><div class="grid md:grid-cols-2 gap-3 mt-5"><div><label class="text-xs text-[#8FA3B5]">Grupo / materia</label><select id="ta_group" class="select mt-1"><option value="">Selecciona…</option>${unique.map(g=>`<option value="${g.id}">${esc(g.grupos?.clave||'')} — ${esc(g.materias?.nombre||'')}</option>`).join('')}</select></div><div><label class="text-xs text-[#8FA3B5]">Fecha</label><input id="ta_date" class="input mt-1" type="date" value="${today}"></div></div><button class="btn primary mt-4" onclick="loadTeacherAttendanceTable()">Abrir lista</button></div><div id="teacherAttendanceTable" class="mt-5"></div>`}
-async function loadTeacherAttendanceTable(){try{const gmId=Number(document.getElementById('ta_group').value),fecha=document.getElementById('ta_date').value;if(!gmId||!fecha)return toast('Selecciona grupo y fecha.');const d=await apiQuery('teacherAttendance',{grupo_materia_id:gmId,fecha});const st=sortStudents(d.students);document.getElementById('teacherAttendanceTable').innerHTML=`<div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm text-[#8FA3B5]">${esc(fecha)} · ${st.length} alumnos</p></div><div class="flex gap-2"><button class="btn" onclick="attendanceAll('presente')">✓ Todos presentes</button><button class="btn primary" onclick="saveTeacherAttendanceTable(${gmId})">💾 Guardar</button></div></div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>APELLIDOS Y NOMBRE(S)</th><th>Matrícula</th><th>Estado</th></tr></thead><tbody>${st.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><select id="att_${x.id}" class="select"><option value="presente" ${x.attendance?.estado==='presente'?'selected':''}>Presente</option><option value="falta" ${x.attendance?.estado==='falta'?'selected':''}>Falta</option><option value="retardo" ${x.attendance?.estado==='retardo'?'selected':''}>Retardo</option><option value="justificada" ${x.attendance?.estado==='justificada'?'selected':''}>Justificada</option></select></td></tr>`).join('')}</tbody></table></div></div>`}catch(e){toast(e.message)}}
+// Jaguar 360 · Asistencia por grupo, periodo y fechas ya registradas.
+async function teacherAttendanceModule(){
+ const groups=await api('teacherGroups'),periods=await api('periods');const unique=[],seen=new Set();
+ for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}
+ window.__jaguarAttendance={groups:unique,periods:periods.filter(x=>x.activo!==false),groupId:0,periodId:0};
+ return `<div class="space-y-5"><div class="card"><span class="chip">JAGUAR 360 · ASISTENCIA</span><h2 class="text-2xl font-extrabold mt-3">🗓️ Mis listas por periodo</h2><p class="text-sm mt-2">Elige grupo y materia, luego un periodo. Puedes abrir fechas anteriores sin sobreescribir otras listas.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${unique.map(g=>`<button type="button" class="card jaguar-grade-tile" onclick="jaguarAttendanceGroup(${Number(g.id)})"><span class="jaguar-grade-tile__group">${esc(g.grupos?.clave||'Grupo')}</span><strong>${esc(g.materias?.nombre||'Materia')}</strong><small>Ver registros por periodo →</small></button>`).join('')||'<div class="card">Sin asignaciones.</div>'}</div><div id="jaguar-att-periods"></div><div id="jaguar-att-dates"></div><div id="teacherAttendanceTable"></div><input type="hidden" id="ta_group"><input type="hidden" id="ta_period"><input type="hidden" id="ta_date"></div>`;
+}
+function jaguarAttendanceGroup(groupId){
+ const state=window.__jaguarAttendance;if(!state)return;state.groupId=Number(groupId);state.periodId=0;
+ const gm=state.groups.find(x=>Number(x.id)===state.groupId);document.getElementById('ta_group').value=groupId;
+ document.getElementById('jaguar-att-dates').innerHTML='';document.getElementById('teacherAttendanceTable').innerHTML='';
+ document.getElementById('jaguar-att-periods').innerHTML=`<div class="card"><h3>${esc(gm?.grupos?.clave||'')} · ${esc(gm?.materias?.nombre||'')}</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">${state.periods.map((per,i)=>`<button type="button" class="jaguar-grade-tile" onclick="jaguarAttendancePeriod(${Number(per.id)})"><span class="jaguar-grade-tile__group">${esc(per.nombre||`Periodo ${i+1}`)}</span><small>🗓️ Consultar fechas →</small></button>`).join('')}</div></div>`;
+}
+async function jaguarAttendancePeriod(periodId){
+ const state=window.__jaguarAttendance;if(!state?.groupId)return;state.periodId=Number(periodId);
+ document.getElementById('ta_period').value=periodId;const box=document.getElementById('jaguar-att-dates');
+ document.getElementById('teacherAttendanceTable').innerHTML='';box.innerHTML='<div class="card">Cargando fechas registradas…</div>';
+ try{
+  const session=(await supabaseClient.auth.getSession()).data.session;if(!session?.access_token)throw Error('Sesión caducada');
+  const rsp=await fetch(`/api/evaluation-window?action=attendance_history&grupo_materia_id=${state.groupId}&periodo_id=${state.periodId}`,{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
+  const result=await rsp.json().catch(()=>({}));if(!rsp.ok||!result.ok)throw Error(result.error||'Error al consultar historial');
+  const data=result.data||{},p=data.periodo||{};state.dateLimits={start:p.fecha_inicio||'',end:p.fecha_fin||''};
+  const now=new Date().toLocaleDateString('en-CA');const date=(!p.fecha_inicio||now>=p.fecha_inicio)&&(!p.fecha_fin||now<=p.fecha_fin)?now:(p.fecha_inicio||now);
+  box.innerHTML=`<div class="card"><h3>Fechas registradas · ${esc(p.nombre||'Periodo')}</h3><p class="text-sm">Selecciona una fecha existente para consultar o corregir sus asistencias, o elige otra fecha dentro del periodo.</p><div class="flex flex-wrap gap-2 mt-3">${(data.fechas||[]).map(x=>`<button class="btn" onclick="jaguarAttendanceDate('${esc(x.fecha)}')">📅 ${esc(x.fecha)} · ${Number(x.total)||0} registros</button>`).join('')||'<small>Todavía no hay fechas registradas.</small>'}</div><div class="flex flex-wrap gap-2 items-center mt-3"><label class="text-sm">Otra fecha: <input type="date" id="jaguar-att-date-picker" class="input" min="${esc(p.fecha_inicio||'')}" max="${esc(p.fecha_fin||'')}" value="${esc(date)}"></label><button class="btn primary" onclick="jaguarAttendanceDate(document.getElementById('jaguar-att-date-picker').value)">Abrir fecha</button></div></div>`;
+ }catch(e){box.innerHTML=`<div class="card">${esc(e.message)}</div>`;}
+}
+async function jaguarAttendanceDate(fecha){const state=window.__jaguarAttendance;if(!state?.groupId||!state.periodId)return;
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha))return toast('Fecha inválida');
+ const limits=state.dateLimits||{};if((limits.start&&fecha<limits.start)||(limits.end&&fecha>limits.end))return toast('La fecha está fuera del periodo seleccionado.');
+ document.getElementById('ta_date').value=fecha;
+ await loadTeacherAttendanceTable();
+}
+async function loadTeacherAttendanceTable(){try{
+ const gmId=Number(document.getElementById('ta_group')?.value||0),fecha=document.getElementById('ta_date')?.value;
+ if(!gmId||!fecha)return toast('Selecciona grupo, periodo y fecha.');
+ const d=await apiQuery('teacherAttendance',{grupo_materia_id:gmId,fecha}),st=sortStudents(d.students),present=st.filter(x=>x.attendance?.estado==='presente').length;
+ document.getElementById('teacherAttendanceTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><h3>${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${esc(fecha)} · ${st.length} alumnos · ${present} presentes</p></div><div class="flex flex-wrap gap-2"><button class="btn" onclick="attendanceAll('presente')">✓ Todos presentes</button><button class="btn primary" onclick="saveTeacherAttendanceTable(${gmId})">💾 Guardar asistencia</button></div></div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Estado</th></tr></thead><tbody>${st.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><select id="att_${x.id}" class="select"><option value="presente" ${x.attendance?.estado==='presente'?'selected':''}>Presente</option><option value="falta" ${x.attendance?.estado==='falta'?'selected':''}>Falta</option><option value="retardo" ${x.attendance?.estado==='retardo'?'selected':''}>Retardo</option><option value="justificada" ${x.attendance?.estado==='justificada'?'selected':''}>Justificada</option></select></td></tr>`).join('')}</tbody></table></div></div>`;
+ }catch(e){toast(e.message)}}
 function attendanceAll(v){document.querySelectorAll('[id^="att_"]').forEach(x=>x.value=v)}
 async function saveTeacherAttendanceTable(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId}),fecha=document.getElementById('ta_date').value;const rows=sortStudents(d.students).map(s=>({alumno_id:s.id,estado:document.getElementById(`att_${s.id}`)?.value||'falta'}));const r=await apiPost('saveTeacherAttendance',{grupo_materia_id:gmId,fecha,rows});toast(r.message||'Asistencia guardada.');await loadTeacherAttendanceTable()}catch(e){toast(e.message)}}
 async function teacherScheduleModule(){const rows=await api('teacherSchedule');const byDay={};rows.forEach(r=>(byDay[r.dia_semana]??=[]).push(r));const days=[1,2,3,4,5];const html=`<div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>Mi horario</h3><p class="text-sm text-[#8FA3B5]">Ciclo ${currentCycleLabel()} · solo tus clases.</p></div><button class="btn primary" onclick="printTeacherSchedule()">📄 Descargar PDF</button></div><div class="grid lg:grid-cols-5 gap-3 mt-5">${days.map(d=>`<div class="card"><b>${day(d)}</b>${(byDay[d]||[]).map(r=>`<div class="mt-3 p-3 rounded-xl border border-white/5"><div class="font-bold">${esc(r.hora_inicio?.slice(0,5))}–${esc(r.hora_fin?.slice(0,5))}</div><div class="mt-1">${esc(r.grupo_materias?.grupos?.clave||'—')}</div><div class="text-xs text-[#A9BAC8]">${esc(r.grupo_materias?.materias?.nombre||'—')}</div></div>`).join('')||'<div class="text-xs text-[#8FA3B5] mt-3">Sin clases</div>'}</div>`).join('')}</div></div>`;window._teacherScheduleRows=rows;return html}
@@ -1707,6 +1785,30 @@ const _jaguarOriginalV22Dashboard=v22Dashboard;
 v22Dashboard=async function(){const special=await jaguarDepartmentDashboardStable();return special||_jaguarOriginalV22Dashboard();};
 
 // Override the generic modules with role-specific workflows.
+
+// Dirección: ventana formal de captura. Sin permisos se ve sólo el menú correspondiente al rol.
+if(typeof roleNav!=='undefined'&&roleNav.direccion_escolar&&!roleNav.direccion_escolar.some(x=>x[0]==='ventanas_evaluacion')){
+ roleNav.direccion_escolar.push(['ventanas_evaluacion','🔐 Apertura de evaluaciones']);
+}
+if(typeof titles!=='undefined')titles.ventanas_evaluacion='Apertura de evaluaciones';
+async function jaguarEvaluationDirectionPage(){
+ if(S.role!=='direccion_escolar')return '<div class="card">No autorizado.</div>';
+ try{const rows=await jaguarTeacherEvaluationWindows();
+ return `<div class="space-y-4"><div class="card"><span class="chip">DIRECCIÓN ESCOLAR</span><h2 class="text-2xl font-bold mt-3">🔐 Apertura y cierre de evaluaciones</h2><p class="text-sm mt-2">Solo Dirección puede autorizar la captura. El cierre conserva las calificaciones; no modifica notas históricas ni rúbricas.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${rows.map(p=>`<div class="card"><h3>${esc(p.nombre||'Periodo')}</h3><p class="text-sm">${esc(p.ciclo_escolar||'')} · ${p.habilitada?'🟢 Captura abierta':'🔒 Captura cerrada'}</p><button class="btn ${p.habilitada?'':'primary'} mt-3" onclick="jaguarEvaluationSet(${Number(p.id)},${!p.habilitada})">${p.habilitada?'Cerrar captura':'Abrir captura'}</button></div>`).join('')}</div></div>`;
+ }catch(e){return `<div class="card">No se pudo consultar la apertura: ${esc(e.message)}</div>`;}
+}
+async function jaguarEvaluationSet(periodId,enabled){
+ if(S.role!=='direccion_escolar')return;
+ if(!confirm(enabled?'¿Autorizar a los docentes para capturar calificaciones en este periodo?':'¿Cerrar la captura de este periodo? Los docentes conservarán la consulta histórica.'))return;
+ try{const session=(await supabaseClient.auth.getSession()).data.session;if(!session?.access_token)throw Error('Sesión caducada');
+ const rsp=await fetch('/api/evaluation-window',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'set',periodo_id:Number(periodId),habilitada:Boolean(enabled),confirmado:true})});
+ const out=await jaguarReadJson(rsp);if(!rsp.ok||!out.ok)throw Error(out.error||'No se pudo modificar el periodo');
+ toast(enabled?'Captura habilitada por Dirección.':'Captura cerrada por Dirección.');await loadPage('ventanas_evaluacion');
+ }catch(e){toast(e.message)}
+}
+// Compatibilidad con vistas existentes de asistencias por periodo.
+async function jaguarLoadAttendanceHistory(periodId){return jaguarAttendancePeriod(periodId)}
+
 teacherGroupsModule;teacherGradesModule;teacherAttendanceModule;teacherScheduleModule;
 const _oldGroupListsModule=groupListsModule;
 

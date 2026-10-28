@@ -1,9 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    {"source":"/api/jaguar360","destination":"/api/router?__jaguar_route=jaguar360"},
-    {"source":"/api/teacher-transition","destination":"/api/router?__jaguar_route=teacher-transition"},
-    {"source":"/api/didactic-studio","destination":"/api/router?__jaguar_route=didactic-studio"},
+    {
+      "source": "/api/jaguar360",
+      "destination": "/api/router?__jaguar_route=jaguar360"
+    },
+    {
+      "source": "/api/evaluation-window",
+      "destination": "/api/router?__jaguar_route=evaluation-window"
+    },
+    {
+      "source": "/api/teacher-transition",
+      "destination": "/api/router?__jaguar_route=teacher-transition"
+    },
+    {
+      "source": "/api/didactic-studio",
+      "destination": "/api/router?__jaguar_route=didactic-studio"
+    },
     {
       "source": "/api/academic-tools",
       "destination": "/api/router?__jaguar_route=academic-tools"

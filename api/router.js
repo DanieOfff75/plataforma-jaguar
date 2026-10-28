@@ -11,6 +11,7 @@ import googleOAuth from '../routes/google-oauth.js';
 import teacher from '../routes/teacher.js';
 import didacticStudio from '../routes/didactic-studio.js';
 import teacherTransition from '../routes/teacher-transition.js';
+import evaluationWindow from '../routes/evaluation-window.js';
 import ithlaPublic from '../routes/ithla-public.js';
 import jaguar360 from '../routes/jaguar360.js';
 
@@ -22,6 +23,7 @@ const handlers=Object.freeze({
   teacher,
   'didactic-studio':didacticStudio,
   'teacher-transition':teacherTransition,
+  'evaluation-window':evaluationWindow,
   'ithla-public':ithlaPublic,
   'jaguar360':jaguar360
 });
