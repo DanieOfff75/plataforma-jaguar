@@ -71,7 +71,8 @@ body{overflow-x:hidden;background-attachment:fixed}
 <link rel="stylesheet" href="/assets/nexo-companion.css">
 <link rel="stylesheet" href="/assets/didactic-studio.css">
 <link rel="stylesheet" href="/assets/jaguar-teacher-transitions.css">
-<link rel="stylesheet" href="/assets/jaguar-session-ui.css"></head>
+<link rel="stylesheet" href="/assets/jaguar-session-ui.css">
+<link rel="stylesheet" href="/assets/jaguar360.css"></head>
 <body>
 <div id="login" class="min-h-screen flex items-center justify-center p-5"><div class="glass rounded-3xl p-7 max-w-xl w-full">
 <div class="flex justify-between gap-5 mb-8"><div><span class="chip">● PLATAFORMA JAGUAR</span><h1 class="text-4xl mt-3">Acceso al sistema</h1><p class="text-[#A9BAC8] mt-2">Inicia sesión con tu cuenta institucional.</p></div><div class="text-right"><div class="brand text-2xl j-login-brand"><img src="/assets/ithla-logo.png" alt="Escudo institucional ITHLA"><span>PLATAFORMA<br>JAGUAR</span></div><div class="text-xs text-[#8FA3B5]">Instituto Tecnológico e Histórico Latinoamericano · ITHLA</div></div></div>
@@ -282,6 +283,8 @@ function renderShell(){
   document.getElementById('mini').innerHTML='<div class="text-xs text-[#8FA3B5]">'+esc(labels[S.role]||'Usuario')+'</div><b class="block mt-1 truncate">'+esc(S.profile?.nombre_completo||S.user?.user_metadata?.nombre_completo||'Usuario')+'</b><div class="text-[11px] text-[#8FA3B5] truncate">'+esc(S.profile?.correo||S.user?.email||'')+'</div>';
 }
 async function pageHtml(p){
+  if(p==='tramites_360')return jaguar360Page();
+  if(p==='salud_360'&&['direccion_escolar','control_escolar','control'].includes(S.role))return jaguar360HealthPage();
   if(p==='admision_control'&&S.role==='direccion_escolar')return jaguarAdmissionDirectorModule();
   if(p==='classroom')return jaguarClassroomModule();
   if(p==='aulas')return jaguarAulasModule();
@@ -289,7 +292,7 @@ async function pageHtml(p){
   if(p==='calificaciones_masivas')return jaguarCalificacionesMasivasModule();
   if(p==='calificaciones_lote_grupo')return jaguarGroupBatchModule();
   if(p==='inicio'||p==='resumen'){
-    if(typeof jaguarPremiumHome==='function')return jaguarPremiumHome();
+    if(typeof jaguarPremiumHome==='function'){const base=await jaguarPremiumHome();return base+(typeof jaguar360Dashboard==='function'?await jaguar360Dashboard():'');}
     if(S.role==='docente')return v3TeacherDashboard();
     if(['servicios_estudiantiles','servicios_docentes','prefectura','coordinacion_academica'].includes(S.role))return v3DeptDashboard();
     if(S.role==='control_escolar')return v22Dashboard();
@@ -3858,6 +3861,17 @@ Object.assign(titles,{admision_control:'Dirección · Convocatoria de admisiones
 if(!roleNav.control_escolar.some(x=>x[0]==='auditoria'))roleNav.control_escolar.push(['auditoria','🧾 Auditoría']);
 if(!roleNav.direccion_escolar.some(x=>x[0]==='auditoria'))roleNav.direccion_escolar.push(['auditoria','🧾 Auditoría']);
 Object.assign(titles,{archivo:'Archivo escolar',retencion:'Catálogo de retención documental',auditoria:'Bitácora de auditoría',bitacora_calificaciones:'Bitácora diaria de Excel'});
+
+// Jaguar 360: nuevas vistas por perfil; se agregan sin retirar funciones históricas.
+roleNav.control=roleNav.control||[...roleNav.control_escolar];
+for(const rol of ['alumno','control_escolar','control','archivo_escolar','servicios_estudiantiles','prefectura','recursos_monetarios','direccion_escolar']){
+  if(roleNav[rol]&&!roleNav[rol].some(([id])=>id==='tramites_360'))roleNav[rol].splice(1,0,['tramites_360',rol==='alumno'?'📨 Mis trámites':'📨 Trámites presenciales']);
+}
+for(const rol of ['direccion_escolar','control_escolar','control']){
+  if(roleNav[rol]&&!roleNav[rol].some(([id])=>id==='salud_360'))roleNav[rol].push(['salud_360','🩺 Salud Jaguar']);
+}
+Object.assign(titles,{tramites_360:'Jaguar 360 · Trámites presenciales',salud_360:'Jaguar 360 · Salud del sistema'});
+
 for(const rr of ['direccion_escolar','servicios_docentes','coordinacion_academica']){
  if(roleNav[rr]&&!roleNav[rr].some(x=>x[0]==='relevos_docentes'))roleNav[rr].splice(2,0,['relevos_docentes','♜ Bajas y relevos docentes']);
 }
@@ -4853,6 +4867,7 @@ window.ithlaNexoAuth=async()=>{
 <script src="/assets/jaguar-session-ui.js" defer></script>
 <script src="/assets/nexo-companion.js" data-site="jaguar-session" data-endpoint="/api/public" defer></script>
 <script src="/assets/jaguar-teacher-transitions.js" defer></script>
+<script src="/assets/jaguar360.js" defer></script>
 </body>
 </html>
 
