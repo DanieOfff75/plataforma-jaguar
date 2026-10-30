@@ -1,6 +1,7 @@
 import {requireRoles} from '../lib/_admin.js';
 import {evaluationWindow} from '../lib/jaguar_evaluation_window.js';
 import {explainEvaluationSaveError} from '../lib/jaguar_evaluation_errors.js';
+import {consumeProof,sessionId} from '../lib/jaguar_shield.js';
 const roles=['docente','direccion_escolar','coordinacion_academica','servicios_docentes','control_escolar'];
 const fail=(msg,status=400)=>{throw Object.assign(new Error(msg),{status});};
 const positive=x=>Number.isSafeInteger(Number(x))&&Number(x)>0?Number(x):0;
@@ -46,6 +47,8 @@ export default async function handler(req,res){
    if(req.body?.confirmado!==true||typeof req.body?.habilitada!=='boolean')fail('Confirma expresamente la apertura o cierre.');
    const pid=positive(req.body?.periodo_id);const period=await evaluationWindow(db,pid);
    if(period.periodo.activo===false&&req.body.habilitada)fail('No puedes abrir un periodo inactivo.',409);
+   // Código atado al periodo, tipo de cambio, identidad y sesión; se consume una sola vez.
+   await consumeProof(db,user.id,sessionId(req),req.body.habilitada?'eval_open':'eval_close',String(pid),req.body?.shield_proof);
    const result=await db.rpc('jaguar_abrir_cerrar_evaluacion',{p_periodo_id:pid,p_habilitada:req.body.habilitada,p_actor:user.id});
    if(result.error){
      const issue=explainEvaluationSaveError(result.error);

@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
+    {"source":"/api/shield","destination":"/api/router?__jaguar_route=shield"},
     {
       "source": "/api/jaguar360",
       "destination": "/api/router?__jaguar_route=jaguar360"

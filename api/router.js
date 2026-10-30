@@ -14,6 +14,7 @@ import teacherTransition from '../routes/teacher-transition.js';
 import evaluationWindow from '../routes/evaluation-window.js';
 import ithlaPublic from '../routes/ithla-public.js';
 import jaguar360 from '../routes/jaguar360.js';
+import shield from '../routes/shield.js';
 
 const handlers=Object.freeze({
   'academic-tools':academicTools,
@@ -25,7 +26,8 @@ const handlers=Object.freeze({
   'teacher-transition':teacherTransition,
   'evaluation-window':evaluationWindow,
   'ithla-public':ithlaPublic,
-  'jaguar360':jaguar360
+  'jaguar360':jaguar360,
+  shield
 });
 
 export default async function handler(req,res){

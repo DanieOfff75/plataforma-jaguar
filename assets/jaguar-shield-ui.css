@@ -1,0 +1,5 @@
+/* Jaguar Shield: reutiliza los tokens claro/oscuro de Jaguar, sin sobrescribir temas. */
+.jaguar-shield-panel{margin-top:1rem}
+.jaguar-shield-panel .jaguar-shield-lock{display:grid;place-items:center;width:2.8rem;height:2.8rem;border-radius:.8rem;background:rgba(212,175,55,.14);font-size:1.35rem}
+.jaguar-shield-panel .input{max-width:34rem}
+.jaguar-shield-panel .chip{white-space:normal}

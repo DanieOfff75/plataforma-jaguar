@@ -135,7 +135,7 @@ function passwordModal(mode='first'){
  const html=`<form id="accessForm" class="space-y-4" novalidate>
    <div class="card"><b>${intro}</b><p class="text-sm text-[#A9BAC8] mt-2">${help}</p></div>
    ${!recovery?`<div><label class="text-xs text-[#8FA3B5]">Correo de recuperación</label><input id="recoveryEmail" class="input mt-1" type="email" autocomplete="email" placeholder="tu-correo-personal@ejemplo.com" required></div>`:''}
-   ${setupOnly?`<div><label class="text-xs text-[#8FA3B5]">Contraseña actual</label><input id="currentPassword" class="input mt-1" type="password" autocomplete="current-password" placeholder="Tu contraseña actual" required></div>`:''}
+   ${!recovery?`<div><label class="text-xs text-[#8FA3B5]">Contraseña actual</label><input id="currentPassword" class="input mt-1" type="password" autocomplete="current-password" placeholder="Tu contraseña actual" required></div>`:''}
    ${(!setupOnly||recovery)?`<div><label class="text-xs text-[#8FA3B5]">Nueva contraseña</label><input id="newPassword" class="input mt-1" type="password" minlength="8" autocomplete="new-password" placeholder="Mínimo 8 caracteres" ${recovery?'required':''}></div><div><label class="text-xs text-[#8FA3B5]">Confirmar contraseña</label><input id="newPassword2" class="input mt-1" type="password" minlength="8" autocomplete="new-password" ${recovery?'required':''}></div>`:''}
    <div id="pwErr" class="text-xs text-rose-300 min-h-[18px]"></div>
    <button id="accessSaveBtn" class="btn primary w-full" type="submit">${recovery?'Guardar nueva contraseña':(setupOnly?'Guardar correo de recuperación':'Activar mi cuenta')}</button>
@@ -179,16 +179,18 @@ async function saveAccess(mode){
      if(a!==b) return fail('Las contraseñas no coinciden.');
      password=a;
    }
-   const current_password=setupOnly?(document.getElementById('currentPassword')?.value||''):null;
-   if(setupOnly&&!current_password) return fail('Escribe tu contraseña actual para confirmar el cambio.');
+   const current_password=!recovery?(document.getElementById('currentPassword')?.value||''):null;
+   if(!recovery&&!current_password) return fail('Escribe tu contraseña actual para confirmar el cambio.');
 
    const {data:{session}}=await supabaseClient.auth.getSession();
    if(!session) return fail('La sesión expiró. Vuelve a iniciar sesión.');
 
+   // Se comprueba el correo nuevo ANTES de cambiar el identificador Auth.
+   const shieldProof=!S.profile?.correo_recuperacion?await jaguarShieldChallenge('enroll',{new_email:recoveryEmail}):undefined;
    const r=await fetch('/api/auth',{
      method:'POST',
      headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},
-     body:JSON.stringify({action:'first_access',recovery_email:recoveryEmail,password:password||undefined,current_password:current_password||undefined})
+     body:JSON.stringify({action:'first_access',recovery_email:recoveryEmail,password:password||undefined,current_password:current_password||undefined,shield_proof:shieldProof})
    });
    const raw=await r.text();
    let d={};
@@ -1801,7 +1803,8 @@ async function jaguarEvaluationSet(periodId,enabled){
  if(S.role!=='direccion_escolar')return;
  if(!confirm(enabled?'¿Autorizar a los docentes para capturar calificaciones en este periodo?':'¿Cerrar la captura de este periodo? Los docentes conservarán la consulta histórica.'))return;
  try{const session=(await supabaseClient.auth.getSession()).data.session;if(!session?.access_token)throw Error('Sesión caducada');
- const rsp=await fetch('/api/evaluation-window',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'set',periodo_id:Number(periodId),habilitada:Boolean(enabled),confirmado:true})});
+ const shieldProof=await jaguarShieldChallenge(enabled?'eval_open':'eval_close',{period_id:Number(periodId)});
+ const rsp=await fetch('/api/evaluation-window',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'set',periodo_id:Number(periodId),habilitada:Boolean(enabled),confirmado:true,shield_proof:shieldProof})});
  const out=await jaguarReadJson(rsp);if(!rsp.ok||!out.ok)throw Error((out.error||'No se pudo modificar el periodo')+(out.code?' ['+out.code+']':''));
  toast(enabled?'Captura habilitada por Dirección.':'Captura cerrada por Dirección.');await loadPage('ventanas_evaluacion');
  }catch(e){const feedback=document.getElementById('jaguar_eval_feedback');if(feedback){feedback.textContent=e.message;feedback.hidden=false;}toast(e.message)}
@@ -4970,6 +4973,8 @@ window.ithlaNexoAuth=async()=>{
 <script src="/assets/nexo-companion.js" data-site="jaguar-session" data-endpoint="/api/public" defer></script>
 <script src="/assets/jaguar-teacher-transitions.js" defer></script>
 <script src="/assets/jaguar360.js" defer></script>
+<link rel="stylesheet" href="/assets/jaguar-shield-ui.css">
+<script src="/assets/jaguar-shield-ui.js" defer></script>
 </body>
 </html>
 

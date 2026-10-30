@@ -4466,49 +4466,9 @@ export default async function handler(
       );
     }
 
-    /* CORREO DE RECUPERACIÓN: solo el usuario autenticado puede modificar el suyo.
-       Nunca se acepta un user_id externo para esta operación. */
-    if (req.method === 'POST' && req.body?.resource === 'saveRecoveryEmail') {
-      const email = String(req.body?.email || '').trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        return res.status(400).json({ ok:false, error:'Escribe un correo de recuperación válido.' });
-      }
-      const institutional = String(profile.correo || user.email || '').trim().toLowerCase();
-      if (email === institutional) {
-        return res.status(400).json({ ok:false, error:'El correo de recuperación debe ser distinto al correo institucional.' });
-      }
-      const previousAuthEmail = String(user.email || '').trim().toLowerCase();
-      const metadata = { ...(user.user_metadata || {}), recovery_email: email, login_email: profile.correo };
-      const { error: ae } = await adminClient.auth.admin.updateUserById(user.id, {
-        email,
-        email_confirm: true,
-        user_metadata: metadata
-      });
-      if (ae) {
-        return res.status(400).json({ ok:false, error:ae.message || 'No se pudo actualizar el correo de recuperación.' });
-      }
-
-      const { error: pe } = await adminClient
-        .from('perfiles')
-        .update({ correo_recuperacion: email, correo_auth: email })
-        .eq('id', user.id);
-      if (pe) {
-        // Intento de rollback para evitar dejar Auth y perfiles desincronizados.
-        if (previousAuthEmail && previousAuthEmail !== email) {
-          await adminClient.auth.admin.updateUserById(user.id, {
-            email: previousAuthEmail,
-            email_confirm: true,
-            user_metadata: user.user_metadata || {}
-          }).catch(() => null);
-        }
-        throw pe;
-      }
-
-      return res.status(200).json({
-        ok:true,
-        correo_recuperacion: email,
-        message:'Correo de recuperación actualizado.'
-      });
+    // Jaguar Shield: el endpoint antiguo se bloquea para impedir saltar la doble verificación.
+    if(req.method==='POST' && req.body?.resource==='saveRecoveryEmail') {
+      return res.status(403).json({ok:false,error:'El correo de recuperación ahora se cambia exclusivamente desde Jaguar Shield, con dos verificaciones.'});
     }
 
     if(req.method==='POST' && req.body?.resource==='directStudentGroupChange'){

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getClients } from '../lib/_admin.js';
 import { getInstitution } from './institution.js';
 import { createSession,assertSession,revokeSession,sessionStatus,renewSession } from '../lib/ithla_session.js';
+import { consumeProof,sessionId } from '../lib/jaguar_shield.js';
 
 function validEmail(x){
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x||'').trim());
@@ -38,9 +39,9 @@ async function recovery(req,res){
   const secret=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
   if(!url||!anon||!secret) return res.status(500).json({ok:false,error:'Faltan variables de Supabase.'});
   const admin=createClient(url,secret), client=createClient(url,anon);
-  const {data:p,error:pe}=await admin.from('perfiles').select('id,correo,correo_recuperacion,activo').eq('correo',alias).maybeSingle();
+  const {data:p,error:pe}=await admin.from('perfiles').select('id,correo,correo_recuperacion,shield_correo_verificado_at,activo').eq('correo',alias).maybeSingle();
   if(pe) throw pe;
-  if(!p||!p.activo||!p.correo_recuperacion) return res.status(200).json({ok:true,message:'Si el usuario existe y tiene correo de recuperación configurado, recibirás las instrucciones.'});
+  if(!p||!p.activo||!p.correo_recuperacion||!p.shield_correo_verificado_at) return res.status(200).json({ok:true,message:'Si el usuario existe y tiene correo de recuperación configurado, recibirás las instrucciones.'});
   const {data:u,error:ue}=await admin.auth.admin.getUserById(p.id);
   if(ue||!u?.user?.email) throw ue||new Error('Cuenta no disponible.');
   const institution=await getInstitution(admin); const domain=String(institution.dominio_institucional||'ithla.edu.mx').replace(/^@/,'').trim(); const {error}=await client.auth.resetPasswordForEmail(u.user.email,{redirectTo:process.env.PASSWORD_RESET_REDIRECT_URL||`https://${domain}/sistema.html`});
@@ -71,6 +72,11 @@ async function firstAccess(req,res){
 
   if(pe) return res.status(500).json({ok:false,error:pe.message});
   if(!profile||!profile.activo) return res.status(403).json({ok:false,error:'Perfil no disponible o inactivo.'});
+  // Impedir que first_access omita Jaguar Shield cuando ya existe un correo de recuperación.
+  if(profile.correo_recuperacion && String(profile.correo_recuperacion).toLowerCase()!==recovery)
+    return res.status(403).json({ok:false,error:'Para cambiar un correo existente utiliza Mi perfil → Jaguar Shield.'});
+  if(profile.correo_recuperacion && !user.user_metadata?.must_change_password)
+    return res.status(403).json({ok:false,error:'La configuración inicial ya terminó. Utiliza Mi perfil → Jaguar Shield.'});
 
   const authEmail=(user.email||profile.correo_auth||profile.correo||'').toLowerCase();
   if(!authEmail) return res.status(400).json({ok:false,error:'La cuenta no tiene un correo de acceso válido.'});
@@ -80,7 +86,7 @@ async function firstAccess(req,res){
     return res.status(400).json({ok:false,error:'Tu cuenta tiene una contraseña temporal. Debes definir una nueva contraseña antes de continuar.'});
   }
 
-  if(!newPassword){
+  {
     if(!currentPassword) return res.status(400).json({ok:false,error:'Escribe tu contraseña actual para confirmar el cambio.'});
     const anon=process.env.SUPABASE_ANON_KEY;
     const url=process.env.SUPABASE_URL;
@@ -88,6 +94,14 @@ async function firstAccess(req,res){
     const client=createClient(url,anon);
     const {error:loginError}=await client.auth.signInWithPassword({email:authEmail,password:currentPassword});
     if(loginError) return res.status(400).json({ok:false,error:'La contraseña actual no es correcta.'});
+  }
+
+  // Alta de correo inicial: debe comprobarse el buzón primero (código Shield).
+  // No consume un desafío si solo se actualiza la contraseña manteniendo el correo.
+  const isFirstRecovery=!profile.correo_recuperacion;
+  if(isFirstRecovery){
+    await assertSession(req,adminClient,user.id,profile.rol,'jaguar');
+    await consumeProof(adminClient,user.id,sessionId(req),'enroll',recovery,body.shield_proof);
   }
 
   const metadata={
@@ -105,14 +119,15 @@ async function firstAccess(req,res){
   // la actualización del perfil falla. Si Auth falla, revertimos el perfil.
   const {data:previousProfile,error:prevErr}=await adminClient
     .from('perfiles')
-    .select('correo_recuperacion,correo_auth')
+    .select('correo_recuperacion,correo_auth,shield_correo_verificado_at')
     .eq('id',user.id)
     .maybeSingle();
   if(prevErr) return res.status(500).json({ok:false,error:prevErr.message});
 
   const {error:pr}=await adminClient.from('perfiles').update({
     correo_recuperacion:recovery,
-    correo_auth:recovery
+    correo_auth:recovery,
+    ...(isFirstRecovery?{shield_correo_verificado_at:new Date().toISOString()}:{})
   }).eq('id',user.id);
   if(pr) return res.status(400).json({ok:false,error:pr.message});
 
@@ -120,7 +135,8 @@ async function firstAccess(req,res){
   if(ae){
     await adminClient.from('perfiles').update({
       correo_recuperacion:previousProfile?.correo_recuperacion||null,
-      correo_auth:previousProfile?.correo_auth||null
+      correo_auth:previousProfile?.correo_auth||null,
+      shield_correo_verificado_at:previousProfile?.shield_correo_verificado_at||null
     }).eq('id',user.id);
     return res.status(400).json({ok:false,error:ae.message});
   }
