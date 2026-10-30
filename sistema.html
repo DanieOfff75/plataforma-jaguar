@@ -3946,7 +3946,7 @@ roleNav.direccion_escolar=[
   ['inicio','⌂ Inicio'],['admision_control','🎓 Admisiones'],['bitacora_calificaciones','📒 Bitácora Excel'],['cambios_especiales','🚨 Cambio especial de grado'],['usuarios','🔐 Usuarios'],['planeaciones','📝 Planeaciones docentes'],['auditoria','🧾 Auditoría'],
   ['encargados','✍️ Encargados departamentales'],['institucion','🏛️ Datos de la institución'],['estadisticas','📈 Estadísticas institucionales'],
   ['docentes','👨‍🏫 Docentes'],['alumnos','👥 Alumnos y grupos'],['grupos','👥 Grupos'],['materias','📚 Materias'],
-  ['horarios','🗓️ Horarios'],['incidencias','⚠️ Prefectura'],['departamentos','🏢 Departamentos'],['recursos_monetarios','💰 Recursos monetarios'],
+  ['horarios','🗓️ Horarios'],['ventanas_evaluacion','🔐 Apertura de evaluaciones'],['incidencias','⚠️ Prefectura'],['departamentos','🏢 Departamentos'],['recursos_monetarios','💰 Recursos monetarios'],
   ['solicitudes_taller','📋 Solicitudes'],['avisos','📢 Avisos'],['perfil','👤 Perfil']
 ];
 roleNav.servicios_docentes=[['inicio','⌂ Inicio'],['bitacora_calificaciones','📒 Bitácora Excel'],['docentes','👨‍🏫 Docentes'],['carga_docente','🕐 Carga docente'],['cambios_especiales','🚨 Cambio especial de grado'],['grupos','👥 Grupos'],['planeaciones','📝 Planeaciones'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
@@ -3959,7 +3959,7 @@ roleNav.recursos_monetarios=[['inicio','⌂ Inicio'],['recursos_monetarios','�
 for(const rr of ['direccion_escolar','control_escolar','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','recursos_monetarios']){if(roleNav[rr]&&!roleNav[rr].some(x=>x[0]==='oficios_firma'))roleNav[rr].splice(1,0,['oficios_firma','✍️ Oficios por firmar']);}
 
 roleNav.alumno=[['inicio','⌂ Inicio'],['horario','🗓️ Mi horario'],['calificaciones','📊 Mis calificaciones'],['asistencia','✓ Mi asistencia'],['mis_pagos','💳 Mis pagos'],['solicitudes_taller','📨 Solicitudes'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
-Object.assign(titles,{admision_control:'Dirección · Convocatoria de admisiones',encargados:'Encargados departamentales',institucion:'Datos de la institución',cambios_especiales:'Cambios especiales de grado',credenciales:'Credenciales escolares',horario:'Horario',solicitudes_academicas:'Solicitudes académicas',recursos_monetarios:'Recursos monetarios',estadisticas:'Estadísticas institucionales'});
+Object.assign(titles,{ventanas_evaluacion:'Apertura de evaluaciones',admision_control:'Dirección · Convocatoria de admisiones',encargados:'Encargados departamentales',institucion:'Datos de la institución',cambios_especiales:'Cambios especiales de grado',credenciales:'Credenciales escolares',horario:'Horario',solicitudes_academicas:'Solicitudes académicas',recursos_monetarios:'Recursos monetarios',estadisticas:'Estadísticas institucionales'});
 if(!roleNav.control_escolar.some(x=>x[0]==='auditoria'))roleNav.control_escolar.push(['auditoria','🧾 Auditoría']);
 if(!roleNav.direccion_escolar.some(x=>x[0]==='auditoria'))roleNav.direccion_escolar.push(['auditoria','🧾 Auditoría']);
 Object.assign(titles,{archivo:'Archivo escolar',retencion:'Catálogo de retención documental',auditoria:'Bitácora de auditoría',bitacora_calificaciones:'Bitácora diaria de Excel'});
