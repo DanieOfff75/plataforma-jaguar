@@ -35,7 +35,8 @@
   $$('.show-password').forEach(b=>b.addEventListener('click',()=>{const input=document.getElementById(b.dataset.target);const visible=input.type==='password';input.type=visible?'text':'password';b.textContent=visible?'Ocultar':'Ver';b.setAttribute('aria-label',visible?'Ocultar contraseña':'Mostrar contraseña');}));
   $('#password-form').addEventListener('submit',e=>{e.preventDefault();withButton(e.currentTarget,async()=>{
     const password=$('#new-password').value,confirm_password=$('#confirm-password').value;
-    if(password.length<12||password.length>128||/\s/.test(password)||!/[a-z]/.test(password)||!/[A-Z]/.test(password)||!/[0-9]/.test(password))throw Error('Necesitas 12 caracteres, mayúscula, minúscula y número, sin espacios.');
+    if (password.length < 8 || password.length > 128)
+      throw Error('La contraseña debe tener entre 8 y 128 caracteres.');
     if(password!==confirm_password)throw Error('Las contraseñas no coinciden.');
     await request('recovery_complete',{id:challenge,proof,password,confirm_password});
     $('#new-password').value='';$('#confirm-password').value='';proof='';challenge='';display(3);
