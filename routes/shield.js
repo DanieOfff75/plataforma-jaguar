@@ -1,4 +1,6 @@
 import { identity,assertSameOrigin,shieldError,startChallenge,verifyChallenge,proofDigest,normalizeEmail,validEmail,maskEmail } from '../lib/jaguar_shield.js';
+import { renderSystemNotification } from '../lib/jaguar_notifications_email.js';
+import { deliverJaguarNotification } from '../lib/jaguar_notifications_delivery.js';
 
 export default async function shield(req,res){
   res.setHeader('Cache-Control','no-store');
@@ -44,6 +46,16 @@ export default async function shield(req,res){
         throw shieldError('No se completó la verificación de ambos correos. Revisa el estado de tu cuenta antes de reintentar.',409,'SHIELD_CONFIRMACION');
       }
       await ctx.db.from('ithla_sesiones').update({revocada_en:new Date().toISOString()}).eq('usuario_id',ctx.user.id).is('revocada_en',null);
+      // Aviso de seguridad al buzón anterior: nunca incluir contraseñas ni códigos.
+      // No revertimos el cambio si el proveedor de correo falla: la identidad ya se verificó.
+      try{
+        await deliverJaguarNotification(old,renderSystemNotification({
+          title:'Se actualizó tu correo de recuperación',
+          description:'El correo de recuperación de tu cuenta Jaguar fue cambiado y las sesiones abiertas se cerraron por seguridad.',
+          category:'Aviso importante de seguridad',
+          details:['Si realizaste este cambio, no necesitas hacer nada más.','Si no lo reconoces, comunícate con el área responsable de soporte institucional.']
+        }));
+      }catch(error){console.warn('Notificaciones Jaguar: aviso de cambio de correo no entregado.',error?.code||'ENVIO');}
       return res.status(200).json({ok:true,message:'Correo actualizado y sesiones revocadas. Vuelve a iniciar sesión.',needs_relogin:true});
     }
     throw shieldError('Acción Shield no disponible.',404);
