@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>Recuperar acceso · Plataforma Jaguar</title>
+<link rel="stylesheet" href="/assets/jaguar-recuperacion.css">
+<script src="/assets/jaguar-recuperacion.js" defer></script>
+</head><body>
+<main class="recovery-wrap">
+ <div class="brand"><span class="crest" aria-hidden="true">J</span><div><strong>PLATAFORMA JAGUAR</strong><small>Notificaciones Jaguar · Seguridad de acceso</small></div></div>
+ <section class="panel" aria-labelledby="recovery-heading">
+   <div class="panel-top"><span class="pill">🔐 Protección de cuenta</span><a href="/sistema.html">Volver al acceso <span aria-hidden="true">↗</span></a></div>
+   <div class="graphic" aria-hidden="true">✉</div>
+   <h1 id="recovery-heading">Recupera tu contraseña</h1>
+   <p class="intro" id="intro">Por seguridad, enviaremos un código al correo de recuperación que ya registraste y verificaste en Jaguar.</p>
+   <div class="steps" aria-label="Progreso"><span class="step active" id="step1">1 · Cuenta</span><span class="step" id="step2">2 · Código</span><span class="step" id="step3">3 · Contraseña</span></div>
+   <form id="account-form" class="phase" novalidate>
+     <label for="identifier">Usuario institucional</label>
+     <input id="identifier" type="email" autocomplete="username" inputmode="email" placeholder="matricula@ithla.edu.mx" maxlength="250" required>
+     <p class="hint">Utiliza tu usuario institucional, no el correo personal de recuperación.</p>
+     <div class="methods"><div class="method selected"><b>✉ Correo electrónico</b><small>Disponible sin costo de SMS</small></div><div class="method disabled" aria-disabled="true"><b>▣ SMS</b><small>En preparación · No disponible</small></div></div>
+     <button class="main-button" type="submit">Enviar código de seguridad</button>
+   </form>
+   <form id="code-form" class="phase" hidden novalidate>
+     <label for="digit0">Código de seis dígitos</label>
+     <div class="digits" id="digits"><input id="digit0" maxlength="1" inputmode="numeric" autocomplete="one-time-code" aria-label="Dígito 1"><input maxlength="1" inputmode="numeric" aria-label="Dígito 2"><input maxlength="1" inputmode="numeric" aria-label="Dígito 3"><input maxlength="1" inputmode="numeric" aria-label="Dígito 4"><input maxlength="1" inputmode="numeric" aria-label="Dígito 5"><input maxlength="1" inputmode="numeric" aria-label="Dígito 6"></div>
+     <div class="timer"><span id="remaining">Válido durante 05:00</span><span>Un solo uso</span></div>
+     <p class="hint">Si la cuenta tiene un correo verificado, recibirá el código. Revisa también Promociones y Spam.</p>
+     <button class="main-button" type="submit">Verificar código</button>
+     <button class="text-button" id="resend" type="button" disabled>Reenviar código en 65 s</button>
+     <button class="text-button muted" id="back-account" type="button">Cambiar usuario</button>
+   </form>
+   <form id="password-form" class="phase" hidden novalidate>
+     <label for="new-password">Nueva contraseña</label><div class="password-wrap"><input id="new-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><button class="show-password" type="button" data-target="new-password" aria-label="Mostrar contraseña">Ver</button></div>
+     <label for="confirm-password">Confirma la contraseña</label><div class="password-wrap"><input id="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><button class="show-password" type="button" data-target="confirm-password" aria-label="Mostrar contraseña">Ver</button></div>
+     <p class="hint">Usa 12 caracteres o más, con mayúscula, minúscula y número. No uses espacios.</p>
+     <button class="main-button" type="submit">Guardar contraseña nueva</button>
+   </form>
+   <div id="success" class="phase success" hidden><div class="success-icon" aria-hidden="true">✓</div><h2>¡Acceso recuperado!</h2><p>La contraseña se actualizó correctamente. Por seguridad, inicia sesión nuevamente.</p><a class="main-button" href="/sistema.html">Ir a iniciar sesión</a></div>
+   <p id="feedback" role="status" aria-live="polite"></p>
+ </section>
+ <footer>Protegemos tu información. Nunca compartas contraseñas o códigos con otras personas ni con NEXO.</footer>
+</main>
+</body></html>

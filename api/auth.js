@@ -3,6 +3,7 @@ import { getClients } from '../lib/_admin.js';
 import { getInstitution } from './institution.js';
 import { createSession,assertSession,revokeSession,sessionStatus,renewSession } from '../lib/ithla_session.js';
 import { consumeProof,sessionId } from '../lib/jaguar_shield.js';
+import {recoveryStart,recoveryVerify,recoveryComplete} from '../lib/jaguar_recovery.js';
 
 function validEmail(x){
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(x||'').trim());
@@ -30,24 +31,8 @@ async function login(req,res){
   return res.status(200).json({ok:true,session:data.session,user:data.user,profile,protected_session:protectedSession});
 }
 
-async function recovery(req,res){
-  const {identificador}=req.body||{};
-  const alias=String(identificador||'').trim().toLowerCase();
-  if(!alias) return res.status(400).json({ok:false,error:'Escribe tu usuario institucional.'});
-  const url=process.env.SUPABASE_URL;
-  const anon=process.env.SUPABASE_ANON_KEY;
-  const secret=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.SUPABASE_SECRET_KEY;
-  if(!url||!anon||!secret) return res.status(500).json({ok:false,error:'Faltan variables de Supabase.'});
-  const admin=createClient(url,secret), client=createClient(url,anon);
-  const {data:p,error:pe}=await admin.from('perfiles').select('id,correo,correo_recuperacion,shield_correo_verificado_at,activo').eq('correo',alias).maybeSingle();
-  if(pe) throw pe;
-  if(!p||!p.activo||!p.correo_recuperacion||!p.shield_correo_verificado_at) return res.status(200).json({ok:true,message:'Si el usuario existe y tiene correo de recuperación configurado, recibirás las instrucciones.'});
-  const {data:u,error:ue}=await admin.auth.admin.getUserById(p.id);
-  if(ue||!u?.user?.email) throw ue||new Error('Cuenta no disponible.');
-  const institution=await getInstitution(admin); const domain=String(institution.dominio_institucional||'ithla.edu.mx').replace(/^@/,'').trim(); const {error}=await client.auth.resetPasswordForEmail(u.user.email,{redirectTo:process.env.PASSWORD_RESET_REDIRECT_URL||`https://${domain}/sistema.html`});
-  if(error) throw error;
-  return res.status(200).json({ok:true,message:'Se enviaron las instrucciones al correo de recuperación registrado.'});
-}
+// La recuperación pública utiliza un OTP de Notificaciones Jaguar; no enlaces de localhost.
+async function recovery(req,res){return recoveryStart(req,res);}
 
 async function firstAccess(req,res){
   const {token,adminClient}=getClients(req);
@@ -259,6 +244,7 @@ export default async function handler(req,res){
     if(req.method==='GET'){
       const mode=String(req.query?.mode||'').trim().toLowerCase();
       if(mode==='config') return publicConfig(req,res);
+      if(mode==='recovery-channels')return res.status(200).json({ok:true,email:true,sms:false});
       if(mode==='me') return await getMe(req,res);
       if(mode==='session-status'){res.setHeader('Cache-Control','no-store');const {adminClient,user,profile}=await checkedSessionIdentity(req);return res.status(200).json({ok:true,session:await sessionStatus(req,adminClient,user.id,profile.rol,'jaguar')});}
       if(mode==='heartbeat'){const {token,adminClient}=getClients(req);const {data:{user}}=await adminClient.auth.getUser(token);if(!user)return res.status(401).json({ok:false,error:'Sesión inválida.'});const {data:p}=await adminClient.from('perfiles').select('rol,activo').eq('id',user.id).single();if(!p?.activo)return res.status(403).json({ok:false,error:'Perfil inactivo.'});await assertSession(req,adminClient,user.id,p.rol,'jaguar');return res.status(200).json({ok:true});}
@@ -268,7 +254,9 @@ export default async function handler(req,res){
     const action=String(req.body?.action||'').trim().toLowerCase();
     if(action==='extend-session'){res.setHeader('Cache-Control','no-store');const {adminClient,user,profile}=await checkedSessionIdentity(req);return res.status(200).json({ok:true,session:await renewSession(req,adminClient,user.id,profile.rol,'jaguar')});}
     if(action==='login') return await login(req,res);
-    if(action==='recovery') return await recovery(req,res);
+    if(action==='recovery'||action==='recovery_start') return await recovery(req,res);
+    if(action==='recovery_verify') return await recoveryVerify(req,res);
+    if(action==='recovery_complete') return await recoveryComplete(req,res);
     if(action==='first_access') return await firstAccess(req,res);
     if(action==='logout'){const {token,adminClient}=getClients(req);const {data:{user}}=await adminClient.auth.getUser(token);if(user)await revokeSession(req,adminClient,user.id);return res.status(200).json({ok:true});}
     return res.status(400).json({ok:false,error:'Acción de autenticación no válida.'});

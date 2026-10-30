@@ -125,7 +125,10 @@ function showLogin(){
 
 // Exposición explícita para callbacks de Supabase y handlers inline del HTML.
 window.showLogin=showLogin;
-async function forgotPassword(){const identifier=(document.getElementById('loginEmail').value||'').trim();const target=identifier||prompt(`Escribe tu usuario institucional (por ejemplo MATRICULA@${institutionDomain()}):`,'');if(!target)return;try{const r=await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'recovery',identificador:target,redirectTo:window.location.origin+window.location.pathname})});const raw=await r.text();let d={};try{d=raw?JSON.parse(raw):{};}catch{d={error:raw||'Respuesta inválida del servidor.'};}setLoginStatus(d.message||d.error||'Revisa tu correo de recuperación.')}catch(e){setLoginStatus('No fue posible iniciar la recuperación.')}}
+function forgotPassword(){
+  const account=(document.getElementById('loginEmail')?.value||'').trim();
+  window.location.assign('/recuperar.html'+(account?'?usuario='+encodeURIComponent(account):''));
+}
 function passwordModal(mode='first'){
  const recovery=mode==='recovery';
  const setupOnly=mode==='recovery_setup';
