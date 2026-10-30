@@ -1794,7 +1794,7 @@ if(typeof titles!=='undefined')titles.ventanas_evaluacion='Apertura de evaluacio
 async function jaguarEvaluationDirectionPage(){
  if(S.role!=='direccion_escolar')return '<div class="card">No autorizado.</div>';
  try{const rows=await jaguarTeacherEvaluationWindows();
- return `<div class="space-y-4"><div class="card"><span class="chip">DIRECCIÓN ESCOLAR</span><h2 class="text-2xl font-bold mt-3">🔐 Apertura y cierre de evaluaciones</h2><p class="text-sm mt-2">Solo Dirección puede autorizar la captura. El cierre conserva las calificaciones; no modifica notas históricas ni rúbricas.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${rows.map(p=>`<div class="card"><h3>${esc(p.nombre||'Periodo')}</h3><p class="text-sm">${esc(p.ciclo_escolar||'')} · ${p.habilitada?'🟢 Captura abierta':'🔒 Captura cerrada'}</p><button class="btn ${p.habilitada?'':'primary'} mt-3" onclick="jaguarEvaluationSet(${Number(p.id)},${!p.habilitada})">${p.habilitada?'Cerrar captura':'Abrir captura'}</button></div>`).join('')}</div></div>`;
+ return `<div class="space-y-4"><div class="card"><span class="chip">DIRECCIÓN ESCOLAR</span><h2 class="text-2xl font-bold mt-3">🔐 Apertura y cierre de evaluaciones</h2><p class="text-sm mt-2">Solo Dirección puede autorizar la captura. El cierre conserva las calificaciones; no modifica notas históricas ni rúbricas.</p><p id="jaguar_eval_feedback" role="alert" aria-live="polite" class="text-sm mt-3" hidden></p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${rows.map(p=>`<div class="card"><h3>${esc(p.nombre||'Periodo')}</h3><p class="text-sm">${esc(p.ciclo_escolar||'')} · ${p.activo===false?'⚠️ Periodo inactivo':p.habilitada?'🟢 Captura abierta':'🔒 Captura cerrada'}</p><button class="btn ${p.habilitada?'':'primary'} mt-3" ${p.activo===false?'disabled title="Activa primero el periodo escolar"':''} onclick="jaguarEvaluationSet(${Number(p.id)},${!p.habilitada})">${p.habilitada?'Cerrar captura':'Abrir captura'}</button></div>`).join('')}</div></div>`;
  }catch(e){return `<div class="card">No se pudo consultar la apertura: ${esc(e.message)}</div>`;}
 }
 async function jaguarEvaluationSet(periodId,enabled){
@@ -1802,9 +1802,9 @@ async function jaguarEvaluationSet(periodId,enabled){
  if(!confirm(enabled?'¿Autorizar a los docentes para capturar calificaciones en este periodo?':'¿Cerrar la captura de este periodo? Los docentes conservarán la consulta histórica.'))return;
  try{const session=(await supabaseClient.auth.getSession()).data.session;if(!session?.access_token)throw Error('Sesión caducada');
  const rsp=await fetch('/api/evaluation-window',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'set',periodo_id:Number(periodId),habilitada:Boolean(enabled),confirmado:true})});
- const out=await jaguarReadJson(rsp);if(!rsp.ok||!out.ok)throw Error(out.error||'No se pudo modificar el periodo');
+ const out=await jaguarReadJson(rsp);if(!rsp.ok||!out.ok)throw Error((out.error||'No se pudo modificar el periodo')+(out.code?' ['+out.code+']':''));
  toast(enabled?'Captura habilitada por Dirección.':'Captura cerrada por Dirección.');await loadPage('ventanas_evaluacion');
- }catch(e){toast(e.message)}
+ }catch(e){const feedback=document.getElementById('jaguar_eval_feedback');if(feedback){feedback.textContent=e.message;feedback.hidden=false;}toast(e.message)}
 }
 // Compatibilidad con vistas existentes de asistencias por periodo.
 async function jaguarLoadAttendanceHistory(periodId){return jaguarAttendancePeriod(periodId)}

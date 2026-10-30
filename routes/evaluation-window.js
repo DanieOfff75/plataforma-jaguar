@@ -1,5 +1,6 @@
 import {requireRoles} from '../lib/_admin.js';
 import {evaluationWindow} from '../lib/jaguar_evaluation_window.js';
+import {explainEvaluationSaveError} from '../lib/jaguar_evaluation_errors.js';
 const roles=['docente','direccion_escolar','coordinacion_academica','servicios_docentes','control_escolar'];
 const fail=(msg,status=400)=>{throw Object.assign(new Error(msg),{status});};
 const positive=x=>Number.isSafeInteger(Number(x))&&Number(x)>0?Number(x):0;
@@ -46,8 +47,24 @@ export default async function handler(req,res){
    const pid=positive(req.body?.periodo_id);const period=await evaluationWindow(db,pid);
    if(period.periodo.activo===false&&req.body.habilitada)fail('No puedes abrir un periodo inactivo.',409);
    const result=await db.rpc('jaguar_abrir_cerrar_evaluacion',{p_periodo_id:pid,p_habilitada:req.body.habilitada,p_actor:user.id});
-   if(result.error)fail('No se pudo guardar la apertura. Revisa la migración SQL.',409);
-   return res.status(200).json({ok:true,data:{periodo_id:pid,habilitada:req.body.habilitada}});
+   if(result.error){
+     const issue=explainEvaluationSaveError(result.error);
+     console.error('Ventana de evaluación: fallo RPC',{
+       code:result.error.code||null,
+       message:result.error.message||null,
+       details:result.error.details||null,
+       hint:result.error.hint||null,
+       periodo_id:pid
+     });
+     return res.status(issue.status).json({ok:false,error:issue.message,code:issue.code});
+   }
+   // Confirmar la persistencia; no anunciar éxito si Supabase no la refleja.
+   const confirmed=await evaluationWindow(db,pid);
+   if(confirmed.habilitada!==req.body.habilitada){
+     console.error('Ventana de evaluación: estado no confirmado',{periodo_id:pid});
+     return res.status(500).json({ok:false,error:'Supabase no confirmó el estado solicitado. Actualiza la pantalla y comprueba el registro del servidor.',code:'EVAL_SIN_CONFIRMAR'});
+   }
+   return res.status(200).json({ok:true,data:{periodo_id:pid,habilitada:confirmed.habilitada,actualizado_at:confirmed.actualizado_at}});
   }
   return res.status(405).json({ok:false,error:'Método o acción no disponibles.'});
  }catch(e){console.error('Ventana de evaluación:',e?.message);return res.status(e.status||500).json({ok:false,error:e.message||'Error de evaluación.'});}
