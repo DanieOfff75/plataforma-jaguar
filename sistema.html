@@ -281,7 +281,7 @@ async function loadPage(page){
   }catch(e){c.innerHTML='<div class="card border-red-500/30"><b>No se pudo cargar el módulo.</b><p class="text-sm text-[#A9BAC8] mt-2">'+esc(e.message)+'</p></div>';}
 }
 function renderShell(){
-  const items=S.role==='alumno'&&(S.studentAccess?.suspended||S.studentSuspended)?jaguarStudentSuspendedNav():(roleNav[S.role]||(S.role==='control_escolar'?controlNav:roleNav.alumno));
+  const items=S.role==='alumno'&&(S.studentAccess?.suspended||S.studentSuspended)?jaguarStudentSuspendedNav():(roleNav[S.role]||(S.role==='control_escolar'?controlNav:[['inicio','⌂ Inicio'],['perfil','◉ Perfil']]));
   document.getElementById('nav').innerHTML=typeof jaguarRenderNav==='function'?jaguarRenderNav(items):items.map(([id,t])=>'<button class="nav '+(S.page===id?'active':'')+'" onclick="loadPage(\''+id+'\')">'+t+'</button>').join('');
   document.getElementById('title').textContent=titles[S.page]||S.page;
   const periodLabel=S.activePeriod?(S.totalPeriods?`Ciclo ${S.activeCycle} · Periodo ${S.periodNumber||'—'} de ${S.totalPeriods}`:`Ciclo ${S.activeCycle} · ${S.activePeriod.nombre||'Periodo actual'}`):`Ciclo ${S.activeCycle||'—'} · Sin periodo actual`;
@@ -290,7 +290,17 @@ function renderShell(){
   document.getElementById('role').textContent=labels[S.role]||S.role;
   document.getElementById('mini').innerHTML='<div class="text-xs text-[#8FA3B5]">'+esc(labels[S.role]||'Usuario')+'</div><b class="block mt-1 truncate">'+esc(S.profile?.nombre_completo||S.user?.user_metadata?.nombre_completo||'Usuario')+'</b><div class="text-[11px] text-[#8FA3B5] truncate">'+esc(S.profile?.correo||S.user?.email||'')+'</div>';
 }
+/** Panel y perfil técnicos: evita el fallback de Alumno y consultas académicas. */
+function jaguarTechnicalHome(){
+  return `<div class="space-y-5"><div class="card"><span class="chip">ADMINISTRACIÓN TÉCNICA</span><h2 class="text-2xl font-extrabold mt-3">Centro técnico de Jaguar</h2><p class="text-sm text-[#A9BAC8] mt-2">Administración de infraestructura y dispositivos autorizados. Las funciones académicas conservan sus permisos independientes.</p></div><div class="card"><h3 class="text-lg font-bold">Pasarela SMS institucional</h3><p class="text-sm text-[#A9BAC8] mt-2">Gestiona dispositivos vinculados, estados de conexión y envíos de prueba autorizados.</p><button class="btn primary mt-4" onclick="loadPage('sms_gateway')">Abrir Pasarela SMS</button></div></div>`;
+}
+function jaguarTechnicalProfile(){
+  const p=S.profile||{},u=S.user||{};
+  return `<div class="space-y-5"><div class="card"><span class="chip">ADMINISTRACIÓN TÉCNICA</span><h2 class="text-2xl font-bold mt-3">${esc(p.nombre_completo||'Administrador técnico')}</h2><p class="text-sm text-[#A9BAC8] mt-2">Cuenta de acceso independiente para administrar los servicios técnicos autorizados.</p></div><div class="card max-w-2xl space-y-3"><div><small>Correo de acceso</small><div class="font-semibold mt-1">${esc(p.correo||u.email||'—')}</div></div><div><small>Rol autorizado</small><div class="font-semibold mt-1">Administrador técnico</div></div><div><small>Estado</small><div class="font-semibold mt-1">${p.activo===false?'Inactivo':'Activo'}</div></div></div></div>`;
+}
 async function pageHtml(p){
+  if(S.role==='tecnico' && p==='inicio')return jaguarTechnicalHome();
+  if(S.role==='tecnico' && p==='perfil')return jaguarTechnicalProfile();
   if(p==='tramites_360')return jaguar360Page();
   if(p==='salud_360'&&['direccion_escolar','control_escolar','control'].includes(S.role))return jaguar360HealthPage();
   if(p==='admision_control'&&S.role==='direccion_escolar')return jaguarAdmissionDirectorModule();
