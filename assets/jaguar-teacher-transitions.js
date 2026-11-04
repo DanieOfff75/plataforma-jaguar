@@ -41,12 +41,25 @@ async function downloadApprovedPlan(planId){
  window.location.assign(out.data.url);
  }catch(e){toast(e.message)}
 }
+// Orden institucional solo para relaciones de alumnos; mantiene IDs para adoptar notas.
+const _surnameCollator = new Intl.Collator('es-MX',{sensitivity:'base',numeric:true});
+function displayStudentName(row){
+ const p=String(row?.apellido_paterno||'').trim(),m=String(row?.apellido_materno||'').trim(),n=String(row?.nombres||'').trim();
+ if(p||m)return [p,m,n].filter(Boolean).join(' ');
+ const raw=String(row?.nombre_completo||'').replace(/\s+/g,' ').trim();
+ if(!raw)return 'Sin nombre';
+ if(raw.includes(',')){const t=raw.split(',');return `${t[0].trim()} ${t.slice(1).join(' ').trim()}`.trim();}
+ const w=raw.split(' ');if(w.length<3)return raw;
+ const pop=()=>{const end=[w.pop()];while(w.length&&['DE','DEL','LA','LAS','LOS','SAN','SANTA'].includes(w[w.length-1].toUpperCase())){const part=w.pop();end.unshift(part);if(['LA','LOS','LAS'].includes(part.toUpperCase())&&w[w.length-1]?.toUpperCase()==='DE')end.unshift(w.pop());}return end.join(' ');};
+ const mat=pop(),pat=pop();return [pat,mat,w.join(' ')].filter(Boolean).join(' ');
+}
+function sortRoster(rows){return [...(rows||[])].sort((a,b)=>_surnameCollator.compare(displayStudentName(a),displayStudentName(b))||_surnameCollator.compare(String(a.id||''),String(b.id||'')));}
 async function showHistoricalGrades(vacanteId){
  try{const session=(await supabaseClient.auth.getSession()).data.session;if(!session)throw Error('Inicia sesión nuevamente');
  const rsp=await fetch(`${apiPath}?mode=historial&vacante_id=${Number(vacanteId)}`,{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
  const result=await rsp.json();if(!rsp.ok||!result.ok)throw Error(result.error||'Historial no disponible');
- const d=result.data||{},names=new Map((d.students||[]).map(x=>[Number(x.id),x.nombre_completo]));
- const body=(d.rubrics||[]).map(rb=>`<div class="jtr-resource"><strong>${E(rb.titulo)} · ${E(rb.estado)}</strong><div class="scroll"><table class="table"><thead><tr><th>Alumno</th><th>Actividad</th><th>Calificación original</th></tr></thead><tbody>${(d.notes||[]).filter(n=>Number(n.rubrica_id)===Number(rb.id)).map(n=>`<tr><td>${E(names.get(Number(n.alumno_id))||'Registro histórico')}</td><td>${E((d.components||[]).find(c=>Number(c.id)===Number(n.componente_id))?.nombre||'Actividad')}</td><td>${E(n.valor)}</td></tr>`).join('')||'<tr><td colspan="3">Sin calificaciones individuales guardadas.</td></tr>'}</tbody></table></div></div>`).join('')||'No hay rúbricas históricas de este grupo.';
+ const d=result.data||{},names=new Map(sortRoster(d.students||[]).map(x=>[Number(x.id),displayStudentName(x)]));
+ const body=(d.rubrics||[]).map(rb=>`<div class="jtr-resource"><strong>${E(rb.titulo)} · ${E(rb.estado)}</strong><div class="scroll"><table class="table"><thead><tr><th>Alumno</th><th>Actividad</th><th>Calificación original</th></tr></thead><tbody>${(d.notes||[]).filter(n=>Number(n.rubrica_id)===Number(rb.id)).sort((a,b)=>_surnameCollator.compare(names.get(Number(a.alumno_id))||'',names.get(Number(b.alumno_id))||'')).map(n=>`<tr><td>${E(names.get(Number(n.alumno_id))||'Registro histórico')}</td><td>${E((d.components||[]).find(c=>Number(c.id)===Number(n.componente_id))?.nombre||'Actividad')}</td><td>${E(n.valor)}</td></tr>`).join('')||'<tr><td colspan="3">Sin calificaciones individuales guardadas.</td></tr>'}</tbody></table></div></div>`).join('')||'No hay rúbricas históricas de este grupo.';
  modal('Calificaciones y actividades heredadas · Solo lectura',`<div class="jtr"><p class="jtr-muted">Este registro es histórico e inalterable. Para evaluaciones nuevas utiliza tus propias rúbricas y registra notas en los módulos docentes.</p>${body}</div>`);
  }catch(e){toast(e.message)}
 }
@@ -55,12 +68,12 @@ async function showHistoricalExcel(vacanteId){
   const session=(await supabaseClient.auth.getSession()).data.session;if(!session)throw Error('Inicia sesión nuevamente');
   const rsp=await fetch(`${apiPath}?mode=bitacora&vacante_id=${Number(vacanteId)}`,{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
   const result=await rsp.json();if(!rsp.ok||!result.ok)throw Error(result.error||'Bitácoras no disponibles');
-  const d=result.data||{}, students=d.students||[];
+  const d=result.data||{}, students=sortRoster(d.students||[]);
   const books=(d.booklets||[]).filter(b=>b.estado!=='reemplazado');const adopted=new Set((d.adoptions||[]).map(a=>Number(a.bitacora_origen_id)));
   const body=books.map(b=>{
    const state=b.snapshot||{}, acts=Array.isArray(state.activities)?state.activities:[], scores=Object.keys(state.activityScores||{}).length?state.activityScores:(state.scores||{});
    const cols=acts.slice(0,40);
-   const rows=students.filter(st=>cols.some(a=>scores[`${st.id}|${a.key}`]!==undefined)).map(st=>`<tr><td>${E(st.nombre_completo)}</td>${cols.map(a=>`<td>${E(scores[`${st.id}|${a.key}`]??'—')}</td>`).join('')}</tr>`).join('');
+   const rows=students.filter(st=>cols.some(a=>scores[`${st.id}|${a.key}`]!==undefined)).map(st=>`<tr><td>${E(displayStudentName(st))}</td>${cols.map(a=>`<td>${E(scores[`${st.id}|${a.key}`]??'—')}</td>`).join('')}</tr>`).join('');
    return `<section class="jtr-resource"><b>${E(b.fecha_clase||'Bitácora')} · Periodo ${E(b.periodo_id)} · Versión ${E(b.version)}</b><p class="jtr-muted">Puedes adoptar una copia de las actividades y calificaciones. El registro histórico permanece inalterado.</p><div class="jtr-actions">${adopted.has(Number(b.id))?'<span class="jtr-status jtr-covered">✓ Ya adoptada</span>':`<button class="btn primary" onclick="jaguarTransitions.adoptActivities(${Number(vacanteId)},${Number(b.id)})">📥 Adoptar ${cols.length} actividades y notas</button>`}</div><div class="scroll"><table class="table"><thead><tr><th>Alumno</th>${cols.map(a=>`<th>${E(a.nombre||'Actividad')}</th>`).join('')}</tr></thead><tbody>${rows||'<tr><td colspan="41">No hay calificaciones de actividades en esta bitácora.</td></tr>'}</tbody></table></div></section>`;
   }).join('');
   modal('Bitácoras Excel · Adoptar o consultar',`<div class="jtr"><p class="jtr-muted">Adoptar copia conserva las notas originales, identifica su procedencia y permite continuar la bitácora. La rúbrica original no cambia.</p>${body||'<p>No se encontraron bitácoras Excel para esta asignatura.</p>'}</div>`);

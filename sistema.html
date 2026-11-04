@@ -802,7 +802,7 @@ async function previewDailyDraftToEvaluation(gmId,periodoId){
    const old=existing.get(key);
    const situation=old===undefined||old===null||old===''?'nuevo':Number(old)===Number(v)?'igual':'diferente';
    proposals.push({alumno_id:sid,componente_id:cid,valor:Number(v),anterior:old,situacion,
-     alumno:students.get(sid).nombre_completo||'Estudiante',actividad:components.get(cid).nombre||'Aspecto'});
+     alumno:jaguarNombreInstitucional(students.get(sid)),actividad:components.get(cid).nombre||'Aspecto'});
   }
   if(!proposals.length)throw Error('El borrador no contiene valores disponibles para adoptar.');
   if(proposals.length>1200)throw Error('El borrador tiene más de 1200 celdas. Solicita soporte antes de una incorporación masiva.');
@@ -851,11 +851,11 @@ function evaluationWorkbook(d){
     ws['!rows']=[{hpt:34},{hpt:64},{hpt:34},{hpt:30}];
   };
   // ASISTENCIAS: plantilla de evaluación conserva la lista aunque no tenga fechas todavía.
-  const wa={};mkHeader(wa,3);['A3','B3','C3'].forEach((a,i)=>xlsxSet(wa,a,['No.','NOMBRE COMPLETO','MATRÍCULA'][i],dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor})));students.forEach((st,i)=>{const r=4+i;xlsxSet(wa,`A${r}`,i+1);xlsxSet(wa,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(wa,`C${r}`,st.matricula||'');});wa['!freeze']='A4';wa['!cols']=[{wch:5},{wch:42},{wch:22}];XLSX.utils.book_append_sheet(wb,wa,'ASISTENCIAS');
+  const wa={};mkHeader(wa,3);['A3','B3','C3'].forEach((a,i)=>xlsxSet(wa,a,['No.','APELLIDOS Y NOMBRE(S)','MATRÍCULA'][i],dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor})));students.forEach((st,i)=>{const r=4+i;xlsxSet(wa,`A${r}`,i+1);xlsxSet(wa,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(wa,`C${r}`,st.matricula||'');});wa['!freeze']='A4';wa['!cols']=[{wch:5},{wch:42},{wch:22}];XLSX.utils.book_append_sheet(wb,wa,'ASISTENCIAS');
   // ACTIVIDADES: espacio para evidencias del periodo y rúbrica visible, sin ponderación por actividad.
-  const av={};mkHeader(av,Math.max(comps.length,1)+3);xlsxSet(av,'A3','No.',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,'B3','NOMBRE COMPLETO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,'C3','MATRÍCULA',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));for(let i=0;i<Math.max(comps.length,1);i++)xlsxSet(av,`${dailyCol(4+i)}4`,comps[i]?.nombre||`ACTIVIDAD ${String(i+1).padStart(2,'0')}`,dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));students.forEach((st,i)=>{const r=5+i;xlsxSet(av,`A${r}`,i+1);xlsxSet(av,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(av,`C${r}`,st.matricula||'');});xlsxSet(av,`A${5+students.length+1}`,'RÚBRICA OFICIAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`A${6+students.length}`,'ASPECTO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`B${6+students.length}`,'PONDERACIÓN',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`C${6+students.length}`,'VALOR MÁXIMO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));comps.forEach((c,i)=>{const r=7+students.length+i;xlsxSet(av,`A${r}`,c.nombre);xlsxSet(av,`B${r}`,Number(c.ponderacion)/100,{numFmt:'0.00%'});xlsxSet(av,`C${r}`,Number(c.maximo||10),{numFmt:'0.00'});});const rt=7+students.length+comps.length;xlsxSet(av,`A${rt}`,'VALOR TOTAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`B${rt}`,Number(comps.reduce((a,c)=>a+Number(c.ponderacion||0),0))/100,{numFmt:'0.00%'});xlsxSet(av,`C${rt}`,10,{numFmt:'0.00'});av['!freeze']='D5';av['!cols']=[{wch:5},{wch:42},{wch:22},...Array.from({length:Math.max(comps.length,1)},()=>({wch:18}))];XLSX.utils.book_append_sheet(wb,av,'ACTIVIDADES');
+  const av={};mkHeader(av,Math.max(comps.length,1)+3);xlsxSet(av,'A3','No.',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,'B3','APELLIDOS Y NOMBRE(S)',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,'C3','MATRÍCULA',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));for(let i=0;i<Math.max(comps.length,1);i++)xlsxSet(av,`${dailyCol(4+i)}4`,comps[i]?.nombre||`ACTIVIDAD ${String(i+1).padStart(2,'0')}`,dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));students.forEach((st,i)=>{const r=5+i;xlsxSet(av,`A${r}`,i+1);xlsxSet(av,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(av,`C${r}`,st.matricula||'');});xlsxSet(av,`A${5+students.length+1}`,'RÚBRICA OFICIAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`A${6+students.length}`,'ASPECTO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`B${6+students.length}`,'PONDERACIÓN',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`C${6+students.length}`,'VALOR MÁXIMO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));comps.forEach((c,i)=>{const r=7+students.length+i;xlsxSet(av,`A${r}`,c.nombre);xlsxSet(av,`B${r}`,Number(c.ponderacion)/100,{numFmt:'0.00%'});xlsxSet(av,`C${r}`,Number(c.maximo||10),{numFmt:'0.00'});});const rt=7+students.length+comps.length;xlsxSet(av,`A${rt}`,'VALOR TOTAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`B${rt}`,Number(comps.reduce((a,c)=>a+Number(c.ponderacion||0),0))/100,{numFmt:'0.00%'});xlsxSet(av,`C${rt}`,10,{numFmt:'0.00'});av['!freeze']='D5';av['!cols']=[{wch:5},{wch:42},{wch:22},...Array.from({length:Math.max(comps.length,1)},()=>({wch:18}))];XLSX.utils.book_append_sheet(wb,av,'ACTIVIDADES');
   // VALORES PONDERACION: las columnas son exclusivamente los aspectos de la rúbrica.
-  const vw={};mkHeader(vw,4+comps.length);xlsxSet(vw,'A3','No.',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'B3','NOMBRE COMPLETO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'C3','MATRÍCULA',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));comps.forEach((c,i)=>{const col=4+i;xlsxSet(vw,`${dailyCol(col)}3`,c.nombre,dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(col)}4`,Number(c.ponderacion)/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(col)}5`,Number(c.id),{font:{sz:8,color:{rgb:'FF64748B'}}});});const tc=4+comps.length;xlsxSet(vw,`${dailyCol(tc)}3`,'VALOR TOTAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(tc)}4`,Number(comps.reduce((a,c)=>a+Number(c.ponderacion||0),0))/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(tc)}5`,10,{numFmt:'0.00'});students.forEach((st,i)=>{const r=6+i;xlsxSet(vw,`A${r}`,i+1);xlsxSet(vw,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(vw,`C${r}`,st.matricula||'');comps.forEach((c,j)=>{const old=scoreMap.get(`${st.id}|${c.id}`);xlsxSet(vw,`${dailyCol(4+j)}${r}`,old==null?'':Number((Number(old)*Number(c.ponderacion)/100).toFixed(2)),{numFmt:'0.00',alignment:{horizontal:'center'}})});const totalAddr=`${dailyCol(tc)}${r}`;xlsxSet(vw,totalAddr,'',{numFmt:'0.00',alignment:{horizontal:'center'}});vw[totalAddr].t='n';vw[totalAddr].f=`IF(COUNT(D${r}:${dailyCol(tc-1)}${r})=${comps.length},SUM(D${r}:${dailyCol(tc-1)}${r}),"")`;delete vw[totalAddr].v;});vw['!freeze']='D6';vw['!autofilter']={ref:`A3:${dailyCol(tc)}${5+students.length}`};vw['!cols']=[{wch:5},{wch:42},{wch:22},...Array.from({length:comps.length+1},()=>({wch:18}))];XLSX.utils.book_append_sheet(wb,vw,'VALORES PONDERACION');
+  const vw={};mkHeader(vw,4+comps.length);xlsxSet(vw,'A3','No.',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'B3','APELLIDOS Y NOMBRE(S)',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'C3','MATRÍCULA',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));comps.forEach((c,i)=>{const col=4+i;xlsxSet(vw,`${dailyCol(col)}3`,c.nombre,dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(col)}4`,Number(c.ponderacion)/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(col)}5`,Number(c.id),{font:{sz:8,color:{rgb:'FF64748B'}}});});const tc=4+comps.length;xlsxSet(vw,`${dailyCol(tc)}3`,'VALOR TOTAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(tc)}4`,Number(comps.reduce((a,c)=>a+Number(c.ponderacion||0),0))/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(tc)}5`,10,{numFmt:'0.00'});students.forEach((st,i)=>{const r=6+i;xlsxSet(vw,`A${r}`,i+1);xlsxSet(vw,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(vw,`C${r}`,st.matricula||'');comps.forEach((c,j)=>{const old=scoreMap.get(`${st.id}|${c.id}`);xlsxSet(vw,`${dailyCol(4+j)}${r}`,old==null?'':Number((Number(old)*Number(c.ponderacion)/100).toFixed(2)),{numFmt:'0.00',alignment:{horizontal:'center'}})});const totalAddr=`${dailyCol(tc)}${r}`;xlsxSet(vw,totalAddr,'',{numFmt:'0.00',alignment:{horizontal:'center'}});vw[totalAddr].t='n';vw[totalAddr].f=`IF(COUNT(D${r}:${dailyCol(tc-1)}${r})=${comps.length},SUM(D${r}:${dailyCol(tc-1)}${r}),"")`;delete vw[totalAddr].v;});vw['!freeze']='D6';vw['!autofilter']={ref:`A3:${dailyCol(tc)}${5+students.length}`};vw['!cols']=[{wch:5},{wch:42},{wch:22},...Array.from({length:comps.length+1},()=>({wch:18}))];XLSX.utils.book_append_sheet(wb,vw,'VALORES PONDERACION');
   const meta=XLSX.utils.aoa_to_sheet([['JAGUAR_EVALUACION','VALOR'],['formato_version',4],['rubrica_id',d.rubrica.id],['grupo_materia_id',gm.id],['periodo_id',d.rubrica.periodo_id],['version',d.rubrica.version||1],['componentes_json',JSON.stringify(comps.map(c=>({id:c.id,nombre:c.nombre,ponderacion:c.ponderacion,maximo:c.maximo})))] ]);XLSX.utils.book_append_sheet(wb,meta,'ITHLA_META');if(wb.Workbook?.Sheets){const sh=wb.Workbook.Sheets.find(x=>x.name==='ITHLA_META');if(sh)sh.Hidden=1}return wb;
 }
 async function downloadEvaluationTemplate(gmId,periodoId){try{const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});if(!d.rubrica)return toast('Primero configura la rúbrica.');const wb=evaluationWorkbook(d);const subject=d.grupo_materia?.materias?.nombre||'materia',group=d.grupo_materia?.grupos?.clave||'grupo';await jaguarWriteValorTotalColors(jaguarPolishWorkbook(wb,{kind:"evaluacion"}),`ITHLA-${group}-${subject}-${d.periodo?.nombre||'periodo'}-EVALUACION.xlsx`,{startRow:6,lastRow:5+(d.students||[]).length,totalCol:4+(d.componentes||[]).length});toast('Plantilla institucional generada.')}catch(e){toast(e.message)}}
@@ -937,10 +937,10 @@ async function confirmEvaluationImport(){
       const input=document.getElementById(`adj_${st.id}`),reason=document.getElementById(`reason_${st.id}`);
       const raw=input?.value?.trim()||'';if(raw==='')continue;
       const nuevo=Number(raw),base=p.calculations.get(st.id)?.value;
-      if(!Number.isFinite(nuevo)||nuevo<0||nuevo>10)throw Error(`El nuevo total de ${st.nombre_completo} debe ser entre 0 y 10.`);
+      if(!Number.isFinite(nuevo)||nuevo<0||nuevo>10)throw Error(`El nuevo total de ${jaguarNombreInstitucional(st)} debe ser entre 0 y 10.`);
       if(Math.abs(nuevo-base)>.001){
         const motivo=String(reason?.value||'').trim();
-        if(!motivo)throw Error(`Indica el motivo del cambio para ${st.nombre_completo}.`);
+        if(!motivo)throw Error(`Indica el motivo del cambio para ${jaguarNombreInstitucional(st)}.`);
         adjustments.push({alumno_id:st.id,valor_nuevo:Number(nuevo.toFixed(2)),motivo});
       }
     }
@@ -1491,11 +1491,22 @@ async function apiPost(resource,body={}){return api(resource,{method:'POST',body
 function jaguarNombreInstitucional(persona){
  const r=typeof persona==='string'?{nombre_completo:persona}:(persona||{});
  const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
- const a=clean(r.apellido_paterno??r.primer_apellido),b=clean(r.apellido_materno??r.segundo_apellido),n=clean(r.nombres??r.nombre_s??r.nombres_pila);
- if(a&&(b||n))return [a,b,n].filter(Boolean).join(' ');
- const raw=clean(r.nombre_completo??r.name);
+ const a=clean(r.apellido_paterno??r.primer_apellido),b=clean(r.apellido_materno??r.segundo_apellido);
+ let n=clean(r.nombres??r.nombre_s??r.nombres_pila);
+ const raw=clean(r.nombre_completo??r.name??r.nombre);
+ if(a||b){
+   if(!n&&raw){
+     const suffix=clean(`${a} ${b}`),lower=raw.toLocaleUpperCase('es-MX'),su=suffix.toLocaleUpperCase('es-MX');
+     if(suffix&&lower.endsWith(su))n=clean(raw.slice(0,-suffix.length));
+     else if(suffix&&lower.startsWith(su))n=clean(raw.slice(suffix.length));
+     else if(!lower.includes(a.toLocaleUpperCase('es-MX')))n=raw;
+     else return raw;
+   }
+   return [a,b,n].filter(Boolean).join(' ')||raw||'Sin nombre';
+ }
  if(!raw)return 'Sin nombre';
  if(r.nombre_orden==='institucional'||r.orden_institucional===true)return raw;
+ if(raw.includes(',')){const z=raw.split(',');return `${clean(z[0])} ${clean(z.slice(1).join(' '))}`.trim();}
  const words=raw.split(' ');if(words.length<3)return raw;
  const particles=new Set(['DE','DEL','LA','LAS','LOS','SAN','SANTA']);
  const surname=()=>{const parts=[words.pop()];if(words.length&&particles.has(words[words.length-1].toLocaleUpperCase('es'))){const x=words.pop();parts.unshift(x);if(/^(LA|LOS|LAS)$/i.test(x)&&words.length&&/^DE$/i.test(words[words.length-1]))parts.unshift(words.pop());}return parts.join(' ')};
@@ -3133,7 +3144,7 @@ async function jaguarAssignInstitutionalAccess(){
 function jaguarFilterAccessStudents(){
   const gid=Number(document.getElementById('ia_group')?.value||0);const sel=document.getElementById('ia_student');if(!sel)return;
   if(!gid){sel.disabled=true;sel.innerHTML='<option value="">Primero selecciona un grupo</option>';return;}
-  const rows=(window._jaguarAccessStudents||[]).filter(s=>Number(s.grupo_id)===gid && s.activo!==false).sort((a,b)=>String(a.nombre_completo||'').localeCompare(String(b.nombre_completo||''),'es',{sensitivity:'base'}));
+  const rows=(window._jaguarAccessStudents||[]).filter(s=>Number(s.grupo_id)===gid && s.activo!==false).sort((a,b)=>jaguarPersonaCollator.compare(jaguarNombreInstitucional(a),jaguarNombreInstitucional(b))||jaguarPersonaCollator.compare(String(a.matricula||''),String(b.matricula||'')));
   sel.disabled=false;sel.innerHTML='<option value="">Selecciona un alumno</option>'+rows.map(s=>`<option value="${s.id}">${esc(jaguarNombreInstitucional(s))}</option>`).join('');
   if(!rows.length)sel.innerHTML='<option value="">No hay alumnos activos en este grupo</option>';
 }
@@ -3419,7 +3430,7 @@ async function jaguarEnrollWorkshop(){
 function jaguarFilterWorkshopStudents(){
   const gid=Number(document.getElementById('we_group')?.value||0),sel=document.getElementById('we_student');if(!sel)return;
   if(!gid){sel.disabled=true;sel.innerHTML='<option value="">Primero selecciona un grupo</option>';return;}
-  const rows=(window._jaguarWorkshopStudents||[]).filter(s=>Number(s.grupo_id)===gid&&s.activo!==false).sort((a,b)=>String(a.nombre_completo||'').localeCompare(String(b.nombre_completo||''),'es',{sensitivity:'base'}));
+  const rows=(window._jaguarWorkshopStudents||[]).filter(s=>Number(s.grupo_id)===gid&&s.activo!==false).sort((a,b)=>jaguarPersonaCollator.compare(jaguarNombreInstitucional(a),jaguarNombreInstitucional(b))||jaguarPersonaCollator.compare(String(a.matricula||''),String(b.matricula||'')));
   sel.disabled=false;sel.innerHTML='<option value="">Selecciona un alumno</option>'+rows.map(s=>`<option value="${s.id}">${esc(jaguarNombreInstitucional(s))} — ${esc(s.matricula||'')}</option>`).join('');
 }
 async function jaguarSaveWorkshopEnrollment(){
@@ -4225,7 +4236,7 @@ async function jaguarOfficialDocumentModal(context={}){
       defaultType=ctx.docenteId?'CON-DOC':ctx.alumnoId?'CON-EST':((types||[])[0]?.codigo||'');
     }
     const typeOptions=(types||[]).map(t=>`<option value="${esc(t.codigo)}" ${t.codigo===defaultType?'selected':''}>${esc(t.codigo)} · ${esc(t.nombre)}</option>`).join('');
-    const studentOptions=[`<option value="">Seleccionar alumno…</option>`,...(students||[]).slice(0,1500).map(s=>`<option value="${Number(s.id)}" ${Number(ctx.alumnoId||0)===Number(s.id)?'selected':''}>${esc(s.nombre_completo||'Alumno')} · ${esc(s.matricula||'')}</option>`) ].join('');
+    const studentOptions=[`<option value="">Seleccionar alumno…</option>`,...sortStudents(students||[]).slice(0,1500).map(s=>`<option value="${Number(s.id)}" ${Number(ctx.alumnoId||0)===Number(s.id)?'selected':''}>${esc(jaguarNombreInstitucional(s))} · ${esc(s.matricula||'')}</option>`) ].join('');
     const teacherOptions=[`<option value="">Seleccionar docente…</option>`,...(teachers||[]).slice(0,1000).map(t=>`<option value="${Number(t.id)}" ${Number(ctx.docenteId||0)===Number(t.id)?'selected':''}>${esc(t.nombre_completo||'Docente')} · ${esc(t.numero_empleado||'')}</option>`) ].join('');
     modal('📄 Generar documento oficial',`<div class="space-y-4"><div class="card"><p class="text-sm">Selecciona el tipo. Jaguar decide automáticamente qué departamento firma y qué datos debe tomar del sistema.</p>${ctx.requestId?'<p class="text-xs text-[#8FA3B5] mt-2">Esta emisión quedará vinculada a la solicitud de Archivo Escolar y podrá cerrarla automáticamente.</p>':''}</div><select id="of_tipo" class="select" onchange="jaguarOfficialDocFormRefresh()">${typeOptions}</select><div id="of_contexto"></div><div id="of_dest_wrap"><input id="of_dest" class="input" placeholder="Destinatario / a quien corresponda"></div><input id="of_asunto" class="input" placeholder="Asunto"><div id="of_signers_wrap" class="card"><label class="text-xs text-[#8FA3B5]">Departamentos que deben revisar y firmar</label><div class="text-xs text-[#8FA3B5] mt-1">Archivo Escolar firma como responsable del trámite cuando corresponda. Selecciona las firmas adicionales necesarias.</div><div id="of_signers" class="grid md:grid-cols-2 gap-2 mt-3"></div></div><textarea id="of_cuerpo" class="textarea" rows="7" placeholder="Mensaje, oficio o aviso (para tipos que lo requieran)"></textarea><div id="of_err" class="text-xs text-rose-300 min-h-[18px]"></div><button class="btn primary w-full" onclick="jaguarOfficialGenerate()">Generar PDF y registrar en Archivo Escolar</button></div>`);
     window._officialTypes=types||[];window._officialStudentsOptions=studentOptions;window._officialTeacherOptions=teacherOptions;window._officialArchiveRequestId=Number(ctx.requestId||0)||0;
@@ -4367,7 +4378,10 @@ function dailyStateFromWorkbook(wb,d){
   if(![3,4].includes(formatVersion))throw Error(`Versión de BITÁCORA ${formatVersion||'sin indicar'} no compatible (aceptadas: 3 y 4). Descarga una nueva bitácora y transcribe los valores sin alterar las hojas de metadatos.`);
   if(Number(get('grupo_materia_id'))!==Number(d.grupo_materia?.id)||Number(get('periodo_id'))!==Number(d.periodo?.id))throw Error('Este archivo pertenece a otro grupo o periodo.');
   const rubric=d.rubric||{id:0,version:1,total:0,components:[]};
-  const byMat=new Map((d.students||[]).map(x=>[String(x.matricula||''),x]));
+  // Ordenar la lista no debe cambiar la asociación de registros: usar matrícula, jamás fila.
+  const normalizeMatricula=value=>String(value??'').normalize('NFKC').trim().toUpperCase();
+  const byMat=new Map((d.students||[]).map(x=>[normalizeMatricula(x.matricula),x]));
+  if(byMat.size!==(d.students||[]).length||byMat.has(''))throw Error('El padrón contiene matrículas vacías o repetidas. Solicita a Control Escolar revisar los registros.');
   const activityScores={};
   const activities=[];
   const attendance={};
@@ -4411,7 +4425,7 @@ function dailyStateFromWorkbook(wb,d){
   for(const a of activities){if(usedActivityKeys.has(a.key))throw Error(`La actividad ${a.nombre} tiene una clave duplicada.`);usedActivityKeys.add(a.key)}
   const seenStudents=new Set();
   for(let r=firstStudent;r<ar.length;r++){
-    const mat=String(ar[r]?.[2]??'').trim();if(!mat)continue;
+    const mat=normalizeMatricula(ar[r]?.[2]);if(!mat)continue;
     const st=byMat.get(mat);if(!st)throw Error(`La matrícula ${mat} no pertenece al grupo.`);
     if(seenStudents.has(mat))throw Error(`La matrícula ${mat} está duplicada en ACTIVIDADES.`);
     seenStudents.add(mat);
@@ -4432,7 +4446,7 @@ function dailyStateFromWorkbook(wb,d){
   // componente está en la fila 5 de Excel (índice 4), no en la fila 4.
   const valSheet=wb.Sheets['VALORES PONDERACION'];if(!valSheet)throw Error('Falta la hoja VALORES PONDERACION.');
   const vr=XLSX.utils.sheet_to_json(valSheet,{header:1,raw:true,defval:''});
-  const weightedValues={};const compByCol=[];
+  const weightedValues={};const compByCol=[];const seenWeighted=new Set();
   for(let c=3;c<3+rubric.components.length;c++){
     const cid=Number(vr[6]?.[c]||0);
     const comp=rubric.components.find(x=>Number(x.id)===cid);
@@ -4440,8 +4454,10 @@ function dailyStateFromWorkbook(wb,d){
     compByCol.push({c,comp});
   }
   for(let r=7;r<vr.length;r++){
-    const mat=String(vr[r]?.[2]??'').trim();if(!mat)continue;
-    const st=byMat.get(mat);if(!st)throw Error(`La matrícula ${mat} no pertenece al grupo.`);
+    const mat=normalizeMatricula(vr[r]?.[2]);if(!mat)continue;
+    const st=byMat.get(mat);if(!st)throw Error(`La matrícula ${mat} de VALORES PONDERACION no pertenece al grupo.`);
+    if(seenWeighted.has(mat))throw Error(`La matrícula ${mat} está repetida en VALORES PONDERACION. Revisa las filas antes de importar.`);
+    seenWeighted.add(mat);
     for(const {c,comp} of compByCol){
       const raw=vr[r]?.[c];if(raw===''||raw==null)continue;
       const v=Number(raw);if(!Number.isFinite(v)||v<0||v>10)throw Error(`Valor inválido para ${mat} en ${comp.nombre}. Debe estar entre 0 y 10.`);
@@ -4455,10 +4471,17 @@ function dailyStateFromWorkbook(wb,d){
   // ASISTENCIAS consolidada. También se lee como respaldo para formatos v3.
   const attSheet=wb.Sheets['ASISTENCIAS'];if(!attSheet)throw Error('Falta la hoja ASISTENCIAS.');
   const at=XLSX.utils.sheet_to_json(attSheet,{header:1,raw:true,defval:''});
+  const seenAttendance=new Set();
+  for(let r=5;r<at.length;r++){
+    const mat=normalizeMatricula(at[r]?.[2]);if(!mat)continue;
+    if(!byMat.has(mat))throw Error(`La matrícula ${mat} de ASISTENCIAS no pertenece al grupo.`);
+    if(seenAttendance.has(mat))throw Error(`La matrícula ${mat} está repetida en ASISTENCIAS.`);
+    seenAttendance.add(mat);
+  }
   for(let c=4;c<(at[4]?.length||0);c++){
     const date=String(at[4]?.[c]??'').trim();if(!/^\d{4}-\d{2}-\d{2}$/.test(date))continue;
     for(let r=5;r<at.length;r++){
-      const mat=String(at[r]?.[2]??'').trim();if(!mat)continue;const st=byMat.get(mat);if(!st)continue;
+      const mat=normalizeMatricula(at[r]?.[2]);if(!mat)continue;const st=byMat.get(mat);
       const estado=String(at[r]?.[c]??'').trim();if(estado)attendance[`${st.id}|${date}`]=estado;
     }
   }
@@ -4501,7 +4524,7 @@ function dailyWorkbook(d,options={}){
   setCell(wa,'A5','No.',bandStyle);setCell(wa,'B5','NOMBRE COMPLETO',bandStyle);setCell(wa,'C5','MATRÍCULA',bandStyle);setCell(wa,'D5','CORREO INSTITUCIONAL',bandStyle);
   const attDates=[...new Set([...(d.attendanceDates||[]),d.fecha])].filter(Boolean).sort();
   attDates.forEach((dt,i)=>setCell(wa,`${dailyCol(5+i)}5`,dt,bandStyle));
-  students.forEach((st,i)=>{const r=6+i;setCell(wa,`A${r}`,i+1,center);setCell(wa,`B${r}`,st.nombre_completo||'',left);setCell(wa,`C${r}`,st.matricula||'',center);setCell(wa,`D${r}`,st.correo||'',left);attDates.forEach((dt,j)=>setCell(wa,`${dailyCol(5+j)}${r}`,state.attendance?.[`${st.id}|${dt}`]??st.attendanceHistory?.[dt]??'',center));});
+  students.forEach((st,i)=>{const r=6+i;setCell(wa,`A${r}`,i+1,center);setCell(wa,`B${r}`,jaguarNombreInstitucional(st),left);setCell(wa,`C${r}`,st.matricula||'',center);setCell(wa,`D${r}`,st.correo||'',left);attDates.forEach((dt,j)=>setCell(wa,`${dailyCol(5+j)}${r}`,state.attendance?.[`${st.id}|${dt}`]??st.attendanceHistory?.[dt]??'',center));});
   wa['!merges']=[0,1,2].map(r=>({s:{r,c:0},e:{r,c:Math.max(3,3+attDates.length)}}));
   wa['!cols']=[{wch:5},{wch:38},{wch:20},{wch:34},...attDates.map(()=>({wch:15}))];
   headerRows(wa,4+attDates.length,5+rosterRows,'A6');XLSX.utils.book_append_sheet(wb,wa,'ASISTENCIAS');
@@ -4520,7 +4543,7 @@ function dailyWorkbook(d,options={}){
   for(let i=0;i<wanted;i++)activityEvents.push({type:'newActivity',key:dailyActivityKey(`nueva-actividad-${existing.length+i+1}`,existing.length+i),name:`NUEVA ACTIVIDAD ${existing.length+i+1}`});
   const visibleEvents=activityEvents;
   visibleEvents.forEach((ev,i)=>{const c=4+i;const a=ev.activity||ev;setCell(wv,`${dailyCol(c)}5`,a.nombre||a.name,bandStyle);setCell(wv,`${dailyCol(c)}6`,a.key,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});setCell(wv,`${dailyCol(c)}7`,a.fecha||d.fecha,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});});
-  students.forEach((st,i)=>{const r=8+i;setCell(wv,`A${r}`,i+1,center);setCell(wv,`B${r}`,st.nombre_completo||'',left);setCell(wv,`C${r}`,st.matricula||'',center);visibleEvents.forEach((ev,j)=>{const c=4+j;if(ev.type==='newActivity'){setCell(wv,`${dailyCol(c)}${r}`,'',center);}else{const a=ev.activity;setCell(wv,`${dailyCol(c)}${r}`,state.activityScores?.[`${st.id}|${a.key}`]??'',{...center,numFmt:'0.00'});}});});
+  students.forEach((st,i)=>{const r=8+i;setCell(wv,`A${r}`,i+1,center);setCell(wv,`B${r}`,jaguarNombreInstitucional(st),left);setCell(wv,`C${r}`,st.matricula||'',center);visibleEvents.forEach((ev,j)=>{const c=4+j;if(ev.type==='newActivity'){setCell(wv,`${dailyCol(c)}${r}`,'',center);}else{const a=ev.activity;setCell(wv,`${dailyCol(c)}${r}`,state.activityScores?.[`${st.id}|${a.key}`]??'',{...center,numFmt:'0.00'});}});});
   const rubricStart=5+visibleEvents.length+2;
   setCell(wv,`${dailyCol(rubricStart)}5`,'RÚBRICA / PONDERACIÓN OFICIAL',bandStyle);
   setCell(wv,`${dailyCol(rubricStart)}6`,'ASPECTO',subStyle);setCell(wv,`${dailyCol(rubricStart+1)}6`,'PONDERACIÓN',subStyle);setCell(wv,`${dailyCol(rubricStart+2)}6`,'VALOR',subStyle);
@@ -4536,7 +4559,7 @@ function dailyWorkbook(d,options={}){
   setCell(ww,'A5','No.',bandStyle);setCell(ww,'B5','NOMBRE COMPLETO',bandStyle);setCell(ww,'C5','MATRÍCULA',bandStyle);
   (rubric.components||[]).forEach((c,i)=>{const col=4+i;setCell(ww,`${dailyCol(col)}5`,c.nombre,bandStyle);setCell(ww,`${dailyCol(col)}6`,Number(c.ponderacion||0)/100,{...center,numFmt:'0.00%'});setCell(ww,`${dailyCol(col)}7`,Number(c.id),{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});});
   const totalCol=4+(rubric.components||[]).length;setCell(ww,`${dailyCol(totalCol)}5`,'VALOR TOTAL',bandStyle);setCell(ww,`${dailyCol(totalCol)}6`,Number(rubric.total||0)/100,{...center,numFmt:'0.00%'});setCell(ww,`${dailyCol(totalCol)}7`,10,{...center,numFmt:'0.00'});
-  students.forEach((st,i)=>{const r=8+i;setCell(ww,`A${r}`,i+1,center);setCell(ww,`B${r}`,st.nombre_completo||'',left);setCell(ww,`C${r}`,st.matricula||'',center);(rubric.components||[]).forEach((c,j)=>{const v=state.weightedValues?.[`${st.id}|${c.id}`];setCell(ww,`${dailyCol(4+j)}${r}`,v??'',{...center,numFmt:'0.00'});});const vals=(rubric.components||[]).map(c=>state.weightedValues?.[`${st.id}|${c.id}`]);let total='';if(vals.some(v=>v!==null&&v!==undefined&&v!=='')){let sum=0,wt=0;(rubric.components||[]).forEach(c=>{const v=state.weightedValues?.[`${st.id}|${c.id}`];if(v!==null&&v!==undefined&&v!==''){sum+=Number(v)*Number(c.ponderacion||0);wt+=Number(c.ponderacion||0);}});if(wt)total=Number((sum/wt).toFixed(2));}const totalAddr=`${dailyCol(totalCol)}${r}`;
+  students.forEach((st,i)=>{const r=8+i;setCell(ww,`A${r}`,i+1,center);setCell(ww,`B${r}`,jaguarNombreInstitucional(st),left);setCell(ww,`C${r}`,st.matricula||'',center);(rubric.components||[]).forEach((c,j)=>{const v=state.weightedValues?.[`${st.id}|${c.id}`];setCell(ww,`${dailyCol(4+j)}${r}`,v??'',{...center,numFmt:'0.00'});});const vals=(rubric.components||[]).map(c=>state.weightedValues?.[`${st.id}|${c.id}`]);let total='';if(vals.some(v=>v!==null&&v!==undefined&&v!=='')){let sum=0,wt=0;(rubric.components||[]).forEach(c=>{const v=state.weightedValues?.[`${st.id}|${c.id}`];if(v!==null&&v!==undefined&&v!==''){sum+=Number(v)*Number(c.ponderacion||0);wt+=Number(c.ponderacion||0);}});if(wt)total=Number((sum/wt).toFixed(2));}const totalAddr=`${dailyCol(totalCol)}${r}`;
     setCell(ww,totalAddr,total,{...center,numFmt:'0.00',font:{name:'Arial',sz:10,bold:true}});
     if((rubric.components||[]).length){
       const lastAspect=dailyCol(totalCol-1);

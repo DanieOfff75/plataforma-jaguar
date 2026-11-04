@@ -1,3 +1,4 @@
+import {sortInstitutionalPeople} from '../lib/institutional_names.js';
 import crypto from 'node:crypto';
 import {createGroupGradeBatch,listGroupGradeReviews,approveGroupGradeReview} from '../lib/group_grade_batch.js';
 import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
@@ -559,7 +560,7 @@ async function getTeacherRoster(admin, user, groupSubjectId, extra = {}) {
     .order('nombre_completo');
   if (studentsError) throw studentsError;
 
-  const enriched = await enrichStudentsWithAccounts(admin, students || []);
+  const enriched = sortInstitutionalPeople(await enrichStudentsWithAccounts(admin, students || []));
   const ids = enriched.map(s => s.id);
   const result = { grupo_materia: assignment.grupo_materias, students: enriched };
 
@@ -1457,7 +1458,7 @@ async function archiveSchoolRecords(admin,req){
   for(const x of [sq,tq,mq]) if(x.error) throw x.error;
   const students=(sq.data||[]).filter(x=>(!q||`${x.nombre_completo||''} ${x.matricula||''} ${x.grupos?.clave||''}`.toLowerCase().includes(q))&&(!estado||String(x.estado_escolar||'activo').toLowerCase()===estado));
   const teachers=(tq.data||[]).filter(x=>(!q||`${x.nombre_completo||''} ${x.numero_empleado||''} ${x.correo||''}`.toLowerCase().includes(q))&&(!estado||String(x.estado_profesional||'activo').toLowerCase()===estado));
-  return {students,teachers,movements:mq.data||[]};
+  return {students:sortInstitutionalPeople(students),teachers,movements:mq.data||[]};
 }
 
 async function archiveDashboard(admin){
@@ -1952,7 +1953,7 @@ async function financeDashboard(admin,user,profile){
   const incomeVariance=Number((income-incomeTarget).toFixed(2));
   const incomeProgress=incomeTarget>0?Number((income/incomeTarget*100).toFixed(2)):0;
   const net=Number((income-expense).toFixed(2));
-  return {cycle,accounts:accountRows,concepts:concepts.data||[],students:students.data||[],transfers:transfers.data||[],cashClosures:cashClosures.data||[],movements,charges:(charges.data||[]).map(c=>({...c,paid:Number(paidByCharge.get(Number(c.id))||0),remaining:Math.max(0,Number(c.importe||0)-Number(paidByCharge.get(Number(c.id))||0))})),payments:payments.data||[],expenses:expenses.data||[],budgets:budgets.data||[],config:configData,summary:{income,expense,net,balance:accountRows.reduce((s,a)=>s+Number(a.saldo||0),0),pendingCharges,budgetAuthorized,budgetSpent,incomeTarget,incomeVariance,incomeProgress,pendingExpenses:(expenses.data||[]).filter(e=>e.estado==='pendiente_aprobacion').length,pendingCashDifferences:(cashClosures.data||[]).filter(x=>Math.abs(Number(x.diferencia||0))>0.005).length},monthly:Object.values(monthly).sort((a,b)=>a.month.localeCompare(b.month))};
+  return {cycle,accounts:accountRows,concepts:concepts.data||[],students:sortInstitutionalPeople(students.data||[]),transfers:transfers.data||[],cashClosures:cashClosures.data||[],movements,charges:(charges.data||[]).map(c=>({...c,paid:Number(paidByCharge.get(Number(c.id))||0),remaining:Math.max(0,Number(c.importe||0)-Number(paidByCharge.get(Number(c.id))||0))})),payments:payments.data||[],expenses:expenses.data||[],budgets:budgets.data||[],config:configData,summary:{income,expense,net,balance:accountRows.reduce((s,a)=>s+Number(a.saldo||0),0),pendingCharges,budgetAuthorized,budgetSpent,incomeTarget,incomeVariance,incomeProgress,pendingExpenses:(expenses.data||[]).filter(e=>e.estado==='pendiente_aprobacion').length,pendingCashDifferences:(cashClosures.data||[]).filter(x=>Math.abs(Number(x.diferencia||0))>0.005).length},monthly:Object.values(monthly).sort((a,b)=>a.month.localeCompare(b.month))};
 }
 
 async function financeCreateCharge(admin,user,profile,body,req){
@@ -2152,7 +2153,7 @@ async function getResource(
     if(colorQ.error) throw colorQ.error;
     const colorMap=new Map((colorQ.data||[]).map(x=>[String(x.materia_id),x.color_hex]));
     const subjectColors=subjects.map(m=>({materia_id:m.id,color_hex:colorMap.get(String(m.id))||'#4EA72E',materia:m}));
-    return {cycle,period:period||null,teacher:tQ.data||{},students:students.sort((a,b)=>String(a.nombre_completo||'').localeCompare(String(b.nombre_completo||''),'es',{sensitivity:'base'})),assignments,subjects,subjectColors,notices:nQ.data||[],clarifications:cQ.data||[],schedules:hQ.data||[]};
+    return {cycle,period:period||null,teacher:tQ.data||{},students:sortInstitutionalPeople(students),assignments,subjects,subjectColors,notices:nQ.data||[],clarifications:cQ.data||[],schedules:hQ.data||[]};
   }
 
   if (key === 'departmentDashboard') {
@@ -2802,7 +2803,7 @@ async function getResource(
       admin.from('docentes').select('id,nombre_completo,numero_empleado,especialidad,correo').eq('id', tid).maybeSingle()
     ]);
     for (const q of [studentsQ,attendanceQ,gradesQ,periodsQ,teacherQ]) if(q.error) throw q.error;
-    const students=await enrichStudentsWithAccounts(admin, studentsQ.data||[]), attendance=attendanceQ.data||[], grades=gradesQ.data||[];
+    const students=sortInstitutionalPeople(await enrichStudentsWithAccounts(admin, studentsQ.data||[])), attendance=attendanceQ.data||[], grades=gradesQ.data||[];
     const byStudent=new Map(students.map(s=>[String(s.id),{...s,attendance:{},grades:{}}]));
     for(const a of attendance){const x=byStudent.get(String(a.alumno_id));if(x)x.attendance[a.fecha]=a.estado||'';}
     for(const g of grades){const x=byStudent.get(String(g.alumno_id));if(x)x.grades[String(g.periodo_id)]={calificacion:g.calificacion,observaciones:g.observaciones||'',periodo:g.periodos_escolares?.nombre||''};}
@@ -3352,7 +3353,7 @@ async function getResource(
   }
 
   if (key === 'students') {
-    return await enrichStudentsWithAccounts(admin, data || []);
+    return sortInstitutionalPeople(await enrichStudentsWithAccounts(admin, data || []));
   }
 
   if (key === 'notices') {

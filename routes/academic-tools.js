@@ -1,5 +1,6 @@
 /** Jaguar V5.5: gestión de aulas, banco de exámenes y carga institucional segura. */
 import crypto from 'node:crypto';
+import {sortInstitutionalPeople} from '../lib/institutional_names.js';
 import {planRoomAllocation} from '../lib/room_auto_allocation.js';
 import {requireRoles} from '../lib/_admin.js';
 import {ROOM_MANAGERS,ROOM_READERS,GRADE_MANAGERS,EXAM_ROLES,fail,positiveId,normalizeRoom,normalizeQuestion,validateGradeRows,calculateGradePreview} from '../lib/academic_tools_rules.js';
@@ -60,7 +61,7 @@ async function gradeContext(db,gmId,periodId){
  ]);
  if(students.length>250)fail('Hay más de 250 alumnos en el grupo; no se deben omitir registros. Contacta a Control Escolar para dividir el proceso.',409);
  if(new Set((existing||[]).map(x=>x.alumno_id)).size!==existing.length)fail('Existen calificaciones duplicadas en este periodo: deben corregirse antes de importar.',409);
- return {gm,period,students,existing};
+ return {gm,period,students:sortInstitutionalPeople(students),existing};
 }
 function parseGradePayload(raw){
  return {gmId:positiveId(raw.grupo_materia_id,'Grupo-materia'),periodId:positiveId(raw.periodo_id,'Periodo'),allowUpdates:raw.allow_updates===true,motivo:String(raw.motivo||'').trim().slice(0,500),rows:validateGradeRows(raw.rows)};
