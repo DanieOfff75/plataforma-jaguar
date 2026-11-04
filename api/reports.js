@@ -2,7 +2,7 @@ import {sortInstitutionalPeople} from '../lib/institutional_names.js';
 import {renderBoletaVisual15} from '../lib/boleta_visual15.js';
 import {buildStudentCredentialPDF} from '../lib/credencial_escolar_pdf.js';
 import {readCredentialPhoto,saveCredentialPhoto} from '../lib/credential_photo.js';
-import {buildDailyGradebookPdf} from '../lib/jaguar_gradebook_pdf.js';
+import {buildDailyGradebookPdf,buildManualDailyGradebookPdf} from '../lib/jaguar_gradebook_pdf.js';
 import {academicGradeDetail,allowGradeExplorer} from '../lib/academic_grade_explorer.js';
 import {buildAcademicGradesPdf} from '../lib/academic_grade_report_pdf.js';
 import {buildGradeBatchOfficePdf} from '../lib/grade_batch_office_pdf.js';
@@ -888,6 +888,43 @@ async function dailyGradebookPdf(admin,snapshotId,req){
   return {pdf_base64:Buffer.from(bytes).toString('base64'),filename:`JAGUAR-Bitacora-${safe(g.clave||'grupo')}-${safe(m.nombre||'materia')}-${snap.fecha_clase}-v${snap.version}.pdf`};
 }
 
+/** Plantilla en papel, autorizada solo para la asignación docente del ciclo. */
+async function manualTeacherGradebookPdf(admin,user,body){
+  const gmId=Number(body.grupo_materia_id),periodoId=Number(body.periodo_id);
+  if(!Number.isSafeInteger(gmId)||gmId<1||!Number.isSafeInteger(periodoId)||periodoId<1)
+    throw Object.assign(new Error('Grupo y periodo válidos requeridos.'),{status:400});
+  const [tQ,pQ]=await Promise.all([
+    admin.from('docentes').select('id,nombre_completo').eq('auth_user_id',user.id).maybeSingle(),
+    admin.from('periodos_escolares').select('id,nombre,ciclo_escolar').eq('id',periodoId).maybeSingle()
+  ]);
+  if(tQ.error)throw tQ.error;if(pQ.error)throw pQ.error;
+  if(!tQ.data||!pQ.data)throw Object.assign(new Error('Docente o periodo no encontrado.'),{status:404});
+  const {data:a,error:ae}=await admin.from('asignaciones_docentes')
+    .select('id,grupo_materias(id,grupo_id,grupos(id,clave,turno),materias(id,nombre))')
+    .eq('docente_id',tQ.data.id).eq('grupo_materia_id',gmId)
+    .eq('ciclo_escolar',pQ.data.ciclo_escolar).eq('activo',true).limit(1).maybeSingle();
+  if(ae)throw ae;
+  if(!a?.grupo_materias?.grupo_id)throw Object.assign(new Error('Este grupo y materia no están asignados a tu cuenta.'),{status:403});
+  const gm=a.grupo_materias;
+  const [sQ,rQ,iQ]=await Promise.all([
+    admin.from('alumnos').select('id,nombre_completo,matricula').eq('grupo_id',gm.grupo_id).eq('activo',true).order('nombre_completo').limit(200),
+    admin.from('rubricas_evaluacion').select('id').eq('docente_id',tQ.data.id).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).maybeSingle(),
+    admin.from('institucion_config').select('*').limit(1).maybeSingle()
+  ]);
+  for(const x of [sQ,rQ,iQ])if(x.error)throw x.error;
+  let components=[];
+  if(rQ.data?.id){
+    const {data,error}=await admin.from('rubrica_componentes').select('nombre,ponderacion,orden').eq('rubrica_id',rQ.data.id).order('orden').limit(40);
+    if(error)throw error;components=data||[];
+  }
+  const bytes=await buildManualDailyGradebookPdf({
+    institution:iQ.data||{},group:gm.grupos||{},subject:gm.materias||{},teacher:tQ.data,
+    period:pQ.data,students:sortInstitutionalPeople(sQ.data||[]),components
+  });
+  return {pdf_base64:Buffer.from(bytes).toString('base64'),
+    filename:`JAGUAR-Bitacora-Manual-${safe(gm.grupos?.clave||'grupo')}-${safe(gm.materias?.nombre||'materia')}.pdf`};
+}
+
 export default async function handler(req,res){try{if(req.method!=='POST')return res.status(405).json({ok:false,error:'Método no permitido.'});const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','alumno']);const b=req.body||{};
   if(b.action==='grade_batch_office_pdf'){
     const revisionId=Number(b.revision_id||0);
@@ -955,6 +992,7 @@ export default async function handler(req,res){try{if(req.method!=='POST')return
     const safeFile=(s)=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,65);
     return res.status(200).json({ok:true,pdf_base64:Buffer.from(bytes).toString('base64'),filename:`ITHLA-Calificaciones-${safeFile(details.grupo?.clave)}-${safeFile(details.periodo?.nombre)}-${safeFile(details.materia?.nombre)}.pdf`});
   }
+  if(b.action==='teacher_daily_blank_pdf'){if(profile.rol!=='docente')return res.status(403).json({ok:false,error:'Solo el docente asignado puede descargar esta lista.'});return res.status(200).json({ok:true,...await manualTeacherGradebookPdf(adminClient,user,b)});}
   if(b.action==='daily_gradebook_pdf'){if(!['servicios_docentes','control_escolar','control','direccion_escolar','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,...await dailyGradebookPdf(adminClient,Number(b.snapshot_id||0),req)});}if(b.action==='signature_diagnostics'){if(!['direccion_escolar','control_escolar','control','servicios_docentes','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,data:await signatureDiagnostics(adminClient,b)});}if(b.action==='group_schedule'){if(!['direccion_escolar','control_escolar','control','coordinacion_academica','servicios_estudiantiles'].includes(profile.rol))return res.status(403).json({ok:false,error:'Este perfil no puede generar el horario de un grupo.'});const gid=Number(b.grupo_id||0);if(!gid)return res.status(400).json({ok:false,error:'Grupo no válido.'});return res.status(200).json({ok:true,...await groupSchedulePdf(adminClient,gid,req)});}if(b.action==='teacher_schedule'){if(profile.rol!=='docente')return res.status(403).json({ok:false,error:'Solo el docente puede descargar su horario.'});const {data:t}=await adminClient.from('docentes').select('id').eq('auth_user_id',user.id).maybeSingle();if(!t)return res.status(404).json({ok:false,error:'Docente no vinculado.'});return res.status(200).json({ok:true,...await teacherSchedulePdf(adminClient,t.id,req)});}if(b.action==='student_schedule'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su horario.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await studentSchedulePdf(adminClient,s.id,req)});}if(b.action==='student_boleta'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su boleta.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,s.id,req)});}if(b.action==='student_credential_photo_status'||b.action==='student_credential_photo_upload'){
   if(profile.rol!=='servicios_estudiantiles')return res.status(403).json({ok:false,error:'Solo Servicios Estudiantiles puede gestionar fotografías de credenciales.'});
   const alumnoId=Number(b.alumno_id||0);

@@ -622,7 +622,55 @@ async function getTeacherEvaluationOverview(admin,user){
     if(fb.error) throw fb.error; periods=fb.data||[];
   }
   const rubricMap=new Map((rQ.data||[]).map(r=>[`${r.grupo_materia_id}|${r.periodo_id}`,r]));
-  return {assignments,periods,rubricas:[...rubricMap.values()]};
+  // Solo el propio docente ve sus borradores. La apertura se comprueba del lado del servidor.
+  const periodIds=periods.map(p=>Number(p.id)).filter(Number.isSafeInteger);
+  const groupIds=[...new Set(assignments.map(a=>Number(a.grupo_materia_id)).filter(Number.isSafeInteger))];
+  let borradores=[], ventanas=[];
+  if(periodIds.length&&groupIds.length){
+    const [dQ,wQ]=await Promise.all([
+      admin.from('bitacora_excel_diaria')
+        .select('id,grupo_materia_id,periodo_id,fecha_clase,version,snapshot,created_at')
+        .eq('docente_id',tid).in('periodo_id',periodIds).in('grupo_materia_id',groupIds)
+        .order('created_at',{ascending:false}).limit(300),
+      admin.from('jaguar_evaluacion_ventanas').select('periodo_id,habilitada').in('periodo_id',periodIds)
+    ]);
+    if(dQ.error)throw dQ.error;
+    // Sin tabla de ventanas, las evaluaciones permanecen cerradas.
+    ventanas=wQ.error?[]:(wQ.data||[]);
+    const latest=new Set(),candidates=[];
+    for(const row of dQ.data||[]){
+      const key=`${row.grupo_materia_id}|${row.periodo_id}`;
+      if(latest.has(key))continue;
+      latest.add(key);
+      const state=row.snapshot||{},meta=state.meta||{};
+      const values=Object.entries(state.weightedValues||{}).filter(([,v])=>v!==null&&v!==''&&v!==undefined&&Number.isFinite(Number(v)));
+      if(meta.ponderaciones_borrador!==true||!values.length)continue;
+      const rubric=rubricMap.get(key);
+      candidates.push({row,values,rubric,meta});
+    }
+    const rubricIds=[...new Set(candidates.map(x=>Number(x.rubric?.id)).filter(x=>Number.isSafeInteger(x)&&x>0))];
+    const noteMap=new Map();
+    if(rubricIds.length){
+      const {data:notes,error:ne}=await admin.from('evaluacion_notas')
+        .select('rubrica_id,alumno_id,componente_id,valor').in('rubrica_id',rubricIds).limit(20000);
+      if(ne)throw ne;
+      for(const n of notes||[])noteMap.set(`${n.rubrica_id}|${n.alumno_id}|${n.componente_id}`,n.valor);
+    }
+    for(const {row,values,rubric,meta} of candidates){
+      const compatible=Boolean(rubric&&Number(meta.borrador_rubrica_id)===Number(rubric.id)&&Number(meta.borrador_rubrica_version)===Number(rubric.version));
+      const pendientes=compatible?values.filter(([key,v])=>{
+        const existing=noteMap.get(`${rubric.id}|${key}`);
+        return existing==null||Number(existing)!==Number(v);
+      }).length:values.length;
+      if(!pendientes)continue; // Se adoptaron todos los valores: no volver a avisar.
+      borradores.push({grupo_materia_id:row.grupo_materia_id,periodo_id:row.periodo_id,
+        cantidad:pendientes,fecha_clase:row.fecha_clase,version:row.version,compatible});
+    }
+  }
+  const periodMap=new Map(periods.map(p=>[Number(p.id),p]));
+  const ventanasSeguras=ventanas.map(v=>({periodo_id:v.periodo_id,
+    habilitada:Boolean(v.habilitada&&periodMap.get(Number(v.periodo_id))?.activo!==false)}));
+  return {assignments,periods,rubricas:[...rubricMap.values()],borradores,ventanas:ventanasSeguras};
 }
 async function getTeacherEvaluation(admin,user,gmId,periodoId){
   const tid=await teacherId(admin,user.id); if(!tid) throw Object.assign(new Error('Docente no encontrado.'),{status:404});

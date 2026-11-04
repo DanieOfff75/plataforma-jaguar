@@ -758,12 +758,14 @@ async function openTeacherEvaluationHub(){
  try{
   const d=await apiQuery('teacherEvaluationOverview');
   const byKey=new Map((d.rubricas||[]).map(r=>[`${r.grupo_materia_id}|${r.periodo_id}`,r]));
+  const draftByKey=new Map((d.borradores||[]).map(r=>[`${r.grupo_materia_id}|${r.periodo_id}`,r]));
+  const openByPeriod=new Map((d.ventanas||[]).map(r=>[Number(r.periodo_id),r.habilitada===true]));
   const periods=d.periods||[];
   const cards=(d.assignments||[]).map(a=>{
    const gm=a.grupo_materias||{}, keyBase=gm.id;
-   return `<div class="card border-[#D4AF3733]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="text-xl font-extrabold">${esc(gm.grupos?.clave||'—')} · ${esc(gm.materias?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${a.horas_asignadas||gm.horas_semana||0} h/semana</div></div><span class="chip">${periods.length} periodos</span></div><div class="grid md:grid-cols-3 gap-3 mt-4">${periods.map(p=>{const r=byKey.get(`${keyBase}|${p.id}`);const closed=r?.estado==='cerrada',inactive=p.activo===false;return `<div class="rounded-xl border border-white/5 p-3"><div class="font-bold">${esc(p.nombre||`Periodo ${p.id}`)}</div><div class="text-xs mt-2 ${closed?'text-[#78d8a4]':'text-[#D4AF37]'}">${closed?'✓ Cerrado':inactive?'● Periodo inactivo · verificar autorización':'● Borrador / pendiente'}</div><div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="openEvaluationEditor(${gm.id},${p.id})">${r?'✏️ Editar rúbrica':'➕ Configurar'}</button>${r?`<button class="btn primary" onclick="openEvaluationCapture(${gm.id},${p.id})">📊 Actividades</button>`:''}</div></div>`}).join('')}</div></div>`;
+   return `<div class="card border-[#D4AF3733]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="text-xl font-extrabold">${esc(gm.grupos?.clave||'—')} · ${esc(gm.materias?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${a.horas_asignadas||gm.horas_semana||0} h/semana</div></div><span class="chip">${periods.length} periodos</span></div><div class="grid md:grid-cols-3 gap-3 mt-4">${periods.map(p=>{const r=byKey.get(`${keyBase}|${p.id}`);const closed=r?.estado==='cerrada',inactive=p.activo===false,draft=draftByKey.get(`${keyBase}|${p.id}`),opened=openByPeriod.get(Number(p.id))===true;return `<div class="rounded-xl border border-white/5 p-3"><div class="font-bold">${esc(p.nombre||`Periodo ${p.id}`)}</div><div class="text-xs mt-2 ${closed?'text-[#78d8a4]':'text-[#D4AF37]'}">${closed?'✓ Cerrado':inactive?'● Periodo inactivo · verificar autorización':'● Borrador / pendiente'}</div>${draft?`<div class="mt-3 rounded-lg border border-[#D4AF3755] p-3 text-sm"><b>📒 ${draft.cantidad} valores respaldados en bitácora</b><div class="text-xs mt-1">${esc(draft.fecha_clase||'')} · ${opened?'Periodo abierto':'Esperando apertura de Dirección'}${!draft.compatible?' · Rúbrica modificada: requiere revisión':''}</div>${opened&&!closed&&r&&draft.compatible?`<button class="btn primary mt-2" onclick="previewDailyDraftToEvaluation(${gm.id},${p.id})">Revisar y adoptar registros</button>`:''}</div>`:''}<div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="openEvaluationEditor(${gm.id},${p.id})">${r?'✏️ Editar rúbrica':'➕ Configurar'}</button>${r?`<button class="btn primary" onclick="openEvaluationCapture(${gm.id},${p.id})">📊 Actividades</button>`:''}</div></div>`}).join('')}</div></div>`;
   }).join('')||'<div class="card">No tienes asignaciones docentes activas.</div>';
-  modal('Evaluación docente · Rúbricas y cierres',`<div class="space-y-4"><div class="rounded-xl border border-[#D4AF3755] bg-[#D4AF370d] p-4 text-sm"><b>Primer periodo sin Classroom:</b> usa la rúbrica y el Excel tradicional de tu materia; no necesitas importar nada desde Google. La rúbrica cerrada no puede volver a modificarse. Para corregir una nota ya cerrada, solicita el procedimiento de rectificación a Control Escolar.<br><b>Regla de respaldo:</b> la carga desde Excel toma VALOR TOTAL sin recalcular porcentajes, respalda cada aspecto y conserva el archivo como evidencia; el cierre manual sin Excel sigue aplicando la rúbrica.</div>${cards}</div>`);
+  modal('Evaluación docente · Rúbricas y cierres',`<div class="space-y-4"><div class="rounded-xl border border-[#D4AF3755] bg-[#D4AF370d] p-4 text-sm"><b>Primer periodo sin Classroom:</b> usa la rúbrica y el Excel tradicional de tu materia; no necesitas importar nada desde Google. La rúbrica cerrada no puede volver a modificarse. Para corregir una nota ya cerrada, solicita el procedimiento de rectificación a Control Escolar.<br><b>Regla de respaldo:</b> la carga desde Excel toma VALOR TOTAL sin recalcular porcentajes, respalda cada aspecto y conserva el archivo como evidencia; el cierre manual sin Excel sigue aplicando la rúbrica.<br><b>Borradores de bitácora:</b> cuando Dirección abra el periodo, aparecerá una opción para revisar y adoptar sus registros. Nunca se incorporan automáticamente.</div>${cards}</div>`);
  }catch(e){toast(e.message)}
 }
 async function openEvaluationEditor(gmId,periodoId){
@@ -784,27 +786,49 @@ async function openEvaluationCapture(gmId,periodoId){try{const d=await apiQuery(
 async function previewDailyDraftToEvaluation(gmId,periodoId){
  try{
   const daily=await apiQuery('teacherDailyGradebook',{grupo_materia_id:gmId,periodo_id:periodoId});
+  if(daily.captura_evaluacion_habilitada!==true)throw Error('Dirección Escolar aún no abre este periodo. El borrador permanece guardado y privado.');
   if(!daily.state?.meta?.ponderaciones_borrador)throw Error('No existe un borrador de ponderaciones pendiente en tu bitácora.');
   const current=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});
   if(!current.rubrica||current.rubrica.estado==='cerrada')throw Error('La rúbrica no está disponible para registrar valores.');
-  if(Number(daily.state.meta.borrador_rubrica_id||0)!==Number(current.rubrica.id)||Number(daily.state.meta.borrador_rubrica_version||0)!==Number(current.rubrica.version))throw Error('La rúbrica cambió desde que se guardó el borrador. Descarga la plantilla vigente y revisa los valores antes de continuar.');
-  const validStudents=new Set((current.students||[]).map(x=>Number(x.id)));
-  const validComponents=new Set((current.componentes||[]).map(x=>Number(x.id)));
-  const rows=[];
+  if(Number(daily.state.meta.borrador_rubrica_id||0)!==Number(current.rubrica.id)||Number(daily.state.meta.borrador_rubrica_version||0)!==Number(current.rubrica.version))throw Error('La rúbrica cambió desde que se guardó el borrador. Descarga la plantilla vigente y revisa sus valores antes de continuar.');
+  const students=new Map((current.students||[]).map(x=>[Number(x.id),x]));
+  const components=new Map((current.componentes||[]).map(x=>[Number(x.id),x]));
+  const existing=new Map((current.scores||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x.valor]));
+  const proposals=[];
   for(const [key,v] of Object.entries(daily.state.weightedValues||{})){
    if(v===''||v==null)continue;
    const [sid,cid]=key.split('|').map(Number);
-   if(!validStudents.has(sid)||!validComponents.has(cid)||!Number.isFinite(Number(v))||Number(v)<0||Number(v)>10)throw Error('El borrador contiene datos que ya no corresponden al grupo o a la rúbrica vigente.');
-   rows.push({alumno_id:sid,componente_id:cid,valor:Number(v)});
+   if(!students.has(sid)||!components.has(cid)||!Number.isFinite(Number(v))||Number(v)<0||Number(v)>10)throw Error('El borrador contiene datos que no corresponden al grupo o a la rúbrica vigente.');
+   const old=existing.get(key);
+   const situation=old===undefined||old===null||old===''?'nuevo':Number(old)===Number(v)?'igual':'diferente';
+   proposals.push({alumno_id:sid,componente_id:cid,valor:Number(v),anterior:old,situacion,
+     alumno:students.get(sid).nombre_completo||'Estudiante',actividad:components.get(cid).nombre||'Aspecto'});
   }
-  if(!rows.length)throw Error('El borrador no contiene calificaciones de ponderación para incorporar.');
-  window._pendingDailyPromotion={gmId,periodoId,rows};
-  modal('Incorporar ponderaciones de la bitácora',`<div class="space-y-4"><p>Se encontraron <b>${rows.length}</b> valores de ponderación del respaldo diario para ${esc(current.grupo_materia?.grupos?.clave||'este grupo')}. Se incorporarán a la captura de la rúbrica <b>únicamente si Dirección abrió el periodo</b>.</p><div class="card border-[#D4AF3755] text-sm">Se actualizarán los valores coincidentes que ya existan en la rúbrica. Este paso <b>no cierra el periodo</b> ni publica calificaciones finales. Revisa la captura antes de registrarla oficialmente.</div><div class="flex justify-end gap-2"><button class="btn" onclick="window._pendingDailyPromotion=null;closeModal()">Cancelar</button><button class="btn primary" onclick="confirmDailyDraftToEvaluation()">Incorporar ${rows.length} valores</button></div></div>`);
+  if(!proposals.length)throw Error('El borrador no contiene valores disponibles para adoptar.');
+  if(proposals.length>1200)throw Error('El borrador tiene más de 1200 celdas. Solicita soporte antes de una incorporación masiva.');
+  window._pendingDailyPromotion={gmId,periodoId,proposals};
+  const countNew=proposals.filter(x=>x.situacion==='nuevo').length;
+  const countDiff=proposals.filter(x=>x.situacion==='diferente').length;
+  const countSame=proposals.length-countNew-countDiff;
+  modal('Revisar y adoptar registros de bitácora',`<div class="space-y-4">
+    <p class="text-sm">Se encontraron <b>${proposals.length}</b> valores de la bitácora del grupo <b>${esc(current.grupo_materia?.grupos?.clave||'')}</b> para la rúbrica vigente. Marca las celdas que deseas incorporar.</p>
+    <div class="card text-sm"><b>${countNew} nuevos · ${countDiff} distintos a lo capturado · ${countSame} ya coinciden</b><p class="mt-1">Los valores que sustituirían una nota anterior aparecen <b>sin marcar</b>. Solo se aplicarán los que selecciones; no se cerrará el periodo.</p></div>
+    <div class="scroll" style="max-height:340px"><table class="table"><thead><tr><th>Adoptar</th><th>Alumno</th><th>Aspecto</th><th>Actual</th><th>Bitácora</th></tr></thead><tbody>${proposals.map((x,i)=>`<tr><td><input type="checkbox" class="jaguar-draft-choice" data-index="${i}" ${x.situacion==='nuevo'?'checked':''} ${x.situacion==='igual'?'disabled':''}></td><td>${esc(x.alumno)}</td><td>${esc(x.actividad)}</td><td>${x.anterior===undefined||x.anterior===null?'—':esc(x.anterior)}</td><td><b>${esc(x.valor)}</b>${x.situacion==='diferente'?' · diferente':''}</td></tr>`).join('')}</tbody></table></div>
+    <div class="flex flex-wrap justify-end gap-2"><button class="btn" onclick="window._pendingDailyPromotion=null;closeModal()">Cancelar</button><button class="btn primary" onclick="confirmDailyDraftToEvaluation()">Guardar valores seleccionados</button></div>
+    <p class="text-xs text-[#A9BAC8]">Dirección Escolar controla la apertura del periodo. Este paso guarda notas de rúbrica con los permisos vigentes, pero no genera un cierre ni publica resultados finales.</p>
+  </div>`);
  }catch(e){toast(e.message)}
 }
 async function confirmDailyDraftToEvaluation(){
  const p=window._pendingDailyPromotion;if(!p)return;
- try{const r=await apiPost('saveEvaluationScores',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,rows:p.rows});window._pendingDailyPromotion=null;toast(r.message||'Valores incorporados para revisión.');closeModal();await openEvaluationCapture(p.gmId,p.periodoId);}catch(e){toast(e.message)}
+ try{
+  const rows=[...document.querySelectorAll('.jaguar-draft-choice:checked')].map(x=>p.proposals[Number(x.dataset.index)]).filter(Boolean).map(x=>({alumno_id:x.alumno_id,componente_id:x.componente_id,valor:x.valor}));
+  if(!rows.length)throw Error('Selecciona al menos una calificación nueva o una corrección para guardar.');
+  const conflicts=rows.filter(x=>p.proposals.some(z=>z.alumno_id===x.alumno_id&&z.componente_id===x.componente_id&&z.situacion==='diferente')).length;
+  if(conflicts&&!confirm(`Vas a reemplazar ${conflicts} valores ya registrados. ¿Confirmas esta modificación?`))return;
+  const r=await apiPost('saveEvaluationScores',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,rows});
+  window._pendingDailyPromotion=null;toast(r.message||'Valores seleccionados incorporados.');closeModal();await openEvaluationCapture(p.gmId,p.periodoId);
+ }catch(e){toast(e.message)}
 }
 async function saveEvaluationScoresFromTable(gmId,periodoId){try{const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId}),rows=[];for(const st of d.students||[])for(const c of d.componentes||[]){const el=document.getElementById(`evs_${c.id}_${st.id}`);rows.push({alumno_id:st.id,componente_id:c.id,valor:el?.value??''})}const r=await apiPost('saveEvaluationScores',{grupo_materia_id:gmId,periodo_id:periodoId,rows});toast(r.message||'Actividades guardadas.')}catch(e){toast(e.message)}}
 async function closeEvaluationWithoutExcel(gmId,periodoId){
@@ -4574,7 +4598,7 @@ async function openDailyGradebook(gmId){
       <label class="block text-sm">Fecha de clase<input id="daily_download_date" class="input mt-1" type="date" value="${fecha}"></label>
       <label class="block text-sm">¿Cuántas actividades NUEVAS agregar?<input id="daily_extra_count" class="input mt-1" type="number" inputmode="numeric" min="0" max="40" step="1" value="${Math.min(2,max)}"></label>
       <p id="daily_activity_summary" class="text-sm text-teal-300">${count} actuales + ${Math.min(2,max)} nuevas = ${count+Math.min(2,max)} en total.</p>
-      <button class="btn primary w-full" id="daily_download_new">📥 Descargar desde el respaldo de Jaguar</button>
+      <button class="btn primary w-full" id="daily_download_new">📥 Descargar desde el respaldo de Jaguar</button><button class="btn w-full" onclick="downloadManualDailyGradebookPdf(${gmId},${p.id})">📄 Descargar lista PDF para escritura manual</button>
       <div class="border-t border-white/10 pt-3"><p class="text-sm mb-2">¿Ya tienes un Excel con notas todavía NO subidas? Amplía ese archivo sin perderlas:</p>
       <input id="daily_existing_excel" class="input w-full" type="file" accept=".xlsx">
       <button class="btn w-full mt-2" id="daily_expand_local">➕ Ampliar mi Excel existente</button></div>
@@ -4646,7 +4670,7 @@ async function jaguarDailyGradebookModule(){
         ||(Array.isArray(periods)?periods:[])[0]
         ||S.activePeriod
         ||null;
-      const cards=normalized.map(g=>`<div class="card"><div class="font-bold text-lg">${esc(g.grupo?.clave||'—')} · ${esc(g.materia?.nombre||'—')}</div><div class="text-xs text-[#8FA3B5] mt-2">${g.horas?`${Number(g.horas)} h/semana · `:''}La rúbrica oficial y el color de la materia se aplican automáticamente.</div><div class="flex flex-wrap gap-2 mt-4"><button class="btn primary" onclick="openDailyGradebook(${g.id})">📥 Crear / ampliar Excel</button><button class="btn" onclick="showDailyUploadModal(${g.id},${Number(p?.id||0)})">📤 Subir Excel</button></div></div>`).join('');
+      const cards=normalized.map(g=>`<div class="card"><div class="font-bold text-lg">${esc(g.grupo?.clave||'—')} · ${esc(g.materia?.nombre||'—')}</div><div class="text-xs text-[#8FA3B5] mt-2">${g.horas?`${Number(g.horas)} h/semana · `:''}La rúbrica oficial y el color de la materia se aplican automáticamente.</div><div class="flex flex-wrap gap-2 mt-4"><button class="btn primary" onclick="openDailyGradebook(${g.id})">📥 Crear / ampliar Excel</button><button class="btn" onclick="showDailyUploadModal(${g.id},${Number(p?.id||0)})">📤 Subir Excel</button><button class="btn" onclick="downloadManualDailyGradebookPdf(${g.id},${Number(p?.id||0)})">📄 PDF para llenar a mano</button></div></div>`).join('');
       return `<div class="space-y-5"><div class="card border-[#D4AF3755]"><span class="chip">RESPALDO ACADÉMICO</span><h2 class="text-2xl font-extrabold mt-3">📒 Bitácora diaria de Excel</h2><p class="text-sm text-[#A9BAC8] mt-2">Las materias se toman de tu <b>Carga docente</b> del ciclo actual. Puedes descargar y subir tu bitácora durante todo el periodo, aunque Dirección no haya abierto la captura de evaluaciones. Los valores de ponderación se guardan como borradores privados hasta que los revises y traslades a la rúbrica durante la apertura.</p></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${cards||'<div class="card md:col-span-2 lg:col-span-3"><b>No hay materias para la bitácora.</b><p class="text-sm text-[#A9BAC8] mt-2">Tu Carga docente no tiene asignaciones activas para este ciclo. Si en “Mis grupos” sí aparecen materias, vuelve a abrir este módulo; ahora ambas pantallas usan exactamente la misma fuente de asignaciones.</p></div>'}</div></div>`;
     }catch(e){
       return `<div class="card border-red-500/30"><b>No se pudo cargar la Bitácora Excel.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`;
@@ -4656,6 +4680,17 @@ async function jaguarDailyGradebookModule(){
   return `<div class="space-y-5"><div class="card"><span class="chip">CONSULTA INSTITUCIONAL</span><h2 class="text-2xl font-extrabold mt-3">📒 Bitácora diaria de calificaciones</h2><p class="text-sm text-[#A9BAC8] mt-2">Consulta las versiones históricas entregadas por los docentes. La salida institucional es PDF y la evidencia digital conserva su SHA-256.</p></div><div class="card"><div class="scroll"><table class="table"><thead><tr><th>Fecha</th><th>Docente</th><th>Grupo</th><th>Materia</th><th>Actividades</th><th>Rúbrica</th><th>Versión</th><th>Respaldo</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.fecha_clase)}</td><td>${esc(jaguarNombreInstitucional(r.docentes))}</td><td>${esc(r.grupo_materias?.grupos?.clave||'—')}</td><td>${esc(r.grupo_materias?.materias?.nombre||'—')}</td><td>${r.actividades||0}</td><td>${Number(r.ponderacion_total||0).toFixed(2)}%</td><td>${r.version}</td><td><button class="btn primary" onclick="downloadDailyGradebookPdf(${r.id})">📄 PDF</button></td></tr>`).join('')||'<tr><td colspan="8">Aún no hay respaldos diarios.</td></tr>'}</tbody></table></div></div></div>`;
 }
 function showDailyUploadModal(gmId,periodoId){modal('Subir Excel diario',`<div class="space-y-4"><label class="text-xs text-[#8FA3B5]">Fecha de clase</label><input id="daily_date" class="input" type="date" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10)}"><label class="btn primary cursor-pointer">📤 Seleccionar Excel<input id="daily_excel_file" class="hidden" type="file" accept=".xlsx" onchange="uploadTeacherDailyExcel(${gmId},${periodoId})"></label><div class="text-xs text-[#8FA3B5]">Puedes cambiar el aspecto visual (letra, bordes, tamaños), no las matrículas, claves, fórmulas ni los valores ya respaldados. La bitácora diaria puede subirse sin apertura de evaluaciones; las ponderaciones se conservarán como borrador hasta su revisión.</div></div>`)}
+async function downloadManualDailyGradebookPdf(gmId,periodoId){
+ try{
+  if(!Number(gmId)||!Number(periodoId))throw Error('Selecciona una materia y un periodo escolar.');
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session?.access_token)throw Error('Tu sesión venció. Ingresa nuevamente.');
+  const r=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'teacher_daily_blank_pdf',grupo_materia_id:Number(gmId),periodo_id:Number(periodoId)})});
+  const d=await jaguarReadJson(r);
+  if(!r.ok||!d.ok)throw Error(d.error||'No se pudo generar la lista PDF para llenado manual.');
+  downloadPdf(d.pdf_base64,d.filename||'JAGUAR-Bitacora-Manual.pdf');
+ }catch(e){toast(e.message)}
+}
 async function downloadDailyGradebookPdf(id){try{const {data:{session}}=await supabaseClient.auth.getSession();const r=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'daily_gradebook_pdf',snapshot_id:Number(id)})});const d=await jaguarReadJson(r);if(!r.ok||!d.ok)throw Error(d.error||'No se pudo generar el PDF.');downloadPdf(d.pdf_base64,d.filename||'JAGUAR-Bitacora.pdf')}catch(e){toast(e.message)}}
 </script>
 
