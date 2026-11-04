@@ -3,7 +3,7 @@ import {createGroupGradeBatch,listGroupGradeReviews,approveGroupGradeReview} fro
 import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
 import { academicGradesNavigation, academicGradeDetail, allowGradeExplorer } from '../lib/academic_grade_explorer.js';
 import { getClients, requireRoles } from '../lib/_admin.js';
-import {requireEvaluationOpen} from '../lib/jaguar_evaluation_window.js';
+import {requireEvaluationOpen,evaluationWindow} from '../lib/jaguar_evaluation_window.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { departmentKeyForRole, validateResponsible, listResponsibleUsers } from '../lib/responsables.js';
 import { audit } from '../lib/audit.js';
@@ -725,7 +725,7 @@ function stableDailyState(state){
     weightedValues:state?.weightedValues||{},
     attendance:state?.attendance||{},
     rubric:normalizeDailyRubric(state?.rubric||{}),
-    meta:{version:Number(state?.meta?.version||2),periodo_id:Number(state?.meta?.periodo_id||0),grupo_materia_id:Number(state?.meta?.grupo_materia_id||0),docente_id:Number(state?.meta?.docente_id||0)}
+    meta:{version:Number(state?.meta?.version||2),periodo_id:Number(state?.meta?.periodo_id||0),grupo_materia_id:Number(state?.meta?.grupo_materia_id||0),docente_id:Number(state?.meta?.docente_id||0),ponderaciones_borrador:state?.meta?.ponderaciones_borrador===true,borrador_rubrica_id:Number(state?.meta?.borrador_rubrica_id||0),borrador_rubrica_version:Number(state?.meta?.borrador_rubrica_version||0)}
   }));
 }
 function compareDailyLocked(previous,next){
@@ -764,7 +764,11 @@ async function getTeacherDailyGradebook(admin,user,gmId,periodoId,fecha){
   const amap=Object.fromEntries((attendance||[]).filter(x=>x.fecha===date).map(x=>[String(x.alumno_id),{estado:x.estado,observaciones:x.observaciones||null}]));
   const historyMap=new Map(); for(const a of (attendance||[])){const k=String(a.alumno_id);const obj=historyMap.get(k)||{};obj[a.fecha]=a.estado||'';historyMap.set(k,obj);}
   const students=(d.students||[]).map(s=>({...s,attendance:amap[String(s.id)]||null,attendanceHistory:historyMap.get(String(s.id))||{}}));
-  return {teacher:d.teacher,grupo_materia:d.gm,periodo:d.period,fecha:date,color_hex:d.color_hex,students,attendanceDates:[...new Set((attendance||[]).map(x=>x.fecha))].sort(),latest_id:d.latest?.id||null,latest_version:d.latest?.version||0,latest_fecha:d.latest?.fecha_clase||null,rubric:d.rubric,state:stableDailyState({...latestState,rubric:d.rubric||latestState.rubric,weightedValues:Object.keys(latestState.weightedValues||{}).length?latestState.weightedValues:d.scoreSeed})};
+  // La bitácora es independiente del permiso de PUBLICAR evaluaciones.
+  // Si aún no está instalada la migración de ventanas, la captura oficial falla cerrada,
+  // pero se mantiene disponible el respaldo diario autorizado al docente.
+  const windowStatus=await evaluationWindow(admin,periodoId).catch(e=>{if(e?.status===409)return {habilitada:false};throw e});
+  return {teacher:d.teacher,grupo_materia:d.gm,periodo:d.period,fecha:date,color_hex:d.color_hex,students,attendanceDates:[...new Set((attendance||[]).map(x=>x.fecha))].sort(),latest_id:d.latest?.id||null,latest_version:d.latest?.version||0,latest_fecha:d.latest?.fecha_clase||null,rubric:d.rubric,captura_evaluacion_habilitada:windowStatus.habilitada,state:stableDailyState({...latestState,rubric:d.rubric||latestState.rubric,weightedValues:Object.keys(latestState.weightedValues||{}).length?latestState.weightedValues:d.scoreSeed})};
 }
 async function prepareTeacherDailyUpload(admin,user,gmId,periodoId,fecha,filename){
   const d=await teacherDailyContext(admin,user,gmId,periodoId); const safe=String(filename||'calificaciones.xlsx').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-100);
@@ -775,12 +779,37 @@ async function prepareTeacherDailyUpload(admin,user,gmId,periodoId,fecha,filenam
 async function commitTeacherDailyUpload(admin,user,body,profile){
   const gmId=Number(body?.grupo_materia_id||0),periodoId=Number(body?.periodo_id||0),fecha=String(body?.fecha||'');
   if(!gmId||!periodoId||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fecha)) throw Object.assign(new Error('Grupo, periodo y fecha son obligatorios.'),{status:400});
-  const d=await teacherDailyContext(admin,user,gmId,periodoId); const incoming=stableDailyState(body?.state||{}); incoming.meta={...incoming.meta,periodo_id:periodoId,grupo_materia_id:gmId,docente_id:d.ctx.tid,version:2};
+  const d=await teacherDailyContext(admin,user,gmId,periodoId);
+  const incoming=stableDailyState(body?.state||{});
+  const windowStatus=await evaluationWindow(admin,periodoId).catch(e=>{if(e?.status===409)return {habilitada:false};throw e});
+  // Los valores de rúbrica en la bitácora NO equivalen a una calificación oficial.
+  // Se admite su respaldo cerrado únicamente si el docente confirma explícitamente el borrador.
+  let weightedCount=0;
+  for(const value of Object.values(incoming.weightedValues||{})){
+    if(value===''||value==null)continue;
+    if(!Number.isFinite(Number(value))||Number(value)<0||Number(value)>10)
+      throw Object.assign(new Error('Los valores de ponderación deben estar entre 0 y 10.'),{status:400});
+    weightedCount++;
+  }
+  if(weightedCount&&d.rubric?.estado==='cerrada')
+    throw Object.assign(new Error('La rúbrica está cerrada definitivamente. Puedes respaldar actividades, pero no anexar nuevas ponderaciones.'),{status:409});
+  if(weightedCount&&!windowStatus.habilitada&&body?.guardar_ponderaciones_como_borrador!==true)
+    throw Object.assign(new Error('Evaluaciones cerradas. Confirma el respaldo de ponderaciones como borrador; no se publicarán calificaciones.'),{status:409});
+  incoming.meta={...incoming.meta,periodo_id:periodoId,grupo_materia_id:gmId,docente_id:d.ctx.tid,version:2,ponderaciones_borrador:weightedCount>0,borrador_rubrica_id:weightedCount?Number(d.rubric?.id||0):0,borrador_rubrica_version:weightedCount?Number(d.rubric?.version||0):0};
   if(Number(incoming.meta.grupo_materia_id)!==gmId||Number(incoming.meta.periodo_id)!==periodoId) throw Object.assign(new Error('El archivo no pertenece al grupo o periodo seleccionado.'),{status:409});
   if(d.rubric){const total=d.rubric.total;if(Math.abs(total-100)>0.001) throw Object.assign(new Error(`La rúbrica institucional debe sumar exactamente 100%. Actualmente suma ${total.toFixed(2)}%.`),{status:409}); incoming.rubric=d.rubric;}
   if(incoming.activities.length>40) throw Object.assign(new Error('El archivo no puede contener más de 40 actividades.'),{status:400});
   const latest=d.latest?.snapshot?stableDailyState(d.latest.snapshot):null; if(latest) compareDailyLocked(latest,incoming);
-  const allowed=new Set((d.students||[]).map(s=>String(s.id))); for(const k of Object.keys(incoming.activityScores||{})){const [sid]=k.split('|');if(!allowed.has(String(sid))) delete incoming.activityScores[k];}
+  const allowed=new Set((d.students||[]).map(s=>String(s.id)));
+  const validActivities=new Set(incoming.activities.map(a=>String(a.key)));
+  for(const k of Object.keys(incoming.activityScores||{})){
+    const [sid,activityKey]=k.split('|');
+    if(!allowed.has(String(sid))||!validActivities.has(String(activityKey)))throw Object.assign(new Error('La bitácora contiene una actividad o alumno no registrado.'),{status:400});
+    const value=incoming.activityScores[k];
+    if(value===''||value==null){delete incoming.activityScores[k];continue;}
+    if(!Number.isFinite(Number(value))||Number(value)<0||Number(value)>10)throw Object.assign(new Error('Las actividades deben calificarse de 0 a 10.'),{status:400});
+    incoming.activityScores[k]=Number(value);
+  }
   for(const k of Object.keys(incoming.weightedValues||{})){const [sid,cid]=k.split('|');if(!allowed.has(String(sid))||!(d.rubric?.components||[]).some(c=>String(c.id)===String(cid))) delete incoming.weightedValues[k];}
   const {data:existing,error:ee}=await admin.from('bitacora_excel_diaria').select('id,version').eq('docente_id',d.ctx.tid).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).eq('fecha_clase',fecha).order('version',{ascending:false}).limit(1).maybeSingle(); if(ee) throw ee;
   const version=Number(existing?.version||0)+1;
@@ -4655,10 +4684,10 @@ export default async function handler(
       return res.status(200).json({ok:true,data});
     }
     if (req.method === 'POST' && req.body?.resource === 'commitTeacherDailyUpload') {
-      await requireEvaluationOpen(adminClient,req.body?.periodo_id);
+      // Respaldo diario NO es captura ni publicación oficial de calificaciones.
       if(profile.rol!=='docente') return res.status(403).json({ok:false,error:'Solo el docente puede registrar la bitácora.'});
       const data=await commitTeacherDailyUpload(adminClient,user,req.body||{},profile);
-      return res.status(200).json({ok:true,message:'Bitácora diaria respaldada. Las evidencias anteriores permanecen protegidas.',data});
+      return res.status(200).json({ok:true,message:data.snapshot?.meta?.ponderaciones_borrador?'Bitácora respaldada; ponderaciones guardadas como borrador privado. Podrás incorporarlas a la rúbrica al abrirse evaluaciones.':'Bitácora diaria respaldada. Las evidencias anteriores permanecen protegidas.',data});
     }
 
     if (req.method === 'POST' && req.body?.resource === 'saveEvaluationRubric') {
