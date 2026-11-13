@@ -937,7 +937,7 @@ async function manualTeacherGradebookPdf(admin,user,body){
     filename:`JAGUAR-Bitacora-Manual-${safe(gm.grupos?.clave||'grupo')}-${safe(gm.materias?.nombre||'materia')}.pdf`};
 }
 
-export default async function handler(req,res){try{if(req.method!=='POST')return res.status(405).json({ok:false,error:'Método no permitido.'});const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','alumno']);const b=req.body||{};
+export default async function handler(req,res){try{if(req.method!=='POST')return res.status(405).json({ok:false,error:'Método no permitido.'});const allowedRoleIds=req.body?.action==='grade_policy_office_pdf'?['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','prefectura','recursos_monetarios','archivo_escolar','tecnico']:['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','alumno'];const {user,profile,adminClient}=await requireRoles(req,allowedRoleIds);const b=req.body||{};
   if(b.action==='grade_policy_office_pdf'){
     if(['alumno','aspirante','padre','tutor'].includes(profile.rol))return res.status(403).json({ok:false,error:'Oficio reservado al personal escolar.'});
     const id=Number(b.oficio_id||0);

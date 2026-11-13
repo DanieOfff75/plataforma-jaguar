@@ -21,7 +21,7 @@ test('sin decimales por defecto: 9.5->10, 9.4->9, 8.5->9, 0 y 10',()=>{
  assert.equal(finalizeGrade(10),10);
  assert.equal(finalizeGrade(null),null);
  assert.equal(displayFinalGrade(7.625),'8');
- assert.deepEqual(gradePolicyFromRow(null),{permite_decimales:false,version:0,ciclo_escolar:null});
+ assert.deepEqual(gradePolicyFromRow(null),{permite_decimales:false,minima_aprobatoria:6,permitir_reprobatorias_inferiores:true,version:0,ciclo_escolar:null});
 });
 
 test('con un decimal: redondeo convencional preservando precisión en fuentes',()=>{
