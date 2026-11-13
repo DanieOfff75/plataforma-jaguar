@@ -13,6 +13,7 @@ import { registerVerifiableDocument, qrPng, deleteVerifiableDocument } from '../
 import { buildOfficialPdf } from '../lib/documentos_oficiales_pdf.js';
 import { readCredentialPhoto } from '../lib/credential_photo.js';
 import { normalizeNewPeriod } from '../lib/periodos_escolares.js';
+import {finalizeGrade,gradePolicyFromRow} from '../lib/grade_precision.js';
 import {departmentForPlanningRole,planningVerdictSummary,planningRejectReason} from '../lib/planeaciones_dictamen.js';
 
 const resources = {
@@ -106,6 +107,15 @@ async function academicContext(admin){
     periodos: rows
   };
 }
+
+/** Política única por ciclo; la ausencia de fila equivale a SIN decimales. */
+async function currentGradePolicy(admin,cycle){
+  const {data,error}=await admin.from('jaguar_precision_calificaciones')
+    .select('ciclo_escolar,permite_decimales,version').eq('ciclo_escolar',cycle).maybeSingle();
+  if(error)throw Object.assign(new Error('Falta instalar sql/ITHLA_CALIFICACIONES_PRECISION_Y_OFICIOS_2026.sql. '+error.message),{status:409});
+  return {...gradePolicyFromRow(data),ciclo_escolar:cycle};
+}
+function staffGradePolicyRole(role){return !['alumno','aspirante','padre','tutor'].includes(String(role||''));}
 
 function parseCycle(cycle){
   const m=String(cycle||'').trim().match(/^(\d{4})-(\d{4})$/);
@@ -712,6 +722,7 @@ async function buildEvaluationClosure(admin,user,gmId,periodoId){
   const total=componentes.reduce((a,x)=>a+Number(x.ponderacion||0),0);
   if(Math.abs(total-100)>0.001) throw Object.assign(new Error(`La ponderación debe sumar exactamente 100%. Actualmente suma ${total.toFixed(2)}%.`),{status:400});
   if(!componentes.length) throw Object.assign(new Error('La rúbrica no tiene actividades.'),{status:400});
+  const precision=await currentGradePolicy(admin,pQ.data?.ciclo_escolar||await activeCycle(admin));
   const map=new Map(); for(const x of scores) map.set(`${x.alumno_id}|${x.componente_id}`,x);
   const detail=[]; const gradeRows=[];
   for(const st of students){
@@ -726,12 +737,12 @@ async function buildEvaluationClosure(admin,user,gmId,periodoId){
       final += n*(Number(c.ponderacion)/100);
       activities.push({componente_id:c.id,nombre:c.nombre,valor:n,maximo_puntos:maxPoints,ponderacion:Number(c.ponderacion)});
     }
-    const rounded=Math.round(final*10)/10;
-    const snapshot={rubrica_id:rubric.id,version:rubric.version||1,periodo_id:Number(periodoId),actividades:activities,calificacion:rounded,calculado_en:new Date().toISOString()};
+    const rounded=finalizeGrade(final,precision);
+    const snapshot={rubrica_id:rubric.id,version:rubric.version||1,periodo_id:Number(periodoId),actividades:activities,calificacion_sin_redondeo:Number(final.toFixed(6)),calificacion:rounded,politica_precision:precision,calculado_en:new Date().toISOString()};
     detail.push({alumno_id:st.id,nombre_completo:st.nombre_completo,matricula:st.matricula,calificacion:rounded,snapshot});
     gradeRows.push({alumno_id:st.id,grupo_materia_id:Number(gmId),periodo_id:Number(periodoId),docente_id:ctx.tid,calificacion:rounded,observaciones:'Calificación calculada mediante rúbrica docente.',rubrica_id:rubric.id,calificacion_calculada:rounded,detalle_evaluacion:snapshot});
   }
-  return {ctx,rubric,componentes,students,detail,gradeRows,periodo:pQ.data||null,total_ponderacion:total};
+  return {ctx,rubric,componentes,students,detail,gradeRows,periodo:pQ.data||null,total_ponderacion:total,precision};
 }
 
 
@@ -773,8 +784,11 @@ function stableDailyState(state){
     activityScores:legacyScores||{},
     weightedValues:state?.weightedValues||{},
     attendance:state?.attendance||{},
+    // El padrón del respaldo se fotografía en el servidor; nunca se toma del cliente.
+    // Permite regenerar PDF histórico aunque alguien cambie de grupo o se dé de baja.
+    roster:Array.isArray(state?.roster)?state.roster.map(st=>({id:Number(st.id||0),matricula:String(st.matricula||'').slice(0,80),nombre_completo:String(st.nombre_completo||'').slice(0,200)})).filter(st=>st.id):[],
     rubric:normalizeDailyRubric(state?.rubric||{}),
-    meta:{version:Number(state?.meta?.version||2),periodo_id:Number(state?.meta?.periodo_id||0),grupo_materia_id:Number(state?.meta?.grupo_materia_id||0),docente_id:Number(state?.meta?.docente_id||0),ponderaciones_borrador:state?.meta?.ponderaciones_borrador===true,borrador_rubrica_id:Number(state?.meta?.borrador_rubrica_id||0),borrador_rubrica_version:Number(state?.meta?.borrador_rubrica_version||0)}
+    meta:{permite_decimales:state?.meta?.permite_decimales===true,version:Number(state?.meta?.version||2),periodo_id:Number(state?.meta?.periodo_id||0),grupo_materia_id:Number(state?.meta?.grupo_materia_id||0),docente_id:Number(state?.meta?.docente_id||0),unidad_ponderaciones:['puntos_ponderados','escala_0_10'].includes(state?.meta?.unidad_ponderaciones)?state.meta.unidad_ponderaciones:null,ponderaciones_borrador:state?.meta?.ponderaciones_borrador===true,borrador_rubrica_id:Number(state?.meta?.borrador_rubrica_id||0),borrador_rubrica_version:Number(state?.meta?.borrador_rubrica_version||0)}
   }));
 }
 function compareDailyLocked(previous,next){
@@ -809,7 +823,7 @@ async function getTeacherDailyGradebook(admin,user,gmId,periodoId,fecha){
   const d=await teacherDailyContext(admin,user,gmId,periodoId);
   const date=/^\d{4}-\d{2}-\d{2}$/.test(String(fecha||''))?String(fecha):new Date().toISOString().slice(0,10);
   const {data:attendance,error:ae}=await admin.from('asistencias').select('alumno_id,fecha,estado,observaciones').eq('grupo_materia_id',gmId).eq('docente_id',d.ctx.tid).order('fecha'); if(ae) throw ae;
-  const latestState=d.latest?.snapshot||{activities:[],activityScores:{},weightedValues:d.scoreSeed||{},attendance:{},rubric:d.rubric||{},meta:{}};
+  const latestState=d.latest?.snapshot||{activities:[],activityScores:{},weightedValues:d.scoreSeed||{},attendance:{},rubric:d.rubric||{},meta:{unidad_ponderaciones:Object.keys(d.scoreSeed||{}).length?'escala_0_10':'puntos_ponderados'}};
   const amap=Object.fromEntries((attendance||[]).filter(x=>x.fecha===date).map(x=>[String(x.alumno_id),{estado:x.estado,observaciones:x.observaciones||null}]));
   const historyMap=new Map(); for(const a of (attendance||[])){const k=String(a.alumno_id);const obj=historyMap.get(k)||{};obj[a.fecha]=a.estado||'';historyMap.set(k,obj);}
   const students=(d.students||[]).map(s=>({...s,attendance:amap[String(s.id)]||null,attendanceHistory:historyMap.get(String(s.id))||{}}));
@@ -817,7 +831,7 @@ async function getTeacherDailyGradebook(admin,user,gmId,periodoId,fecha){
   // Si aún no está instalada la migración de ventanas, la captura oficial falla cerrada,
   // pero se mantiene disponible el respaldo diario autorizado al docente.
   const windowStatus=await evaluationWindow(admin,periodoId).catch(e=>{if(e?.status===409)return {habilitada:false};throw e});
-  return {teacher:d.teacher,grupo_materia:d.gm,periodo:d.period,fecha:date,color_hex:d.color_hex,students,attendanceDates:[...new Set((attendance||[]).map(x=>x.fecha))].sort(),latest_id:d.latest?.id||null,latest_version:d.latest?.version||0,latest_fecha:d.latest?.fecha_clase||null,rubric:d.rubric,captura_evaluacion_habilitada:windowStatus.habilitada,state:stableDailyState({...latestState,rubric:d.rubric||latestState.rubric,weightedValues:Object.keys(latestState.weightedValues||{}).length?latestState.weightedValues:d.scoreSeed})};
+  return {teacher:d.teacher,grupo_materia:d.gm,periodo:d.period,grade_precision:await currentGradePolicy(admin,d.period.ciclo_escolar),fecha:date,color_hex:d.color_hex,students,attendanceDates:[...new Set((attendance||[]).map(x=>x.fecha))].sort(),latest_id:d.latest?.id||null,latest_version:d.latest?.version||0,latest_fecha:d.latest?.fecha_clase||null,rubric:d.rubric,captura_evaluacion_habilitada:windowStatus.habilitada,state:stableDailyState({...latestState,rubric:d.rubric||latestState.rubric,weightedValues:Object.keys(latestState.weightedValues||{}).length?latestState.weightedValues:d.scoreSeed})};
 }
 async function prepareTeacherDailyUpload(admin,user,gmId,periodoId,fecha,filename){
   const d=await teacherDailyContext(admin,user,gmId,periodoId); const safe=String(filename||'calificaciones.xlsx').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-100);
@@ -830,6 +844,7 @@ async function commitTeacherDailyUpload(admin,user,body,profile){
   if(!gmId||!periodoId||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fecha)) throw Object.assign(new Error('Grupo, periodo y fecha son obligatorios.'),{status:400});
   const d=await teacherDailyContext(admin,user,gmId,periodoId);
   const incoming=stableDailyState(body?.state||{});
+  incoming.roster=(d.students||[]).map(st=>({id:Number(st.id),matricula:String(st.matricula||''),nombre_completo:String(st.nombre_completo||'')}));
   const windowStatus=await evaluationWindow(admin,periodoId).catch(e=>{if(e?.status===409)return {habilitada:false};throw e});
   // Los valores de rúbrica en la bitácora NO equivalen a una calificación oficial.
   // Se admite su respaldo cerrado únicamente si el docente confirma explícitamente el borrador.
@@ -840,11 +855,20 @@ async function commitTeacherDailyUpload(admin,user,body,profile){
       throw Object.assign(new Error('Los valores de ponderación deben estar entre 0 y 10.'),{status:400});
     weightedCount++;
   }
+  if(incoming.meta.unidad_ponderaciones==='puntos_ponderados'){
+    for(const [key,raw] of Object.entries(incoming.weightedValues||{})){
+      if(raw===null||raw==='')continue;
+      const cid=String(key).split('|')[1];
+      const c=(d.rubric?.components||[]).find(x=>String(x.id)===cid);
+      if(c&&Number(raw)>Number(c.ponderacion)/10+.001)
+        throw Object.assign(new Error(`El aporte de ${c.nombre} supera ${Number(c.ponderacion)/10} puntos ponderados.`),{status:400});
+    }
+  }
   if(weightedCount&&d.rubric?.estado==='cerrada')
     throw Object.assign(new Error('La rúbrica está cerrada definitivamente. Puedes respaldar actividades, pero no anexar nuevas ponderaciones.'),{status:409});
   if(weightedCount&&!windowStatus.habilitada&&body?.guardar_ponderaciones_como_borrador!==true)
     throw Object.assign(new Error('Evaluaciones cerradas. Confirma el respaldo de ponderaciones como borrador; no se publicarán calificaciones.'),{status:409});
-  incoming.meta={...incoming.meta,periodo_id:periodoId,grupo_materia_id:gmId,docente_id:d.ctx.tid,version:2,ponderaciones_borrador:weightedCount>0,borrador_rubrica_id:weightedCount?Number(d.rubric?.id||0):0,borrador_rubrica_version:weightedCount?Number(d.rubric?.version||0):0};
+  incoming.meta={...incoming.meta,permite_decimales:(await currentGradePolicy(admin,d.period.ciclo_escolar)).permite_decimales,periodo_id:periodoId,grupo_materia_id:gmId,docente_id:d.ctx.tid,version:2,ponderaciones_borrador:weightedCount>0,borrador_rubrica_id:weightedCount?Number(d.rubric?.id||0):0,borrador_rubrica_version:weightedCount?Number(d.rubric?.version||0):0};
   if(Number(incoming.meta.grupo_materia_id)!==gmId||Number(incoming.meta.periodo_id)!==periodoId) throw Object.assign(new Error('El archivo no pertenece al grupo o periodo seleccionado.'),{status:409});
   if(d.rubric){const total=d.rubric.total;if(Math.abs(total-100)>0.001) throw Object.assign(new Error(`La rúbrica institucional debe sumar exactamente 100%. Actualmente suma ${total.toFixed(2)}%.`),{status:409}); incoming.rubric=d.rubric;}
   if(incoming.activities.length>40) throw Object.assign(new Error('El archivo no puede contener más de 40 actividades.'),{status:400});
@@ -2108,6 +2132,16 @@ async function getResource(
   if (key === 'financeStudentPayments') return financeStudentPayments(admin,user,profile);
   if (key === 'financeStudentCharges') return financeStudentCharges(admin,user,profile);
   if (key === 'institutionStatistics') return institutionStatistics(admin,user,profile,req);
+  if(key==='gradePrecisionPolicy'){
+    const ctx=await academicContext(admin);
+    return currentGradePolicy(admin,ctx.ciclo_escolar);
+  }
+  if(key==='gradePrecisionOffices'){
+    if(!staffGradePolicyRole(profile.rol))throw Object.assign(new Error('No autorizado.'),{status:403});
+    const ctx=await academicContext(admin);
+    const {data,error}=await admin.from('jaguar_oficios_precision_calificaciones').select('id,ciclo_escolar,version,antes_permite_decimales,ahora_permite_decimales,motivo,actor_nombre,creado_at').eq('ciclo_escolar',ctx.ciclo_escolar).order('id',{ascending:false}).limit(30);
+    if(error)throw error;return data||[];
+  }
   if (key === 'periodContext') return academicContext(admin);
   if (key === 'teacherDashboard') {
     if (profile.rol !== 'docente') throw Object.assign(new Error('Solo docentes pueden consultar este recurso.'), {status:403});
@@ -4370,6 +4404,23 @@ export default async function handler(
       return res.status(200).json({ok:true,data:result});
     }
 
+    if(req.method==='POST'&&req.body?.resource==='setGradePrecisionPolicy'){
+      if(profile.rol!=='control_escolar')return res.status(403).json({ok:false,error:'Sólo Control Escolar puede cambiar el criterio de decimales.'});
+      const cycle=await activeCycle(adminClient);
+      if(typeof req.body.permite_decimales!=='boolean')return res.status(400).json({ok:false,error:'Selecciona un criterio válido.'});
+      const motivo=String(req.body.motivo||'').trim();
+      if(motivo.length<15||motivo.length>300)return res.status(400).json({ok:false,error:'Explica el motivo del cambio para el oficio (15 a 2000 caracteres).'});
+      const version=Number(req.body.version_esperada);
+      if(!Number.isInteger(version)||version<0)return res.status(400).json({ok:false,error:'Recarga la configuración antes de actualizar.'});
+      const {data:oficio,error}=await adminClient.rpc('jaguar_cambiar_precision_calificaciones',{
+        p_ciclo:cycle,p_permite_decimales:req.body.permite_decimales,p_motivo:motivo,
+        p_actor:user.id,p_actor_nombre:profile.nombre_completo||profile.correo||'Control Escolar',p_version_esperada:version
+      });
+      if(error)throw Object.assign(new Error(error.message),{status:error.code==='40001'?409:400});
+      try{await audit(adminClient,{userId:user.id,role:profile.rol,action:'cambiar_precision_calificaciones',module:'configuracion',entity:'jaguar_oficios_precision_calificaciones',entityId:oficio,description:`Cambio del criterio de redondeo ${cycle}, oficio ITHLA-PC-${oficio}.`,after:{permite_decimales:req.body.permite_decimales,motivo},req});}catch(err){console.warn('Auditoría complementaria no registrada',err.message);}
+      return res.status(200).json({ok:true,data:{oficio_id:oficio,policy:await currentGradePolicy(adminClient,cycle)},message:'Criterio actualizado y oficio enviado a todos los perfiles activos del personal.'});
+    }
+
     /* GET */
     if(req.method==='GET' && req.query?.resource==='studentRequests'){
       return res.status(200).json({ok:true,data:await getStudentRequestsDirect(adminClient,user,profile)});
@@ -4809,8 +4860,25 @@ export default async function handler(
         if(!Number.isFinite(value)||value<0||value>10)return res.status(400).json({ok:false,error:'Las calificaciones de actividades deben estar entre 0 y 10.'});
         toSave.set(key,{rubrica_id:rubric.id,componente_id:componentId,alumno_id:alumnoId,valor:value});toClear.delete(key);
       }
-      const {data:existingNotes,error:en}=await adminClient.from('evaluacion_notas').select('id,alumno_id,componente_id').eq('rubrica_id',rubric.id).limit(20000);if(en)throw en;
+      const provenance=req.body?.procedencia||{};
+      const origin=['bitacora','excel_externo','captura_manual'].includes(provenance.origen)?provenance.origen:'captura_manual';
+      if(origin==='excel_externo'){
+        const path=String(provenance.file_path||'');
+        const sha=String(provenance.sha256||'');
+        if(!/^[a-f0-9]{64}$/i.test(sha)||!path.startsWith(`${tid}/`)||!path.includes(`/${periodoId}/${gmId}/${rubric.id}-`))
+          throw Object.assign(new Error('El origen Excel no tiene un respaldo válido; no se puede auditar la importación.'),{status:400});
+      }
+      const {data:existingNotes,error:en}=await adminClient.from('evaluacion_notas').select('id,alumno_id,componente_id,valor').eq('rubrica_id',rubric.id).limit(20000);if(en)throw en;
       const current=new Map((existingNotes||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x]));
+      // Adopción con bloqueo optimista. Una edición concurrente nunca debe pisarse
+      // silenciosamente por una vista previa antigua.
+      for(const row of rows){
+        if(!Object.prototype.hasOwnProperty.call(row||{},'valor_anterior'))continue;
+        const key=`${Number(row.alumno_id)}|${Number(row.componente_id)}`;
+        const old=current.get(key)?.valor,expected=row.valor_anterior;
+        if((old==null)!==(expected==null)||(old!=null&&Math.abs(Number(old)-Number(expected))>.001))
+          throw Object.assign(new Error('Una nota cambió desde que comenzaste la adopción. No se guardó ninguna celda; vuelve a revisar.'),{status:409});
+      }
       // No se guardan null en columnas que podrían ser NOT NULL; una celda vacía elimina su nota previa.
       const deletions=[...toClear].map(key=>current.get(key)?.id).filter(Boolean);
       if(deletions.length){const {error:de}=await adminClient.from('evaluacion_notas').delete().in('id',deletions).eq('rubrica_id',rubric.id);if(de)throw de;}
@@ -4818,6 +4886,16 @@ export default async function handler(
       for(const [key,note] of toSave){const old=current.get(key);if(old)updates.push({id:old.id,valor:note.valor});else inserts.push(note);}
       if(inserts.length){const {error:ie}=await adminClient.from('evaluacion_notas').insert(inserts);if(ie)throw ie;}
       for(const note of updates){const {error:ue}=await adminClient.from('evaluacion_notas').update({valor:note.valor}).eq('id',note.id).eq('rubrica_id',rubric.id);if(ue)throw ue;}
+      await audit(adminClient,{userId:user.id,role:profile.rol,action:'guardar_notas_rubrica',module:'evaluaciones',entity:'rubricas_evaluacion',entityId:rubric.id,
+        description:`${origin}: ${toSave.size} celdas guardadas, ${deletions.length} eliminadas`,
+        after:{origen:origin,grupo_materia_id:gmId,periodo_id:periodoId,registros:toSave.size,eliminados:deletions.length,
+          archivo:origin==='excel_externo'?String(provenance.archivo||'').slice(0,150):null,
+          file_path:origin==='excel_externo'?String(provenance.file_path||'').slice(0,450):null,
+          sha256:origin==='excel_externo'?String(provenance.sha256||'').slice(0,64):null,
+          hoja:origin==='excel_externo'?String(provenance.hoja||'').slice(0,100):null,
+          filas:origin==='excel_externo'?String(provenance.filas||'').slice(0,30):null,
+          columnas:origin==='excel_externo'?provenance.columnas||{}:null,
+          unidad:origin==='excel_externo'?String(provenance.unidad||'').slice(0,25):null}});
       return res.status(200).json({ok:true,message:`Se guardaron ${toSave.size} calificaciones de actividades y se limpiaron ${deletions.length} celdas vacías.`});
     }
 
@@ -4860,6 +4938,19 @@ export default async function handler(
       }else{
         closure=await buildEvaluationClosure(adminClient,user,gmId,periodoId);
       }
+      // Un solo criterio para cualquier origen: rúbrica o Excel importado.
+      const {data:closingPeriod,error:closingPeriodErr}=await adminClient.from('periodos_escolares').select('ciclo_escolar').eq('id',periodoId).maybeSingle();
+      if(closingPeriodErr||!closingPeriod)throw closingPeriodErr||Error('Periodo no encontrado.');
+      const gradePrecision=await currentGradePolicy(adminClient,closingPeriod.ciclo_escolar);
+      for(const row of closure.gradeRows){
+        const raw=Number(row.calificacion);
+        row.calificacion=finalizeGrade(raw,gradePrecision);
+        row.calificacion_calculada=row.calificacion;
+        row.detalle_evaluacion={...(row.detalle_evaluacion||{}),calificacion_sin_redondeo:row.detalle_evaluacion?.calificacion_sin_redondeo??raw,politica_precision:gradePrecision,calificacion:row.calificacion};
+      }
+      for(const item of closure.detail){
+        item.calificacion=finalizeGrade(item.calificacion,gradePrecision);
+      }
       const adjustments=Array.isArray(req.body?.adjustments)?req.body.adjustments:[];
       const allowedAdjustments=new Map(closure.detail.map(x=>[String(x.alumno_id),x]));
       const normalizedAdjustments=[];
@@ -4872,7 +4963,7 @@ export default async function handler(
         const nuevo=Number(a.valor_nuevo);
         if(!Number.isFinite(nuevo)||nuevo<0||nuevo>10) throw Object.assign(new Error(`El ajuste de ${base.nombre_completo} debe estar entre 0 y 10.`),{status:400});
         if(Math.abs(nuevo-base.calificacion)>0.001 && !reason) throw Object.assign(new Error(`Debes indicar el motivo del ajuste de ${base.nombre_completo}.`),{status:400});
-        if(Math.abs(nuevo-base.calificacion)>0.001) normalizedAdjustments.push({alumno_id:base.alumno_id,valor_calculado:base.calificacion,valor_anterior:base.calificacion,valor_nuevo:Number(nuevo.toFixed(2)),motivo:reason,tipo:nuevo>base.calificacion?'aumento':'disminucion'});
+        if(Math.abs(nuevo-base.calificacion)>0.001) normalizedAdjustments.push({alumno_id:base.alumno_id,valor_calculado:base.calificacion,valor_anterior:base.calificacion,valor_nuevo:finalizeGrade(nuevo,gradePrecision),motivo:reason,tipo:nuevo>base.calificacion?'aumento':'disminucion'});
       }
       if(normalizedAdjustments.length){const {error:aq}=await adminClient.from('ajustes_calificacion').select('id').limit(1);if(aq) throw Object.assign(new Error('No se puede registrar el ajuste porque falta la migración sql/ITHLA_DB_COMPLETO_2026_2027.sql. No se cerró el periodo.'),{status:409});}
       const adjustmentMap=new Map(normalizedAdjustments.map(x=>[String(x.alumno_id),x]));
@@ -4898,24 +4989,11 @@ export default async function handler(
       return res.status(200).json({ok:true,message:`Periodo cerrado. Se respaldaron ${gradeRows.length} calificaciones con su rúbrica${normalizedAdjustments.length?` y ${normalizedAdjustments.length} ajuste(s) justificado(s)`:''}.`,data:{cierre:close,calificaciones:gradeRows.length,ajustes:normalizedAdjustments.length}});
     }
 
+    // Se elimina el segundo mecanismo de escritura directa en calificaciones.
+    // Los registros históricos se conservan; toda captura nueva pasa por rúbrica
+    // y su cierre auditado, y las correcciones oficiales por el trámite autorizado.
     if (req.method === 'POST' && req.body?.resource === 'saveTeacherGrades') {
-      if (profile.rol !== 'docente') return res.status(403).json({ok:false,error:'Solo el docente puede capturar calificaciones.'});
-      const gmId=Number(req.body?.grupo_materia_id||0), periodoId=Number(req.body?.periodo_id||0), rows=Array.isArray(req.body?.rows)?req.body.rows:[];
-      await requireEvaluationOpen(adminClient,periodoId);
-      const roster=await getTeacherRoster(adminClient,user,gmId,{periodo_id:periodoId});
-      const allowed=new Set((roster.students||[]).map(s=>String(s.id)));
-      const currentTeacherId=await teacherId(adminClient,user.id);
-      for(const row of rows){
-        const alumnoId=Number(row.alumno_id||0); if(!allowed.has(String(alumnoId))) continue;
-        const raw=row.calificacion; const hasValue=raw!==''&&raw!=null; const grade=hasValue?Number(raw):null;
-        if(grade!==null && (!Number.isFinite(grade)||grade<0||grade>10)) throw Object.assign(new Error(`Calificación inválida para el alumno ${alumnoId}.`),{status:400});
-        const {data:existing,error:ee}=await adminClient.from('calificaciones').select('id,docente_id').eq('alumno_id',alumnoId).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).maybeSingle(); if(ee) throw ee;
-        if(existing?.id&&Number(existing.docente_id)!==Number(currentTeacherId))throw Object.assign(new Error('Calificación histórica de otro docente. La rectificación requiere trámite autorizado.'),{status:409});
-        const payload={alumno_id:alumnoId,grupo_materia_id:gmId,periodo_id:periodoId,docente_id:currentTeacherId,calificacion:grade,observaciones:String(row.observaciones||'').trim()||null};
-        if(existing?.id){const {error}=await adminClient.from('calificaciones').update(payload).eq('id',existing.id);if(error)throw error;}
-        else {const {error}=await adminClient.from('calificaciones').insert(payload);if(error)throw error;}
-      }
-      return res.status(200).json({ok:true,message:`Se guardaron ${rows.length} registros de calificación.`});
+      return res.status(409).json({ok:false,error:'La captura directa de totales fue unificada. Usa la Bitácora diaria y la rúbrica de evaluación; para una nota cerrada, solicita rectificación a Control Escolar.'});
     }
 
     if (req.method === 'POST' && req.body?.resource === 'saveTeacherAttendance') {

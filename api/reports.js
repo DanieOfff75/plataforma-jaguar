@@ -6,6 +6,7 @@ import {buildDailyGradebookPdf,buildManualDailyGradebookPdf} from '../lib/jaguar
 import {academicGradeDetail,allowGradeExplorer} from '../lib/academic_grade_explorer.js';
 import {buildAcademicGradesPdf} from '../lib/academic_grade_report_pdf.js';
 import {buildGradeBatchOfficePdf} from '../lib/grade_batch_office_pdf.js';
+import {buildGradePrecisionOfficePdf} from '../lib/grade_policy_office_pdf.js';
 import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { readFile } from 'node:fs/promises';
@@ -880,7 +881,18 @@ async function dailyGradebookPdf(admin,snapshotId,req){
   const {data:snap,error:se}=await admin.from('bitacora_excel_diaria').select('*,docentes(id,nombre_completo,numero_empleado),grupo_materias(id,grupo_id,materia_id,grupos(id,clave,grado,letra,turno),materias(id,nombre,clave)),periodos_escolares(id,nombre,ciclo_escolar)').eq('id',Number(snapshotId)).maybeSingle();
   if(se) throw se; if(!snap) throw Object.assign(new Error('Respaldo diario no encontrado.'),{status:404});
   const gm=snap.grupo_materias||{},g=gm.grupos||{},m=gm.materias||{},state=snap.snapshot||{},acts=Array.isArray(state.activities)?state.activities:[],activityScores=state.activityScores||{},weighted=state.weightedValues||{},rubric=state.rubric||{components:[],total:snap.ponderacion_total||0};
-  const {data:students,error:stErr}=await admin.from('alumnos').select('id,nombre_completo,matricula').eq('grupo_id',gm.grupo_id).eq('activo',true).order('nombre_completo'); if(stErr) throw stErr;
+  let students=Array.isArray(state.roster)&&state.roster.length?state.roster:null;
+  if(!students){
+    // Compatibilidad con bitácoras antiguas: recuperar también alumnos que ya
+    // cambiaron de grupo, si sus IDs aparecen en las calificaciones respaldadas.
+    const {data:active,error:stErr}=await admin.from('alumnos').select('id,nombre_completo,matricula').eq('grupo_id',gm.grupo_id).eq('activo',true).order('nombre_completo');if(stErr)throw stErr;
+    const present=new Set((active||[]).map(st=>String(st.id)));
+    const keys=[...Object.keys(state.activityScores||{}),...Object.keys(state.weightedValues||{}),...Object.keys(state.attendance||{})];
+    const extraIds=[...new Set(keys.map(k=>Number(String(k).split('|')[0])).filter(id=>Number.isSafeInteger(id)&&id>0&&!present.has(String(id))))].slice(0,200);
+    const historic=extraIds.length?await admin.from('alumnos').select('id,nombre_completo,matricula').in('id',extraIds):{data:[],error:null};
+    if(historic.error)throw historic.error;
+    students=[...(active||[]),...(historic.data||[])];
+  }
   const {data:inst}=await admin.from('institucion_config').select('*').limit(1).maybeSingle();
   const bytes=await buildDailyGradebookPdf({
     institution:inst||{},snapshot:snap,group:g,subject:m,teacher:snap.docentes||{},students:sortInstitutionalPeople(students||[]),state
@@ -926,6 +938,19 @@ async function manualTeacherGradebookPdf(admin,user,body){
 }
 
 export default async function handler(req,res){try{if(req.method!=='POST')return res.status(405).json({ok:false,error:'Método no permitido.'});const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','coordinacion_academica','docente','alumno']);const b=req.body||{};
+  if(b.action==='grade_policy_office_pdf'){
+    if(['alumno','aspirante','padre','tutor'].includes(profile.rol))return res.status(403).json({ok:false,error:'Oficio reservado al personal escolar.'});
+    const id=Number(b.oficio_id||0);
+    if(!Number.isSafeInteger(id)||id<1)return res.status(400).json({ok:false,error:'Folio inválido.'});
+    const {data:oficio,error:oe}=await adminClient.from('jaguar_oficios_precision_calificaciones').select('*').eq('id',id).maybeSingle();
+    if(oe)throw oe;if(!oficio)return res.status(404).json({ok:false,error:'Oficio no encontrado.'});
+    // El oficio histórico toma su contenido del registro inmutable, no de la configuración actual.
+    const {data:responsible}=await adminClient.from('perfiles').select('firma_path').eq('id',oficio.actor_id).maybeSingle();
+    // prepareInstitutionalPdf crea el PDF; la firma se carga en el propio documento
+    // únicamente cuando existe una imagen verificada en el almacenamiento institucional.
+    const bytes=await buildGradePrecisionOfficePdf({record:oficio,logoBytes:await loadLogo(),signaturePath:responsible?.firma_path,loadSignature:(pdf,path)=>loadSignatureImage(pdf,adminClient,path)});
+    return res.status(200).json({ok:true,pdf_base64:Buffer.from(bytes).toString('base64'),filename:`ITHLA-Oficio-PC-${id}.pdf`});
+  }
   if(b.action==='grade_batch_office_pdf'){
     const revisionId=Number(b.revision_id||0);
     if(!Number.isSafeInteger(revisionId)||revisionId<1)return res.status(400).json({ok:false,error:'Selecciona un oficio válido.'});

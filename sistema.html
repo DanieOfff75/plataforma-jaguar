@@ -109,9 +109,9 @@ body{overflow-x:hidden;background-attachment:fixed}
 <script>
 const S={user:null,profile:null,role:null,page:'inicio',cache:{},institution:null,signatureRequired:false,studentSuspended:false,studentReview:false,activeCycle:'',activePeriod:null,periodNumber:null,totalPeriods:0};let supabaseClient=null;
 const labels={tecnico:'Administrador técnico',direccion_escolar:'Dirección Escolar',control_escolar:'Control Escolar',control:'Control Escolar',docente:'Docente',alumno:'Alumno',servicios_docentes:'Servicios Docentes',servicios_estudiantiles:'Servicios Estudiantiles',prefectura:'Prefectura',coordinacion_academica:'Coordinación Académica',archivo_escolar:'Archivo Escolar',recursos_monetarios:'Recursos Monetarios'};
-const controlNav=[['inicio','⌂ Inicio'],['resumen','▦ Resumen'],['docentes','👨‍🏫 Docentes'],['alumnos','👥 Grupos y alumnos'],['grupos','👥 Grupos'],['listas','📥 Listas por grupo'],['materias','📚 Materias'],['horarios','🗓️ Horarios'],['calificaciones','📊 Calificaciones'],['asistencia','✓ Asistencia'],['talleres','🎨 Talleres'],['avisos','📢 Gestionar avisos'],['portal_publico','🌐 Contenido público'],['usuarios','🔐 Usuarios'],['revision_acceso','🛡️ Revisiones de acceso'],['config','⚙ Configuración']];
-const serviceNav=[['inicio','⌂ Inicio'],['solicitudes_taller','🔔 Solicitudes'],['alumnos','🎓 Alumnos'],['credenciales','🪪 Credenciales'],['calificaciones','📊 Calificaciones'],['asistencia','✓ Asistencia'],['horarios','🗓️ Horarios'],['listas','📥 Listas'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
-const roleNav={tecnico:[['inicio','⌂ Inicio'],['sms_gateway','▣ Pasarela SMS'],['perfil','👤 Perfil']],docente:[['inicio','⌂ Inicio'],['grupos','👥 Mis grupos'],['calificaciones','📊 Calificaciones'],['asistencia','✓ Asistencia'],['horario','🗓️ Mi horario'],['clarificaciones','💬 Aclaraciones'],['planeaciones','📝 Planeaciones'],['archivo_solicitudes','📁 Archivo Escolar'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],alumno:[['inicio','⌂ Inicio'],['horario','🗓️ Mi horario'],['calificaciones','📊 Mis calificaciones'],['asistencia','✓ Mi asistencia'],['solicitudes_taller','📨 Solicitudes'],['archivo_solicitudes','📁 Archivo Escolar'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],servicios_docentes:[['inicio','⌂ Inicio'],['docentes','👨‍🏫 Docentes'],['carga_docente','🕐 Carga docente'],['grupos','👥 Grupos'],['listas','📥 Listas'],['planeaciones','📝 Planeaciones'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],servicios_estudiantiles:[['inicio','⌂ Inicio'],['solicitudes_taller','📨 Solicitudes'],['alumnos','🎓 Alumnos'],['talleres','🎨 Talleres'],['horarios','🗓️ Horarios'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],prefectura:[['inicio','⌂ Inicio'],['cambios_especiales','🚨 Cambios especiales'],['incidencias','⚠️ Incidencias'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],coordinacion_academica:[['inicio','⌂ Inicio'],['materias','📚 Materias'],['docentes','👨‍🏫 Docentes'],['grupos','👥 Grupos'],['cargas','🧩 Asignaciones'],['horarios','🗓️ Horarios'],['listas','📥 Listas'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],direccion_escolar:[['inicio','⌂ Inicio'],['resumen','▦ Resumen general'],['cambios_especiales','🚨 Cambios especiales'],['usuarios','🔐 Usuarios'],['docentes','👨‍🏫 Docentes'],['alumnos','👥 Grupos y alumnos'],['grupos','👥 Grupos'],['materias','📚 Materias'],['horarios','🗓️ Horarios'],['incidencias','⚠️ Prefectura'],['solicitudes_taller','📋 Solicitudes'],['avisos','📢 Avisos'],['config','⚙ Configuración']]};
+const controlNav=[['inicio','⌂ Inicio'],['resumen','▦ Resumen'],['docentes','👨‍🏫 Docentes'],['alumnos','👥 Grupos y alumnos'],['grupos','👥 Grupos'],['listas','📥 Listas por grupo'],['materias','📚 Materias'],['horarios','🗓️ Horarios'],['calificaciones','📊 Consulta de notas'],['asistencia','✓ Asistencia'],['talleres','🎨 Talleres'],['avisos','📢 Gestionar avisos'],['portal_publico','🌐 Contenido público'],['usuarios','🔐 Usuarios'],['revision_acceso','🛡️ Revisiones de acceso'],['config','⚙ Configuración']];
+const serviceNav=[['inicio','⌂ Inicio'],['solicitudes_taller','🔔 Solicitudes'],['alumnos','🎓 Alumnos'],['credenciales','🪪 Credenciales'],['calificaciones','📊 Consulta de notas'],['asistencia','✓ Asistencia'],['horarios','🗓️ Horarios'],['listas','📥 Listas'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
+const roleNav={tecnico:[['inicio','⌂ Inicio'],['sms_gateway','▣ Pasarela SMS'],['perfil','👤 Perfil']],docente:[['inicio','⌂ Inicio'],['grupos','👥 Mis grupos'],['calificaciones','📊 Consulta de notas'],['asistencia','✓ Asistencia'],['horario','🗓️ Mi horario'],['clarificaciones','💬 Aclaraciones'],['planeaciones','📝 Planeaciones'],['archivo_solicitudes','📁 Archivo Escolar'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],alumno:[['inicio','⌂ Inicio'],['horario','🗓️ Mi horario'],['calificaciones','📊 Mis calificaciones'],['asistencia','✓ Mi asistencia'],['solicitudes_taller','📨 Solicitudes'],['archivo_solicitudes','📁 Archivo Escolar'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],servicios_docentes:[['inicio','⌂ Inicio'],['docentes','👨‍🏫 Docentes'],['carga_docente','🕐 Carga docente'],['grupos','👥 Grupos'],['listas','📥 Listas'],['planeaciones','📝 Planeaciones'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],servicios_estudiantiles:[['inicio','⌂ Inicio'],['solicitudes_taller','📨 Solicitudes'],['alumnos','🎓 Alumnos'],['talleres','🎨 Talleres'],['horarios','🗓️ Horarios'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],prefectura:[['inicio','⌂ Inicio'],['cambios_especiales','🚨 Cambios especiales'],['incidencias','⚠️ Incidencias'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],coordinacion_academica:[['inicio','⌂ Inicio'],['materias','📚 Materias'],['docentes','👨‍🏫 Docentes'],['grupos','👥 Grupos'],['cargas','🧩 Asignaciones'],['horarios','🗓️ Horarios'],['listas','📥 Listas'],['avisos','📢 Avisos'],['perfil','👤 Perfil']],direccion_escolar:[['inicio','⌂ Inicio'],['resumen','▦ Resumen general'],['cambios_especiales','🚨 Cambios especiales'],['usuarios','🔐 Usuarios'],['docentes','👨‍🏫 Docentes'],['alumnos','👥 Grupos y alumnos'],['grupos','👥 Grupos'],['materias','📚 Materias'],['horarios','🗓️ Horarios'],['incidencias','⚠️ Prefectura'],['solicitudes_taller','📋 Solicitudes'],['avisos','📢 Avisos'],['config','⚙ Configuración']]};
 const titles={sms_gateway:'Pasarela SMS',encargados:'Encargados departamentales',clarificaciones:'Aclaraciones de calificación',archivo:'Archivo Escolar',archivo_solicitudes:'Archivo Escolar',documentos_oficiales:'Documentos oficiales',retencion:'Catálogo de retención documental',planeaciones:'Planeaciones docentes',centro_didactico:'Centro de Creación Didáctica',inicio:'Panel principal',resumen:'Resumen institucional',docentes:'Docentes',alumnos:'Grupos y alumnos',credenciales:'Credenciales escolares',grupos:'Grupos',materias:'Materias',horarios:'Horarios',calificaciones:'Calificaciones',asistencia:'Asistencia',talleres:'Talleres extracurriculares',solicitudes_taller:'Servicios Estudiantiles',avisos:'Avisos',usuarios:'Usuarios',config:'Configuración',listas:'Listas por grupo',perfil:'Mi perfil',horario:'Horario',alumno:'Alumno vinculado',config_docente:'Configuración docente',carga_docente:'Carga docente',cargas:'Asignaciones académicas',incidencias:'Prefectura · Incidencias'};
 async function initAuth(){try{const r=await fetch('/api/auth?mode=config');const cfg=await r.json();if(!r.ok||!cfg.ok)throw Error(cfg.error||'No se pudo cargar configuración.');const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');supabaseClient=mod.createClient(cfg.url,cfg.anonKey);window.ithlaSessionGuard.setup({logout:async()=>{await supabaseClient.auth.signOut();showLogin();},tokenProvider:async()=>(await supabaseClient.auth.getSession()).data.session?.access_token});const {data:{session}}=await supabaseClient.auth.getSession();if(session){if(!window.ithlaSessionGuard.getId()){await supabaseClient.auth.signOut();showLogin();}else{await loadRealUser(session);}}supabaseClient.auth.onAuthStateChange((e,s)=>{if(e==='SIGNED_OUT')showLogin();if(e==='PASSWORD_RECOVERY'&&s)passwordModal('recovery');});}catch(e){setLoginStatus('No se pudo inicializar Supabase: '+e.message)}}
 function setLoginStatus(x){document.getElementById('loginStatus').textContent=x}
@@ -751,9 +751,8 @@ async function adminBoletaPdf(alumnoId){try{const {data:{session}}=await supabas
 
 function departmentDashboard(name,desc,target){return `<div class="space-y-5"><div class="card"><span class="chip">${esc(name)}</span><h2 class="text-2xl font-bold mt-3">Panel del departamento</h2><p class="text-sm text-[#A9BAC8] mt-2">${esc(desc)}</p><button class="btn primary mt-4" onclick="loadPage('${target}')">Abrir módulo principal</button></div><div class="grid md:grid-cols-3 gap-4"><div class="card"><small>Usuarios</small><div class="text-xl font-bold mt-2">Cuenta institucional</div></div><div class="card"><small>Avisos</small><div class="text-xl font-bold mt-2">Enviar y recibir</div></div><div class="card"><small>Datos compartidos</small><div class="text-xl font-bold mt-2">Supabase</div></div></div></div>`}
 async function teachersModule(){const rows=jaguarOrdenarPersonas(await api('teachers'));const can=S.role==='servicios_docentes'||S.role==='coordinacion_academica'||S.role==='direccion_escolar'||S.role==='control_escolar';const canReset=['servicios_docentes','coordinacion_academica','direccion_escolar','control_escolar'].includes(S.role);const canStatus=['servicios_docentes','direccion_escolar','control_escolar','control'].includes(S.role);return `<div class="card"><div class="flex flex-col md:flex-row justify-between gap-3 mb-4"><div><h3>Docentes</h3><p class="text-sm text-[#8FA3B5]">Registro central de docentes. Puedes modificar su especialidad y gestionar su estado.</p></div>${can?`<button class="btn primary" onclick="formTeacherAccount()">+ Registrar docente / crear cuenta</button>`:''}</div><div class="scroll"><table class="table"><thead><tr><th>Empleado</th><th>Nombre</th><th>Especialidad</th><th>Correo</th><th>Horas solicitadas</th><th>Horas asignadas</th><th>Estado</th>${can||canReset?'<th>Acciones</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.numero_empleado||r.clave_docente||'—')}</td><td>${esc(jaguarNombreInstitucional(r))}</td><td>${esc(r.especialidad||'—')}</td><td>${esc(r.correo||'—')}</td><td>${r.horas_solicitadas??0}</td><td>${r.horas_asignadas??0}</td><td>${r.activo?'<span class="chip">Activo</span>':'<span class="chip">Inactivo</span>'}</td>${can||canReset?`<td class="flex gap-2 flex-wrap">${can?`<button class="btn" onclick='formFor("teachers",${JSON.stringify(r)})'>✏️ Editar</button>`:''}${r.auth_user_id&&canReset?`<button class="btn" onclick='resetPassword(${JSON.stringify(r.auth_user_id)})'>🔑 Restablecer</button>`:''}${canStatus?`<button class="btn" onclick="loadPage('relevos_docentes')">♜ Bajas y relevos</button>`:''}</td>`:''}</tr>`).join('')||`<tr><td colspan="${(can||canReset)?8:7}">Sin docentes.</td></tr>`}</tbody></table></div></div>`}
-async function teacherConfigModule(){if(S.role!=='docente')return '<div class="card">Este módulo es para docentes.</div>';const r=await fetch('/api/teacher',{headers:{Authorization:'Bearer '+(await supabaseClient.auth.getSession()).data.session.access_token}});const d=await jaguarReadJson(r);if(!r.ok||!d.ok)throw Error(d.error);const x=d.data.docente;const colors=await apiQuery('teacherSubjectColors');return `<div class="space-y-5"><div class="card"><span class="chip">DOCENTE</span><h2 class="text-2xl mt-3">Configuración de carga</h2><p class="text-sm text-[#A9BAC8] mt-2">Indica cuántas horas semanales requieres y tu disponibilidad. Servicios Docentes usará esta información para la asignación.</p><div class="grid md:grid-cols-2 gap-4 mt-5"><div><label class="text-xs text-[#8FA3B5]">Horas semanales solicitadas</label><input id="th_horas" class="input mt-1" type="number" min="0" max="60" value="${x.horas_solicitadas||0}"></div><div><label class="text-xs text-[#8FA3B5]">Horas actualmente asignadas</label><input class="input mt-1" disabled value="${x.horas_asignadas||0}"></div></div><button class="btn primary mt-5" onclick="saveTeacherConfig()">Guardar configuración</button></div><div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>🎨 Color por materia</h3><p class="text-sm text-[#A9BAC8] mt-1">Elige un color para cada materia asignada. Se usará para identificarla en tablas y Excel.</p></div></div><div id="teacherSubjectColorsBox" class="mt-4">${colors.map(c=>`<label class="flex items-center gap-3 py-2"><input id="tc_${c.materia_id}" type="color" value="${esc(c.color_hex||'#D4AF37')}" class="w-12 h-10 rounded cursor-pointer bg-transparent"><span><b>${esc(c.materia?.nombre||'Materia')}</b><span class="block text-xs text-[#8FA3B5]">${esc(c.materia?.clave||'')}</span></span></label>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes materias asignadas actualmente.</p>'}</div><button class="btn primary mt-4" onclick="saveTeacherSubjectColors()">💾 Guardar colores</button></div><div class="card"><h3>Cómo funciona</h3><p class="text-sm text-[#A9BAC8] mt-2">Tus horas solicitadas son una preferencia/carga objetivo. Servicios Docentes y Coordinación Académica pueden distribuir grupos compatibles de forma aleatoria y revisar el resultado.</p></div></div><div class="card border-[#D4AF3755]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"><div><span class="chip">📐 EVALUACIÓN DOCENTE</span><h3 class="text-xl mt-3">Rúbrica, actividades y cierre de periodo</h3><p class="text-sm text-[#A9BAC8] mt-2">Registra cómo vas a evaluar, captura las actividades, genera el Excel institucional y al cerrar el periodo guarda una evidencia de respaldo junto con la calificación calculada.</p></div><button class="btn primary" onclick="openTeacherEvaluationHub()">Abrir apartado de evaluación</button></div><div class="grid md:grid-cols-3 gap-3 mt-5 text-sm"><div class="rounded-xl border border-white/5 p-3"><b>1 · Rúbrica</b><div class="text-[#A9BAC8] mt-1">Ponderaciones que deben sumar 100%.</div></div><div class="rounded-xl border border-white/5 p-3"><b>2 · Actividades</b><div class="text-[#A9BAC8] mt-1">Notas por alumno y actividad.</div></div><div class="rounded-xl border border-white/5 p-3"><b>3 · Cierre</b><div class="text-[#A9BAC8] mt-1">Excel + cálculo + respaldo.</div></div></div></div></div>`}
+async function teacherConfigModule(){if(S.role!=='docente')return '<div class="card">Este módulo es para docentes.</div>';const r=await fetch('/api/teacher',{headers:{Authorization:'Bearer '+(await supabaseClient.auth.getSession()).data.session.access_token}});const d=await jaguarReadJson(r);if(!r.ok||!d.ok)throw Error(d.error);const x=d.data.docente;const colors=await apiQuery('teacherSubjectColors');return `<div class="space-y-5"><div class="card"><span class="chip">DOCENTE</span><h2 class="text-2xl mt-3">Configuración de carga</h2><p class="text-sm text-[#A9BAC8] mt-2">Indica cuántas horas semanales requieres y tu disponibilidad. Servicios Docentes usará esta información para la asignación.</p><div class="grid md:grid-cols-2 gap-4 mt-5"><div><label class="text-xs text-[#8FA3B5]">Horas semanales solicitadas</label><input id="th_horas" class="input mt-1" type="number" min="0" max="60" value="${x.horas_solicitadas||0}"></div><div><label class="text-xs text-[#8FA3B5]">Horas actualmente asignadas</label><input class="input mt-1" disabled value="${x.horas_asignadas||0}"></div></div><button class="btn primary mt-5" onclick="saveTeacherConfig()">Guardar configuración</button></div><div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>🎨 Color por materia</h3><p class="text-sm text-[#A9BAC8] mt-1">Elige un color para cada materia asignada. Se usará para identificarla en tablas y Excel.</p></div></div><div id="teacherSubjectColorsBox" class="mt-4">${colors.map(c=>`<label class="flex items-center gap-3 py-2"><input id="tc_${c.materia_id}" type="color" value="${esc(c.color_hex||'#D4AF37')}" class="w-12 h-10 rounded cursor-pointer bg-transparent"><span><b>${esc(c.materia?.nombre||'Materia')}</b><span class="block text-xs text-[#8FA3B5]">${esc(c.materia?.clave||'')}</span></span></label>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes materias asignadas actualmente.</p>'}</div><button class="btn primary mt-4" onclick="saveTeacherSubjectColors()">💾 Guardar colores</button></div><div class="card"><h3>Cómo funciona</h3><p class="text-sm text-[#A9BAC8] mt-2">Tus horas solicitadas son una preferencia/carga objetivo. Servicios Docentes y Coordinación Académica pueden distribuir grupos compatibles de forma aleatoria y revisar el resultado.</p></div></div><div class="card border-[#D4AF3755]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"><div><span class="chip">📐 EVALUACIÓN DOCENTE</span><h3 class="text-xl mt-3">Rúbrica, actividades y cierre de periodo</h3><p class="text-sm text-[#A9BAC8] mt-2">Configura la rúbrica, incorpora notas de tu única Bitácora Excel y cierra el periodo con el desglose de calificaciones.</p></div><button class="btn primary" onclick="openTeacherEvaluationHub()">Abrir apartado de evaluación</button></div><div class="grid md:grid-cols-3 gap-3 mt-5 text-sm"><div class="rounded-xl border border-white/5 p-3"><b>1 · Rúbrica</b><div class="text-[#A9BAC8] mt-1">Ponderaciones que deben sumar 100%.</div></div><div class="rounded-xl border border-white/5 p-3"><b>2 · Actividades</b><div class="text-[#A9BAC8] mt-1">Notas por alumno y actividad.</div></div><div class="rounded-xl border border-white/5 p-3"><b>3 · Cierre</b><div class="text-[#A9BAC8] mt-1">Rúbrica validada y respaldo.</div></div></div></div></div>`}
 
-async function openEvaluationExportSelector(gmId){try{const periods=await api('periods');const ps=periods.filter(p=>p.activo!==false);modal('Excel de evaluación por materia',`<div class="space-y-4"><p class="text-sm text-[#A9BAC8]">Selecciona el periodo para generar el mismo formato del documento de referencia, pero usando las actividades y ponderaciones reales de tu rúbrica.</p><div class="grid md:grid-cols-2 gap-3">${ps.map(p=>`<button class="card text-left hover:border-[#D4AF3766]" onclick="downloadEvaluationTemplate(${gmId},${p.id});closeModal()"><b>${esc(p.nombre||'Periodo')}</b><div class="text-xs text-[#A9BAC8] mt-1">Generar plantilla / respaldo</div></button>`).join('')}</div></div>`)}catch(e){toast(e.message)}}
 async function openTeacherEvaluationHub(){
  try{
   const d=await apiQuery('teacherEvaluationOverview');
@@ -763,9 +762,9 @@ async function openTeacherEvaluationHub(){
   const periods=d.periods||[];
   const cards=(d.assignments||[]).map(a=>{
    const gm=a.grupo_materias||{}, keyBase=gm.id;
-   return `<div class="card border-[#D4AF3733]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="text-xl font-extrabold">${esc(gm.grupos?.clave||'—')} · ${esc(gm.materias?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${a.horas_asignadas||gm.horas_semana||0} h/semana</div></div><span class="chip">${periods.length} periodos</span></div><div class="grid md:grid-cols-3 gap-3 mt-4">${periods.map(p=>{const r=byKey.get(`${keyBase}|${p.id}`);const closed=r?.estado==='cerrada',inactive=p.activo===false,draft=draftByKey.get(`${keyBase}|${p.id}`),opened=openByPeriod.get(Number(p.id))===true;return `<div class="rounded-xl border border-white/5 p-3"><div class="font-bold">${esc(p.nombre||`Periodo ${p.id}`)}</div><div class="text-xs mt-2 ${closed?'text-[#78d8a4]':'text-[#D4AF37]'}">${closed?'✓ Cerrado':inactive?'● Periodo inactivo · verificar autorización':'● Borrador / pendiente'}</div>${draft?`<div class="mt-3 rounded-lg border border-[#D4AF3755] p-3 text-sm"><b>📒 ${draft.cantidad} valores respaldados en bitácora</b><div class="text-xs mt-1">${esc(draft.fecha_clase||'')} · ${opened?'Periodo abierto':'Esperando apertura de Dirección'}${!draft.compatible?' · Rúbrica modificada: requiere revisión':''}</div>${opened&&!closed&&r&&draft.compatible?`<button class="btn primary mt-2" onclick="previewDailyDraftToEvaluation(${gm.id},${p.id})">Revisar y adoptar registros</button>`:''}</div>`:''}<div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="openEvaluationEditor(${gm.id},${p.id})">${r?'✏️ Editar rúbrica':'➕ Configurar'}</button>${r?`<button class="btn primary" onclick="openEvaluationCapture(${gm.id},${p.id})">📊 Actividades</button>`:''}</div></div>`}).join('')}</div></div>`;
+   return `<div class="card border-[#D4AF3733]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="text-xl font-extrabold">${esc(gm.grupos?.clave||'—')} · ${esc(gm.materias?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${a.horas_asignadas||gm.horas_semana||0} h/semana</div></div><span class="chip">${periods.length} periodos</span></div><div class="grid md:grid-cols-3 gap-3 mt-4">${periods.map(p=>{const r=byKey.get(`${keyBase}|${p.id}`);const closed=r?.estado==='cerrada',inactive=p.activo===false,draft=draftByKey.get(`${keyBase}|${p.id}`),opened=openByPeriod.get(Number(p.id))===true;return `<div class="rounded-xl border border-white/5 p-3"><div class="font-bold">${esc(p.nombre||`Periodo ${p.id}`)}</div><div class="text-xs mt-2 ${closed?'text-[#78d8a4]':'text-[#D4AF37]'}">${closed?'✓ Cerrado':inactive?'● Periodo inactivo · verificar autorización':'● Borrador / pendiente'}</div>${draft?`<div class="mt-3 rounded-lg border border-[#D4AF3755] p-3 text-sm"><b>📒 ${draft.cantidad} valores respaldados en bitácora</b><div class="text-xs mt-1">${esc(draft.fecha_clase||'')} · ${opened?'Periodo abierto':'Esperando apertura de Dirección'}${!draft.compatible?' · Rúbrica modificada: requiere revisión':''}</div>${opened&&!closed&&r&&draft.compatible?`<button class="btn primary mt-2" onclick="previewDailyDraftToEvaluation(${gm.id},${p.id})">Revisar y adoptar registros</button>`:''}</div>`:''}<div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="openEvaluationEditor(${gm.id},${p.id})">${r?'✏️ Editar rúbrica':'➕ Configurar'}</button>${r?`<button class="btn primary" onclick="openEvaluationCapture(${gm.id},${p.id})">📊 Capturar y cerrar</button>${opened&&!closed?`<button class="btn" onclick="openExcelGradeAdoption(${gm.id},${p.id})">📥 Adoptar Excel externo</button>`:''}`:''}</div></div>`}).join('')}</div></div>`;
   }).join('')||'<div class="card">No tienes asignaciones docentes activas.</div>';
-  modal('Evaluación docente · Rúbricas y cierres',`<div class="space-y-4"><div class="rounded-xl border border-[#D4AF3755] bg-[#D4AF370d] p-4 text-sm"><b>Primer periodo sin Classroom:</b> usa la rúbrica y el Excel tradicional de tu materia; no necesitas importar nada desde Google. La rúbrica cerrada no puede volver a modificarse. Para corregir una nota ya cerrada, solicita el procedimiento de rectificación a Control Escolar.<br><b>Regla de respaldo:</b> la carga desde Excel toma VALOR TOTAL sin recalcular porcentajes, respalda cada aspecto y conserva el archivo como evidencia; el cierre manual sin Excel sigue aplicando la rúbrica.<br><b>Borradores de bitácora:</b> cuando Dirección abra el periodo, aparecerá una opción para revisar y adoptar sus registros. Nunca se incorporan automáticamente.</div>${cards}</div>`);
+  modal('Evaluación docente · Rúbricas y cierres',`<div class="space-y-4"><div class="rounded-xl border border-[#D4AF3755] bg-[#D4AF370d] p-4 text-sm"><b>Primer periodo sin Classroom:</b> usa la bitácora diaria y la rúbrica; no necesitas importar nada desde Google. La rúbrica cerrada no puede volver a modificarse. Para corregir una nota ya cerrada, solicita el procedimiento de rectificación a Control Escolar.<br><b>Regla de cálculo:</b> se aplica cada porcentaje una sola vez. El cierre toma las notas de la rúbrica y conserva su desglose; el Excel de bitácora es el único archivo de trabajo docente.<br><b>Borradores de bitácora:</b> cuando Dirección abra el periodo, aparecerá una opción para revisar y adoptar sus registros. Nunca se incorporan automáticamente.</div>${cards}</div>`);
  }catch(e){toast(e.message)}
 }
 async function openEvaluationEditor(gmId,periodoId){
@@ -782,7 +781,7 @@ function addEvaluationRow(){const tbody=document.getElementById('ev_rows');if(!t
 function updateEvaluationWeightTotal(){const total=[...document.querySelectorAll('.ev-weight')].reduce((a,e)=>a+Number(e.value||0),0);const el=document.getElementById('ev_total');if(el){el.textContent=`Ponderación: ${total.toFixed(1)}%`;el.className=`chip ${Math.abs(total-100)<.01?'border-[#D4AF3766] text-[#78d8a4]':'border-[#D4AF3766] text-[#D4AF37]'}`}}
 function syncEvaluationMax(input){const tr=input?.closest('tr');if(!tr)return;const weight=Math.max(0,Math.min(100,Number(input.value||0)));const max=tr.querySelector('.ev-max');if(max)max.value=(weight/10).toFixed(2);updateEvaluationWeightTotal()}
 async function saveEvaluationRubric(gmId,periodoId){try{const componentes=[...document.querySelectorAll('#ev_rows tr')].map((tr,i)=>({id:Number(tr.dataset.componentId||0)||null,nombre:tr.querySelector('.ev-name')?.value||'',ponderacion:Number(tr.querySelector('.ev-weight')?.value||0),maximo:Number(tr.querySelector('.ev-max')?.value||0),orden:i+1}));const total=componentes.reduce((a,x)=>a+x.ponderacion,0);if(Math.abs(total-100)>.01)return toast(`La ponderación debe sumar 100%. Actualmente: ${total.toFixed(1)}%.`);const r=await apiPost('saveEvaluationRubric',{grupo_materia_id:gmId,periodo_id:periodoId,titulo:document.getElementById('ev_title')?.value,descripcion:document.getElementById('ev_desc')?.value,componentes});toast(r.message||'Rúbrica guardada.');closeModal();await openTeacherEvaluationHub()}catch(e){toast(e.message)}}
-async function openEvaluationCapture(gmId,periodoId){try{const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});if(!d.rubrica)return toast('Primero configura la rúbrica.');const comps=(d.componentes||[]).sort((a,b)=>a.orden-b.orden),scores=new Map((d.scores||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x.valor]));const st=sortStudents(d.students||[]);const heads=comps.map(c=>`<th class="min-w-[110px]">${esc(c.nombre)}<div class="text-[9px] text-[#D4AF37] mt-1">${Number(c.ponderacion).toFixed(1)}% · ${Number(c.maximo).toFixed(2)} pts máx.</div></th>`).join('');const body=st.map((x,i)=>`<tr><td>${i+1}</td><td class="whitespace-nowrap"><b>${esc(jaguarNombreInstitucional(x))}</b><div class="text-xs text-[#8FA3B5]">${esc(x.matricula||'')}</div></td>${comps.map(c=>`<td><input id="evs_${c.id}_${x.id}" class="input text-center" type="number" min="0" max="10" step="0.1" value="${scores.get(`${x.id}|${c.id}`)??''}"></td>`).join('')}</tr>`).join('');modal(`${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')} · ${esc(d.periodo?.nombre||'Periodo')}`,`<div class="space-y-4"><div class="flex flex-wrap gap-2"><span class="chip">${st.length} alumnos</span><span class="chip">${comps.length} actividades</span><span class="chip">Ponderación 100%</span></div><div class="flex flex-wrap gap-2"><button class="btn" onclick="downloadEvaluationTemplate(${gmId},${periodoId})">📥 Descargar plantilla Excel</button><button class="btn" onclick="previewDailyDraftToEvaluation(${gmId},${periodoId})">📒 Recuperar borrador de bitácora</button><label class="btn cursor-pointer">📤 Subir Excel final<input id="ev_file" type="file" class="hidden" accept=".xlsx,.xls" onchange="uploadAndCloseEvaluation(${gmId},${periodoId})"></label><button class="btn primary" onclick="saveEvaluationScoresFromTable(${gmId},${periodoId})">💾 Guardar actividades</button><button class="btn" onclick="closeEvaluationWithoutExcel(${gmId},${periodoId})">✓ Registrar calificaciones con rúbrica</button></div><div class="rounded-xl border border-[#D4AF3744] bg-[#D4AF370d] p-3 text-sm">En la captura manual se usa la rúbrica. Al importar Excel, se toma directamente VALOR TOTAL (resultado de las fórmulas del docente), se respaldan los aspectos y sólo se cambia con motivo justificado.</div><div class="scroll"><table class="table"><thead><tr><th>#</th><th>APELLIDOS Y NOMBRE(S)</th>${heads}</tr></thead><tbody>${body||'<tr><td colspan="4">Sin alumnos.</td></tr>'}</tbody></table></div></div>`)}catch(e){toast(e.message)}}
+async function openEvaluationCapture(gmId,periodoId){try{const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});if(!d.rubrica)return toast('Primero configura la rúbrica.');const comps=(d.componentes||[]).sort((a,b)=>a.orden-b.orden),scores=new Map((d.scores||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x.valor]));const st=sortStudents(d.students||[]);const heads=comps.map(c=>`<th class="min-w-[110px]">${esc(c.nombre)}<div class="text-[9px] text-[#D4AF37] mt-1">${Number(c.ponderacion).toFixed(1)}% · aporta hasta ${Number(c.ponderacion/10).toFixed(2)} pts</div></th>`).join('');const body=st.map((x,i)=>`<tr><td>${i+1}</td><td class="whitespace-nowrap"><b>${esc(jaguarNombreInstitucional(x))}</b><div class="text-xs text-[#8FA3B5]">${esc(x.matricula||'')}</div></td>${comps.map(c=>`<td><input id="evs_${c.id}_${x.id}" class="input text-center" type="number" min="0" max="10" step="0.1" value="${scores.get(`${x.id}|${c.id}`)??''}"></td>`).join('')}</tr>`).join('');modal(`${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')} · ${esc(d.periodo?.nombre||'Periodo')}`,`<div class="space-y-4"><div class="flex flex-wrap gap-2"><span class="chip">${st.length} alumnos</span><span class="chip">${comps.length} actividades</span><span class="chip">Ponderación 100%</span></div><div class="flex flex-wrap gap-2"><button class="btn" onclick="previewDailyDraftToEvaluation(${gmId},${periodoId})">📒 Adoptar valores de bitácora</button><button class="btn" onclick="openExcelGradeAdoption(${gmId},${periodoId})">📤 Adoptar desde Excel</button><button class="btn primary" onclick="saveEvaluationScoresFromTable(${gmId},${periodoId})">💾 Guardar actividades</button><button class="btn" onclick="closeEvaluationWithoutExcel(${gmId},${periodoId})">✓ Registrar calificaciones con rúbrica</button></div><div class="rounded-xl border border-[#D4AF3744] bg-[#D4AF370d] p-3 text-sm">La rúbrica guarda notas en escala de 0 a 10. La bitácora conserva sus aportaciones ponderadas y las convierte al adoptar; revisa todas las diferencias antes de guardar. Ya no necesitas otro Excel de evaluación.</div><div class="scroll"><table class="table"><thead><tr><th>#</th><th>APELLIDOS Y NOMBRE(S)</th>${heads}</tr></thead><tbody>${body||'<tr><td colspan="4">Sin alumnos.</td></tr>'}</tbody></table></div></div>`)}catch(e){toast(e.message)}}
 async function previewDailyDraftToEvaluation(gmId,periodoId){
  try{
   const daily=await apiQuery('teacherDailyGradebook',{grupo_materia_id:gmId,periodo_id:periodoId});
@@ -799,34 +798,164 @@ async function previewDailyDraftToEvaluation(gmId,periodoId){
    if(v===''||v==null)continue;
    const [sid,cid]=key.split('|').map(Number);
    if(!students.has(sid)||!components.has(cid)||!Number.isFinite(Number(v))||Number(v)<0||Number(v)>10)throw Error('El borrador contiene datos que no corresponden al grupo o a la rúbrica vigente.');
+   const comp=components.get(cid),unidad=dailyRubricUnit(daily.state,daily.state?.rubric||{components:[...components.values()]});
+   const valor=dailyContributionToNote(v,comp,unidad);
    const old=existing.get(key);
-   const situation=old===undefined||old===null||old===''?'nuevo':Number(old)===Number(v)?'igual':'diferente';
-   proposals.push({alumno_id:sid,componente_id:cid,valor:Number(v),anterior:old,situacion,
+   const situation=old===undefined||old===null||old===''?'nuevo':Math.abs(Number(old)-valor)<.001?'igual':'diferente';
+   proposals.push({alumno_id:sid,componente_id:cid,valor,aporte_original:Number(v),unidad,anterior:old,situacion:situation,
      alumno:jaguarNombreInstitucional(students.get(sid)),actividad:components.get(cid).nombre||'Aspecto'});
   }
   if(!proposals.length)throw Error('El borrador no contiene valores disponibles para adoptar.');
   if(proposals.length>1200)throw Error('El borrador tiene más de 1200 celdas. Solicita soporte antes de una incorporación masiva.');
   window._pendingDailyPromotion={gmId,periodoId,proposals};
-  const countNew=proposals.filter(x=>x.situacion==='nuevo').length;
-  const countDiff=proposals.filter(x=>x.situacion==='diferente').length;
-  const countSame=proposals.length-countNew-countDiff;
-  modal('Revisar y adoptar registros de bitácora',`<div class="space-y-4">
-    <p class="text-sm">Se encontraron <b>${proposals.length}</b> valores de la bitácora del grupo <b>${esc(current.grupo_materia?.grupos?.clave||'')}</b> para la rúbrica vigente. Marca las celdas que deseas incorporar.</p>
-    <div class="card text-sm"><b>${countNew} nuevos · ${countDiff} distintos a lo capturado · ${countSame} ya coinciden</b><p class="mt-1">Los valores que sustituirían una nota anterior aparecen <b>sin marcar</b>. Solo se aplicarán los que selecciones; no se cerrará el periodo.</p></div>
-    <div class="scroll" style="max-height:340px"><table class="table"><thead><tr><th>Adoptar</th><th>Alumno</th><th>Aspecto</th><th>Actual</th><th>Bitácora</th></tr></thead><tbody>${proposals.map((x,i)=>`<tr><td><input type="checkbox" class="jaguar-draft-choice" data-index="${i}" ${x.situacion==='nuevo'?'checked':''} ${x.situacion==='igual'?'disabled':''}></td><td>${esc(x.alumno)}</td><td>${esc(x.actividad)}</td><td>${x.anterior===undefined||x.anterior===null?'—':esc(x.anterior)}</td><td><b>${esc(x.valor)}</b>${x.situacion==='diferente'?' · diferente':''}</td></tr>`).join('')}</tbody></table></div>
-    <div class="flex flex-wrap justify-end gap-2"><button class="btn" onclick="window._pendingDailyPromotion=null;closeModal()">Cancelar</button><button class="btn primary" onclick="confirmDailyDraftToEvaluation()">Guardar valores seleccionados</button></div>
-    <p class="text-xs text-[#A9BAC8]">Dirección Escolar controla la apertura del periodo. Este paso guarda notas de rúbrica con los permisos vigentes, pero no genera un cierre ni publica resultados finales.</p>
-  </div>`);
+  window._pendingDailyPromotion.fuente='bitacora';
+  window._pendingDailyPromotion.rubricaId=Number(current.rubrica.id);
+  window._pendingDailyPromotion.rubricaVersion=Number(current.rubrica.version||1);
+  showJaguarGradePromotionReview();
+ }catch(e){toast(e.message)}
+}
+/** Pantalla única de adopción para bitácora guardada y Excel externo. */
+function showJaguarGradePromotionReview(){
+ const p=window._pendingDailyPromotion;if(!p)return;
+ const proposals=p.proposals||[];
+ const news=proposals.filter(x=>x.situacion==='nuevo').length;
+ const differences=proposals.filter(x=>x.situacion==='diferente').length;
+ const same=proposals.length-news-differences;
+ const label=p.fuente==='excel'?'Excel seleccionado':'bitácora guardada';
+ modal(`Revisar y adoptar · ${label}`,`<div class="space-y-4">
+ <div class="card"><b>Origen: ${esc(label)}</b><div class="text-sm mt-2">${p.fuente==='excel'?`Archivo: ${esc(p.source?.nombre||'—')} · Hoja: ${esc(p.source?.hoja||'—')} · Filas: ${esc(p.source?.filas||'—')}`:'Valores conservados en el respaldo diario de Jaguar.'}</div><p class="text-sm mt-2">${proposals.length} celdas identificadas · <b>${news} nuevas, ${differences} diferentes, ${same} iguales</b>.</p></div>
+ <p class="text-sm">Cada valor se presenta en escala de 0 a 10, con su aporte original si corresponde. Las diferencias respecto a notas guardadas quedan desmarcadas para evitar sobrescrituras accidentales.</p>
+ <div class="scroll" style="max-height:350px"><table class="table"><thead><tr><th>Adoptar</th><th>Alumno</th><th>Aspecto</th><th>Actual</th><th>Propuesto (0–10)</th></tr></thead><tbody>${proposals.map((x,i)=>`<tr><td><input type="checkbox" class="jaguar-draft-choice" data-index="${i}" ${x.situacion==='nuevo'?'checked':''} ${x.situacion==='igual'?'disabled':''}></td><td>${esc(x.alumno)}</td><td>${esc(x.actividad)}</td><td>${x.anterior==null?'—':esc(x.anterior)}</td><td><b>${Number(x.valor).toFixed(2)}</b>${x.unidad==='puntos_ponderados'?`<div class="text-xs">Aporte original: ${esc(x.aporte_original)}</div>`:''}${x.situacion==='diferente'?' · cambia nota':''}</td></tr>`).join('')}</tbody></table></div>
+ <div class="flex flex-wrap justify-end gap-2"><button class="btn" onclick="window._pendingDailyPromotion=null;closeModal()">Cancelar</button><button class="btn primary" onclick="confirmDailyDraftToEvaluation()">Guardar selección en rúbrica</button></div>
+ <p class="text-xs text-[#A9BAC8]">Guardar NO cierra el periodo ni publica resultados. Dirección controla la apertura. Se comprobarán nuevamente las notas antes de aplicar cambios.</p></div>`);
+}
+/** Importa calificaciones de cualquier Excel sin exigir la plantilla de evaluación duplicada.
+ * Se pide selección explícita de hoja, fila inicial/final, matrícula y columnas.
+ * Leer un archivo NO modifica datos, y no se acepta asociar alumnos por posición. */
+async function openExcelGradeAdoption(gmId,periodoId){
+ try{
+  if(!window.XLSX)throw Error('No se cargó el lector de Excel. Actualiza la página.');
+  const current=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});
+  if(!current.rubrica||current.rubrica.estado==='cerrada'||current.cierre)throw Error('Configura una rúbrica abierta antes de incorporar notas.');
+  window._jaguarExternalGrades={gmId,periodoId,current};
+  modal('Adoptar calificaciones desde Excel',`<div class="space-y-4"><div class="card"><b>1 · Selecciona tu archivo</b><p class="text-sm mt-2">Compatible con .xlsx y .xls (máximo 10 MB). Después podrás elegir hoja, filas y columnas. No se modificarán notas todavía.</p></div><input id="jx_file" class="input" type="file" accept=".xlsx,.xls" onchange="jaguarLoadExternalGradeFile()"><p class="text-xs">Las matrículas deben poder identificarse para asociar cada nota con el alumno correcto. Nunca se empareja por orden de filas.</p></div>`);
+ }catch(e){toast(e.message)}
+}
+async function jaguarLoadExternalGradeFile(){
+ try{
+  const p=window._jaguarExternalGrades,file=document.getElementById('jx_file')?.files?.[0];
+  if(!p||!file)throw Error('Selecciona un archivo.');
+  if(!/\.(xlsx|xls)$/i.test(file.name)||file.size>10*1024*1024)throw Error('Solo se admiten XLSX/XLS de hasta 10 MB.');
+  p.file=file;p.workbook=XLSX.read(await file.arrayBuffer(),{type:'array',cellFormula:true,cellDates:false});
+  if(!p.workbook.SheetNames?.length)throw Error('El libro no contiene hojas de cálculo.');
+  p.sheetName=p.workbook.SheetNames.includes('VALORES PONDERACION')?'VALORES PONDERACION':p.workbook.SheetNames.find(n=>!/_META$/i.test(n))||p.workbook.SheetNames[0];
+  jaguarRenderExternalGradeMapping();
+ }catch(e){toast(e.message)}
+}
+function jaguarExcelColName(col){return XLSX.utils.encode_col(col)}
+function jaguarRenderExternalGradeMapping(){
+ const p=window._jaguarExternalGrades;if(!p?.workbook)return;
+ const sheet=p.workbook.Sheets[p.sheetName],data=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:'',range:0});
+ const range=XLSX.utils.decode_range(sheet['!ref']||'A1:A1');
+ const lastCol=Math.min(255,range.e.c),limitRow=Math.min(5000,Math.max(data.length,range.e.r+1));
+ const headerRow=p.sheetName==='VALORES PONDERACION'?5:1;
+ const startRow=p.sheetName==='VALORES PONDERACION'?8:2;
+ const columns=Array.from({length:lastCol+1},(_,i)=>({v:jaguarExcelColName(i),text:String(data[headerRow-1]?.[i]??'').trim().slice(0,45)}));
+ const selectOptions=(value,allowEmpty=false)=>`${allowEmpty?'<option value="">Seleccionar columna</option>':''}${columns.map(x=>`<option value="${x.v}" ${x.v===value?'selected':''}>${x.v} · ${esc(x.text||'sin encabezado')}</option>`).join('')}`;
+ const natural=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'').trim();
+ const matchCol=pattern=>columns.find(x=>pattern.test(natural(x.text)))?.v||'';
+ const comps=p.current.componentes||[];
+ const selectedMat=matchCol(/matricula|matriculanumero|nomatricula/)||'C';
+ const unit=p.sheetName==='VALORES PONDERACION'?'puntos_ponderados':'escala_0_10';
+ modal('Adoptar Excel · elegir hoja y celdas',`<div class="space-y-4">
+ <div class="card"><b>Archivo: ${esc(p.file.name)}</b><p class="text-sm mt-1">2 · Define la hoja, filas y columnas que contienen las notas. Puedes importar varios aspectos a la vez.</p></div>
+ <div class="grid md:grid-cols-2 gap-3"><label class="text-sm">Hoja del libro<select id="jx_sheet" class="select w-full mt-1" onchange="jaguarChangeGradeSheet(this.value)">${p.workbook.SheetNames.filter(n=>!/_META$/i.test(n)).map(n=>`<option value="${esc(n)}" ${n===p.sheetName?'selected':''}>${esc(n)}</option>`).join('')}</select></label>
+ <label class="text-sm">Fila de encabezados<input id="jx_head" type="number" min="1" max="${limitRow}" class="input mt-1" value="${headerRow}" onchange="jaguarUpdateExternalGradeColumns()"></label>
+ <label class="text-sm">Primera fila de alumnos<input id="jx_first" type="number" min="1" max="${limitRow}" class="input mt-1" value="${startRow}"></label>
+ <label class="text-sm">Última fila de alumnos<input id="jx_last" type="number" min="1" max="${limitRow}" class="input mt-1" value="${limitRow}"></label>
+ <label class="text-sm">Columna con matrícula<select class="select w-full mt-1" id="jx_mat">${selectOptions(selectedMat)}</select></label>
+ <label class="text-sm">Qué significan los números<select class="select w-full mt-1" id="jx_unit"><option value="escala_0_10" ${unit==='escala_0_10'?'selected':''}>Nota original de 0 a 10</option><option value="puntos_ponderados" ${unit==='puntos_ponderados'?'selected':''}>Puntos ponderados (máx. % ÷ 10)</option></select></label></div>
+ <div class="card"><b>Columnas por aspecto de rúbrica</b><p class="text-xs mt-1 mb-3">La misma columna no puede corresponder a dos aspectos. Deja sin seleccionar lo que no deseas adoptar.</p><div class="grid md:grid-cols-2 gap-3">${comps.map(c=>{const candidate=matchCol(new RegExp('^'+natural(c.nombre)+'$'))||'';return `<label class="text-sm">${esc(c.nombre)} (${Number(c.ponderacion)}%)<select id="jx_comp_${Number(c.id)}" class="select w-full mt-1">${selectOptions(candidate,true)}</select></label>`}).join('')}</div></div>
+ <div class="flex justify-end gap-2"><button class="btn" onclick="window._jaguarExternalGrades=null;closeModal()">Cancelar</button><button class="btn primary" onclick="jaguarPreviewExternalGradeMapping()">3 · Revisar calificaciones encontradas</button></div></div>`);
+ p.data=data;
+}
+function jaguarChangeGradeSheet(name){const p=window._jaguarExternalGrades;if(!p?.workbook?.Sheets?.[name])return;p.sheetName=name;jaguarRenderExternalGradeMapping()}
+function jaguarUpdateExternalGradeColumns(){
+ // Respeta los rangos introducidos al actualizar solo las etiquetas visibles.
+ const p=window._jaguarExternalGrades,head=Number(document.getElementById('jx_head')?.value||1),data=p?.data||[];
+ if(!p||head<1||head>data.length)return;
+ const selects=[document.getElementById('jx_mat'),...(p.current.componentes||[]).map(c=>document.getElementById(`jx_comp_${c.id}`))];
+ for(const select of selects){if(!select)continue;for(const option of select.options){if(!option.value)continue;const idx=XLSX.utils.decode_col(option.value);option.textContent=`${option.value} · ${String(data[head-1]?.[idx]||'sin encabezado').slice(0,45)}`}}
+}
+function jaguarPreviewExternalGradeMapping(){
+ try{
+  const p=window._jaguarExternalGrades;if(!p?.current)throw Error('Inicia de nuevo la importación.');
+  const first=Number(document.getElementById('jx_first')?.value),last=Number(document.getElementById('jx_last')?.value),head=Number(document.getElementById('jx_head')?.value);
+  if(!Number.isInteger(first)||!Number.isInteger(last)||!Number.isInteger(head)||first<=head||last<first||last-first>1000)throw Error('Revisa el rango: encabezado anterior a los alumnos y máximo 1000 filas.');
+  const matColumn=document.getElementById('jx_mat')?.value,unit=document.getElementById('jx_unit')?.value;
+  const comps=p.current.componentes||[],selected=comps.map(c=>({c,col:document.getElementById(`jx_comp_${c.id}`)?.value||''})).filter(x=>x.col);
+  if(!selected.length)throw Error('Selecciona al menos un aspecto de rúbrica.');
+  const cols=[matColumn,...selected.map(x=>x.col)];if(!matColumn||new Set(cols).size!==cols.length)throw Error('La matrícula y los aspectos deben usar columnas distintas, sin duplicados.');
+  const byMat=new Map((p.current.students||[]).map(st=>[String(st.matricula||'').normalize('NFKC').trim().toUpperCase(),st]));
+  if(byMat.size!==(p.current.students||[]).length||byMat.has(''))throw Error('El padrón contiene matrículas repetidas o vacías. Revisa Control Escolar.');
+  const existing=new Map((p.current.scores||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x.valor]));
+  const proposals=[],seen=new Set(),unmatched=[],blank=[];
+  for(let row=first;row<=last;row++){
+   const line=p.data[row-1]||[],mat=String(line[XLSX.utils.decode_col(matColumn)]||'').normalize('NFKC').trim().toUpperCase();
+   const anyScore=selected.some(x=>line[XLSX.utils.decode_col(x.col)]!==''&&line[XLSX.utils.decode_col(x.col)]!=null);
+   if(!mat){if(anyScore)throw Error(`La fila ${row} contiene notas pero no matrícula.`);continue;}
+   const student=byMat.get(mat);
+   if(!student){if(anyScore)unmatched.push(`${mat} (fila ${row})`);continue;}
+   if(seen.has(mat))throw Error(`Matrícula ${mat} repetida en el rango seleccionado.`);seen.add(mat);
+   for(const {c,col} of selected){
+    const raw=line[XLSX.utils.decode_col(col)];if(raw===''||raw==null){blank.push(`${mat} · ${c.nombre}`);continue;}
+    if(!Number.isFinite(Number(raw)))throw Error(`${col}${row}: la calificación de ${mat} no es numérica.`);
+    const value=dailyContributionToNote(raw,c,unit),key=`${student.id}|${c.id}`,old=existing.get(key);
+    const situacion=old==null||old===''?'nuevo':Math.abs(Number(old)-value)<.001?'igual':'diferente';
+    proposals.push({alumno_id:student.id,componente_id:c.id,valor:value,anterior:old,situacion,alumno:jaguarNombreInstitucional(student),actividad:c.nombre,unidad:unit,aporte_original:Number(raw)});
+   }
+  }
+  if(unmatched.length)throw Error(`${unmatched.length} matrícula(s) no pertenecen al grupo: ${unmatched.slice(0,4).join(', ')}. Ajusta filas o corrige el archivo.`);
+  if(!proposals.length)throw Error('No hay calificaciones numéricas en las columnas y filas elegidas.');
+  if(proposals.length>1200)throw Error('Demasiadas calificaciones para una sola revisión (máximo 1200).');
+  const source={nombre:p.file.name,hoja:p.sheetName,filas:`${first}:${last}`,encabezados:head,matricula:matColumn,columnas:Object.fromEntries(selected.map(x=>[x.c.id,x.col])),unidad:unit,omitidas:blank.length};
+  window._pendingDailyPromotion={gmId:p.gmId,periodoId:p.periodoId,proposals,fuente:'excel',source,file:p.file,rubricaId:Number(p.current.rubrica.id),rubricaVersion:Number(p.current.rubrica.version||1)};
+  showJaguarGradePromotionReview();
+  if(blank.length)toast(`${blank.length} celdas vacías se omitieron; no serán reemplazadas por cero.`);
  }catch(e){toast(e.message)}
 }
 async function confirmDailyDraftToEvaluation(){
  const p=window._pendingDailyPromotion;if(!p)return;
  try{
-  const rows=[...document.querySelectorAll('.jaguar-draft-choice:checked')].map(x=>p.proposals[Number(x.dataset.index)]).filter(Boolean).map(x=>({alumno_id:x.alumno_id,componente_id:x.componente_id,valor:x.valor}));
+  const rows=[...document.querySelectorAll('.jaguar-draft-choice:checked')].map(x=>p.proposals[Number(x.dataset.index)]).filter(Boolean).map(x=>({alumno_id:x.alumno_id,componente_id:x.componente_id,valor:x.valor,valor_anterior:x.anterior??null}));
   if(!rows.length)throw Error('Selecciona al menos una calificación nueva o una corrección para guardar.');
   const conflicts=rows.filter(x=>p.proposals.some(z=>z.alumno_id===x.alumno_id&&z.componente_id===x.componente_id&&z.situacion==='diferente')).length;
   if(conflicts&&!confirm(`Vas a reemplazar ${conflicts} valores ya registrados. ¿Confirmas esta modificación?`))return;
-  const r=await apiPost('saveEvaluationScores',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,rows});
+  // Comprobar de nuevo si alguien cambió una nota o la rúbrica mientras se revisaba.
+  const latest=await apiQuery('teacherEvaluation',{grupo_materia_id:p.gmId,periodo_id:p.periodoId});
+  if(Number(latest.rubrica?.id)!==Number(p.rubricaId)||Number(latest.rubrica?.version||0)!==Number(p.rubricaVersion)||latest.cierre||latest.rubrica?.estado==='cerrada')
+    throw Error('La rúbrica cambió o el periodo se cerró durante la revisión. Vuelve a importar.');
+  const live=new Map((latest.scores||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x.valor]));
+  for(const row of rows){const candidate=p.proposals.find(x=>x.alumno_id===row.alumno_id&&x.componente_id===row.componente_id);
+    const current=live.get(`${row.alumno_id}|${row.componente_id}`),previous=candidate?.anterior;
+    if((current==null)!==(previous==null)||(current!=null&&Math.abs(Number(current)-Number(previous))>.001))
+      throw Error('Otra persona cambió una calificación desde la vista previa. No se guardó nada; revisa las notas actuales.');
+  }
+  let provenance={origen:'bitacora'};
+  if(p.fuente==='excel'){
+    const sha256=[...new Uint8Array(await crypto.subtle.digest('SHA-256',await p.file.arrayBuffer()))].map(x=>x.toString(16).padStart(2,'0')).join('');
+    // Reutiliza el mismo almacén de evidencias de evaluación; NO crea otra ruta ni otro Excel oficial.
+    if(!p.evidencePath){
+      const prepared=await apiPost('prepareEvaluationUpload',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,filename:p.file.name});
+      const dest=prepared?.data||prepared;
+      if(!dest?.bucket||!dest?.path||!dest?.token)throw Error('No se pudo preparar el archivo de evidencia.');
+      const up=await supabaseClient.storage.from(dest.bucket).uploadToSignedUrl(dest.path,dest.token,p.file,{contentType:p.file.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      if(up.error)throw up.error;
+      p.evidencePath=dest.path;
+    }
+    provenance={origen:'excel_externo',archivo:p.source?.nombre,hoja:p.source?.hoja,filas:p.source?.filas,columnas:p.source?.columnas,unidad:p.source?.unidad,sha256,file_path:p.evidencePath};
+  }
+  const r=await apiPost('saveEvaluationScores',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,rows,procedencia:provenance});
   window._pendingDailyPromotion=null;toast(r.message||'Valores seleccionados incorporados.');closeModal();await openEvaluationCapture(p.gmId,p.periodoId);
  }catch(e){toast(e.message)}
 }
@@ -838,124 +967,8 @@ async function closeEvaluationWithoutExcel(gmId,periodoId){
     closeModal();toast(done.message||'Calificaciones registradas.');await loadPage('calificaciones');
   }catch(e){toast(e.message)}
 }
-function evaluationWorkbook(d){
-  const gm=d.grupo_materia||{},g=gm.grupos||{},m=gm.materias||{},students=sortStudents(d.students||[]),comps=(d.componentes||[]).sort((a,b)=>a.orden-b.orden),mainColor=dailyHex(d.color_hex||'#4EA72E');const scoreMap=new Map((d.scores||[]).map(x=>[`${x.alumno_id}|${x.componente_id}`,x.valor]));const wb=XLSX.utils.book_new();
-  const mkHeader=(ws,lastCol)=>{
-    // No se insertan filas: los importadores siguen leyendo encabezados en 3/4 y alumnado desde 4/5/6.
-    const school='INSTITUTO TECNOLÓGICO E HISTÓRICO LATINOAMERICANO';
-    const group=`${g.grado||'—'}° ${String(g.letra||'—').toUpperCase()}`;
-    const details=`GRUPO: ${group} · MATERIA: ${String(m.nombre||'MATERIA').toUpperCase()} · CICLO: ${d.periodo?.ciclo_escolar||S.activeCycle||'—'}\nDOCENTE: ${d.teacher?.nombre_completo||'—'} · PERIODO: ${d.periodo?.nombre||'—'}`;
-    xlsxSet(ws,'A1',school,dailyStyle(mainColor,{sz:13,bold:true,text:'FFFFFFFF',fill:mainColor,align:'center'}));
-    xlsxSet(ws,'A2',details,dailyStyle(mainColor,{sz:10,bold:true,text:'FFFFFFFF',fill:mainColor,align:'left'}));
-    ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:lastCol-1}},{s:{r:1,c:0},e:{r:1,c:lastCol-1}}];
-    ws['!rows']=[{hpt:34},{hpt:64},{hpt:34},{hpt:30}];
-  };
-  // ASISTENCIAS: plantilla de evaluación conserva la lista aunque no tenga fechas todavía.
-  const wa={};mkHeader(wa,3);['A3','B3','C3'].forEach((a,i)=>xlsxSet(wa,a,['No.','APELLIDOS Y NOMBRE(S)','MATRÍCULA'][i],dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor})));students.forEach((st,i)=>{const r=4+i;xlsxSet(wa,`A${r}`,i+1);xlsxSet(wa,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(wa,`C${r}`,st.matricula||'');});wa['!freeze']='A4';wa['!cols']=[{wch:5},{wch:42},{wch:22}];XLSX.utils.book_append_sheet(wb,wa,'ASISTENCIAS');
-  // ACTIVIDADES: espacio para evidencias del periodo y rúbrica visible, sin ponderación por actividad.
-  const av={};mkHeader(av,Math.max(comps.length,1)+3);xlsxSet(av,'A3','No.',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,'B3','APELLIDOS Y NOMBRE(S)',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,'C3','MATRÍCULA',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));for(let i=0;i<Math.max(comps.length,1);i++)xlsxSet(av,`${dailyCol(4+i)}4`,comps[i]?.nombre||`ACTIVIDAD ${String(i+1).padStart(2,'0')}`,dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));students.forEach((st,i)=>{const r=5+i;xlsxSet(av,`A${r}`,i+1);xlsxSet(av,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(av,`C${r}`,st.matricula||'');});xlsxSet(av,`A${5+students.length+1}`,'RÚBRICA OFICIAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`A${6+students.length}`,'ASPECTO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`B${6+students.length}`,'PONDERACIÓN',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`C${6+students.length}`,'VALOR MÁXIMO',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));comps.forEach((c,i)=>{const r=7+students.length+i;xlsxSet(av,`A${r}`,c.nombre);xlsxSet(av,`B${r}`,Number(c.ponderacion)/100,{numFmt:'0.00%'});xlsxSet(av,`C${r}`,Number(c.maximo||10),{numFmt:'0.00'});});const rt=7+students.length+comps.length;xlsxSet(av,`A${rt}`,'VALOR TOTAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(av,`B${rt}`,Number(comps.reduce((a,c)=>a+Number(c.ponderacion||0),0))/100,{numFmt:'0.00%'});xlsxSet(av,`C${rt}`,10,{numFmt:'0.00'});av['!freeze']='D5';av['!cols']=[{wch:5},{wch:42},{wch:22},...Array.from({length:Math.max(comps.length,1)},()=>({wch:18}))];XLSX.utils.book_append_sheet(wb,av,'ACTIVIDADES');
-  // VALORES PONDERACION: las columnas son exclusivamente los aspectos de la rúbrica.
-  const vw={};mkHeader(vw,4+comps.length);xlsxSet(vw,'A3','No.',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'B3','APELLIDOS Y NOMBRE(S)',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,'C3','MATRÍCULA',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));comps.forEach((c,i)=>{const col=4+i;xlsxSet(vw,`${dailyCol(col)}3`,c.nombre,dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(col)}4`,Number(c.ponderacion)/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(col)}5`,Number(c.id),{font:{sz:8,color:{rgb:'FF64748B'}}});});const tc=4+comps.length;xlsxSet(vw,`${dailyCol(tc)}3`,'VALOR TOTAL',dailyStyle(mainColor,{bold:true,text:'FFFFFFFF',fill:mainColor}));xlsxSet(vw,`${dailyCol(tc)}4`,Number(comps.reduce((a,c)=>a+Number(c.ponderacion||0),0))/100,{numFmt:'0.00%'});xlsxSet(vw,`${dailyCol(tc)}5`,10,{numFmt:'0.00'});students.forEach((st,i)=>{const r=6+i;xlsxSet(vw,`A${r}`,i+1);xlsxSet(vw,`B${r}`,st.nombre_completo||'',{alignment:{horizontal:'left'}});xlsxSet(vw,`C${r}`,st.matricula||'');comps.forEach((c,j)=>{const old=scoreMap.get(`${st.id}|${c.id}`);xlsxSet(vw,`${dailyCol(4+j)}${r}`,old==null?'':Number((Number(old)*Number(c.ponderacion)/100).toFixed(2)),{numFmt:'0.00',alignment:{horizontal:'center'}})});const totalAddr=`${dailyCol(tc)}${r}`;xlsxSet(vw,totalAddr,'',{numFmt:'0.00',alignment:{horizontal:'center'}});vw[totalAddr].t='n';vw[totalAddr].f=`IF(COUNT(D${r}:${dailyCol(tc-1)}${r})=${comps.length},SUM(D${r}:${dailyCol(tc-1)}${r}),"")`;delete vw[totalAddr].v;});vw['!freeze']='D6';vw['!autofilter']={ref:`A3:${dailyCol(tc)}${5+students.length}`};vw['!cols']=[{wch:5},{wch:42},{wch:22},...Array.from({length:comps.length+1},()=>({wch:18}))];XLSX.utils.book_append_sheet(wb,vw,'VALORES PONDERACION');
-  const meta=XLSX.utils.aoa_to_sheet([['JAGUAR_EVALUACION','VALOR'],['formato_version',4],['rubrica_id',d.rubrica.id],['grupo_materia_id',gm.id],['periodo_id',d.rubrica.periodo_id],['version',d.rubrica.version||1],['componentes_json',JSON.stringify(comps.map(c=>({id:c.id,nombre:c.nombre,ponderacion:c.ponderacion,maximo:c.maximo})))] ]);XLSX.utils.book_append_sheet(wb,meta,'ITHLA_META');if(wb.Workbook?.Sheets){const sh=wb.Workbook.Sheets.find(x=>x.name==='ITHLA_META');if(sh)sh.Hidden=1}return wb;
-}
-async function downloadEvaluationTemplate(gmId,periodoId){try{const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});if(!d.rubrica)return toast('Primero configura la rúbrica.');const wb=evaluationWorkbook(d);const subject=d.grupo_materia?.materias?.nombre||'materia',group=d.grupo_materia?.grupos?.clave||'grupo';await jaguarWriteValorTotalColors(jaguarPolishWorkbook(wb,{kind:"evaluacion"}),`ITHLA-${group}-${subject}-${d.periodo?.nombre||'periodo'}-EVALUACION.xlsx`,{startRow:6,lastRow:5+(d.students||[]).length,totalCol:4+(d.componentes||[]).length});toast('Plantilla institucional generada.')}catch(e){toast(e.message)}}
-async function uploadAndCloseEvaluation(gmId,periodoId){
-  try{
-    const file=document.getElementById('ev_file')?.files?.[0];if(!file)return;
-    if(!/\.(xlsx|xls)$/i.test(file.name))throw Error('Selecciona un Excel XLSX o XLS.');
-    if(file.size>5*1024*1024)throw Error('El Excel no puede superar 5 MB.');
-    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellFormula:true});
-    const metaSheet=wb.Sheets['ITHLA_META'];
-    if(!metaSheet){
-      if(wb.Sheets['JAGUAR_META'])throw Error('Este es un Excel de BITÁCORA DIARIA, no de evaluación del periodo.');
-      if(wb.Sheets['CALIFICACIONES'])throw Error('Este Excel es de CARGA INSTITUCIONAL; súbelo desde Control Escolar.');
-      throw Error('Falta ITHLA_META. Descarga el Excel de esta misma rúbrica.');
-    }
-    const meta=XLSX.utils.sheet_to_json(metaSheet,{header:1,raw:true,defval:''});
-    const findMeta=k=>meta.find(r=>String(r?.[0])===k)?.[1];
-    if(Number(findMeta('formato_version'))!==4)throw Error('Formato de evaluación no compatible: se requiere versión 4.');
-    const d=await apiQuery('teacherEvaluation',{grupo_materia_id:gmId,periodo_id:periodoId});
-    if(!d.rubrica)throw Error('No hay rúbrica vigente para el periodo.');
-    if(d.rubrica.estado==='cerrada')throw Error('El periodo ya está cerrado. Solicita rectificación a Control Escolar.');
-    if(Number(findMeta('rubrica_id'))!==Number(d.rubrica.id))throw Error('El Excel pertenece a otra rúbrica.');
-    if(Number(findMeta('version'))!==Number(d.rubrica.version||1))throw Error('La rúbrica cambió. Descarga la plantilla actual antes de importar.');
-    if(Number(findMeta('grupo_materia_id'))!==Number(gmId)||Number(findMeta('periodo_id'))!==Number(periodoId))throw Error('El Excel pertenece a otro grupo o periodo.');
-    const comps=JSON.parse(findMeta('componentes_json')||'[]');
-    const liveComps=[...(d.componentes||[])].sort((a,b)=>Number(a.orden||0)-Number(b.orden||0));
-    if(comps.length!==liveComps.length||comps.some((c,i)=>Number(c.id)!==Number(liveComps[i].id)||Math.abs(Number(c.ponderacion)-Number(liveComps[i].ponderacion))>0.001))throw Error('Los aspectos o porcentajes no coinciden con la rúbrica vigente.');
-    const sheet=wb.Sheets['VALORES PONDERACION'];if(!sheet)throw Error('Falta la hoja VALORES PONDERACION.');
-    const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true,defval:''});
-    const totalCol=3+comps.length;
-    const header=rows[2]||[];
-    if(String(header[totalCol]||'').trim().toUpperCase()!=='VALOR TOTAL')throw Error('Falta la columna VALOR TOTAL, o cambió su ubicación.');
-    const byMat=new Map((d.students||[]).map(st=>[String(st.matricula).trim().toUpperCase(),st]));
-    const seen=new Set(),excelRows=[],calculations=new Map();
-    for(let r=5;r<rows.length;r++){
-      const row=rows[r]||[],matricula=String(row[2]||'').trim().toUpperCase();
-      if(!matricula)continue;
-      const st=byMat.get(matricula);if(!st)throw Error(`La matrícula ${matricula} de fila ${r+1} no pertenece al grupo.`);
-      if(seen.has(st.id))throw Error(`La matrícula ${matricula} está duplicada.`);seen.add(st.id);
-      const aspectos=[];
-      for(let i=0;i<comps.length;i++){
-        const value=row[3+i],max=Number(comps[i].ponderacion)/10;
-        if(value===''||value==null)throw Error(`Falta ${comps[i].nombre} para ${matricula} (fila ${r+1}).`);
-        const n=Number(value);
-        if(!Number.isFinite(n)||n<0||n>max+0.001)throw Error(`${comps[i].nombre} de ${matricula} debe estar entre 0 y ${max} puntos ponderados.`);
-        aspectos.push({componente_id:Number(comps[i].id),nombre:comps[i].nombre,valor:n, maximo:max});
-      }
-      const totalCell=sheet[XLSX.utils.encode_cell({r,c:totalCol})];
-      // Siempre leemos el resultado que Excel GUARDO en la celda, no la fórmula ni una ponderación rehecha.
-      const rawTotal=totalCell?.v;
-      if(rawTotal===''||rawTotal==null||!Number.isFinite(Number(rawTotal)))throw Error(`La celda VALOR TOTAL de ${matricula} (${XLSX.utils.encode_cell({r,c:totalCol})}) no tiene resultado numérico guardado. Ábrela en Excel, calcula y guarda el archivo.`);
-      const valorTotal=Number(rawTotal);
-      if(valorTotal<0||valorTotal>10)throw Error(`VALOR TOTAL de ${matricula} debe ser de 0 a 10.`);
-      const sum=aspectos.reduce((a,x)=>a+x.valor,0);
-      excelRows.push({alumno_id:st.id,valor_total:valorTotal,aspectos:aspectos.map(x=>({componente_id:x.componente_id,valor:x.valor}))});
-      calculations.set(st.id,{value:valorTotal,missing:0,aspectos,sum,formula:!!totalCell?.f});
-    }
-    if(seen.size!==byMat.size)throw Error(`El Excel contiene ${seen.size} de ${byMat.size} alumnos. Revisa las matrículas antes de cerrar.`);
-    window._pendingEvaluationImport={gmId,periodoId,file,d,comps,excelRows,calculations,rubricVersion:d.rubrica.version||1};
-    showEvaluationImportReview();
-  }catch(e){toast(e.message)}
-}
-function showEvaluationImportReview(){
-  const p=window._pendingEvaluationImport;if(!p)return;
-  const rows=(p.d.students||[]).map(st=>{
-    const c=p.calculations.get(st.id);
-    const value=Number(c.value).toFixed(2);
-    const details=(c.aspectos||[]).map(x=>`${esc(x.nombre)}: ${Number(x.valor).toFixed(2)}/${Number(x.maximo).toFixed(2)}`).join(' · ');
-    const difference=Math.abs(c.sum-c.value)>.011?'<div class="text-xs text-amber-300">El total difiere de la suma de aspectos: revisa la fórmula original.</div>':'';
-    return `<tr><td><b>${esc(jaguarNombreInstitucional(st))}</b><div class="text-xs text-[#8FA3B5]">${esc(st.matricula||'')}</div><div class="text-xs text-[#A9BAC8]">${details}</div></td><td class="text-center font-bold">${value}${difference}</td><td><input id="adj_${st.id}" class="input text-center" type="number" min="0" max="10" step="0.01" placeholder="Sin cambio"></td><td><input id="reason_${st.id}" class="input" placeholder="Obligatorio si modificas el total"></td></tr>`;
-  }).join('');
-  modal('Revisión antes de registrar calificaciones',`<div class="space-y-4"><div class="card border-[#D4AF3744] bg-[#D4AF370d]"><b>Valores del Excel docente (sin recálculo)</b><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3 text-sm"><span>Alumnos: <b>${p.d.students?.length||0}</b></span><span>Aspectos: <b>${p.comps.length}</b></span><span>Rúbrica: <b>${p.comps.reduce((a,c)=>a+Number(c.ponderacion||0),0).toFixed(2)}%</b></span><span>Archivo: <b>${esc(p.file.name)}</b></span></div><p class="text-xs text-[#A9BAC8] mt-3">El valor base es EXACTAMENTE la columna «VALOR TOTAL» guardada en Excel. No volvemos a multiplicar los aspectos por porcentajes. Los valores de cada aspecto también quedan en el respaldo. Si cambias el total, indica el motivo; sólo esa modificación se registra como ajuste.</p></div><div class="scroll"><table class="table"><thead><tr><th>Alumno y aspectos del Excel</th><th>VALOR TOTAL del Excel</th><th>Nuevo valor (opcional)</th><th>Motivo del ajuste</th></tr></thead><tbody>${rows}</tbody></table></div><div class="flex flex-wrap justify-end gap-2"><button class="btn" onclick="closeModal();window._pendingEvaluationImport=null">Cancelar</button><button class="btn primary" onclick="confirmEvaluationImport()">✅ Guardar totales y cerrar periodo</button></div></div>`);
-}
-async function confirmEvaluationImport(){
-  const p=window._pendingEvaluationImport;if(!p)return;
-  try{
-    const adjustments=[];
-    for(const st of p.d.students||[]){
-      const input=document.getElementById(`adj_${st.id}`),reason=document.getElementById(`reason_${st.id}`);
-      const raw=input?.value?.trim()||'';if(raw==='')continue;
-      const nuevo=Number(raw),base=p.calculations.get(st.id)?.value;
-      if(!Number.isFinite(nuevo)||nuevo<0||nuevo>10)throw Error(`El nuevo total de ${jaguarNombreInstitucional(st)} debe ser entre 0 y 10.`);
-      if(Math.abs(nuevo-base)>.001){
-        const motivo=String(reason?.value||'').trim();
-        if(!motivo)throw Error(`Indica el motivo del cambio para ${jaguarNombreInstitucional(st)}.`);
-        adjustments.push({alumno_id:st.id,valor_nuevo:Number(nuevo.toFixed(2)),motivo});
-      }
-    }
-    if(!confirm(`¿Registrar los VALORES TOTALES originales del Excel para ${p.excelRows.length} alumnos${adjustments.length?' y '+adjustments.length+' ajuste(s) justificado(s)':''} y CERRAR el periodo? Esta acción guarda las notas oficiales.`))return;
-    const prep=await apiPost('prepareEvaluationUpload',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,filename:p.file.name});
-    const destination=prep?.data||prep;
-    if(!destination?.bucket||!destination?.path||!destination?.token)throw Error('El servidor no preparó correctamente la evidencia.');
-    const up=await supabaseClient.storage.from(destination.bucket).uploadToSignedUrl(destination.path,destination.token,p.file,{contentType:p.file.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    if(up.error)throw up.error;
-    const digest=await crypto.subtle.digest('SHA-256',await p.file.arrayBuffer());
-    const sha=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
-    const done=await apiPost('submitEvaluationPeriod',{grupo_materia_id:p.gmId,periodo_id:p.periodoId,modo_origen:'excel_valor_total',rubrica_version:p.rubricVersion,excel_rows:p.excelRows,file_path:destination.path,file_name:p.file.name,file_sha256:sha,adjustments});
-    toast(done.message||'Totales del Excel registrados.');window._pendingEvaluationImport=null;closeModal();await loadPage('calificaciones');
-  }catch(e){toast(e.message)}
-}
+/* El Excel de evaluación duplicado se retiró: la única plantilla es la Bitácora diaria.
+   El backend conserva lectura de cierres históricos para compatibilidad. */
 
 async function saveTeacherConfig(){try{const {data:{session}}=await supabaseClient.auth.getSession();const r=await fetch('/api/teacher',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({horas_solicitadas:Number(document.getElementById('th_horas').value||0)})});const d=await jaguarReadJson(r);if(!r.ok||!d.ok)throw Error(d.error);toast(d.message);await loadPage('config_docente')}catch(e){toast(e.message)}}
 async function saveTeacherSubjectColors(){try{const colors=await apiQuery('teacherSubjectColors');const rows=colors.map(c=>({materia_id:c.materia_id,color_hex:document.getElementById('tc_'+c.materia_id)?.value||c.color_hex}));const d=await apiPost('saveTeacherSubjectColors',{colors:rows});toast(d.message||'Colores guardados.');}catch(e){toast(e.message)}}
@@ -1749,7 +1762,7 @@ async function teacherGroupsModule(){
   try{
     const rows=await api('teacherGroups');
     const unique=normalizeTeacherAssignmentRows(rows);
-    return `<div class="card"><div class="flex justify-between gap-3 items-center mb-4"><div><h3>Mis grupos</h3><p class="text-sm text-[#8FA3B5]">Solo aparecen los grupos y materias que realmente tienes asignados.</p></div><span class="chip">${unique.length} asignaciones</span></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${unique.map(x=>`<div class="card text-left hover:border-[#D4AF3766]"><div class="text-2xl font-extrabold">${esc(x.grupo?.clave||'—')}</div><div class="mt-2 font-bold">${esc(x.materia?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${x.horas} h/semana</div><div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="teacherRosterModal(${x.id})">📋 Abrir lista</button><button class="btn" onclick="openDailyGradebook(${x.id})">📊 Excel diario</button><button class="btn primary" onclick="openEvaluationExportSelector(${x.id})">📐 Excel evaluación</button></div></div>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes grupos asignados.</p>'}</div></div>`;
+    return `<div class="card"><div class="flex justify-between gap-3 items-center mb-4"><div><h3>Mis grupos</h3><p class="text-sm text-[#8FA3B5]">Solo aparecen los grupos y materias que realmente tienes asignados.</p></div><span class="chip">${unique.length} asignaciones</span></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${unique.map(x=>`<div class="card text-left hover:border-[#D4AF3766]"><div class="text-2xl font-extrabold">${esc(x.grupo?.clave||'—')}</div><div class="mt-2 font-bold">${esc(x.materia?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${x.horas} h/semana</div><div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="teacherRosterModal(${x.id})">📋 Abrir lista</button><button class="btn" onclick="openDailyGradebook(${x.id})">📊 Excel diario</button><button class="btn primary" onclick="openTeacherEvaluationHub()">📐 Rúbrica y evaluación</button></div></div>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes grupos asignados.</p>'}</div></div>`;
   }catch(e){
     return `<div class="card border-red-500/30"><b>No se pudo cargar tus grupos.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`;
   }
@@ -1768,7 +1781,7 @@ async function teacherGradesModule(){
  const groups=await api('teacherGroups'),periods=await api('periods');
  const unique=[],seen=new Set();for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}
  window.__jaguarTeacherGrade={groups:unique,periods:periods.filter(x=>x.activo!==false),groupId:0,periodId:0};
- return `<div class="space-y-5"><div class="card"><span class="chip">JAGUAR 360 · EVALUACIONES</span><h2 class="text-2xl font-extrabold mt-3">📚 Mis calificaciones por grupo</h2><p class="text-sm mt-2">Selecciona la materia y después el periodo. Consulta tus evaluaciones anteriores y edita solo cuando Dirección Escolar habilite la captura.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${unique.map(g=>`<button type="button" class="card jaguar-grade-tile" onclick="jaguarTeacherGradeGroup(${Number(g.id)})"><span class="jaguar-grade-tile__group">${esc(g.grupos?.clave||'Grupo')}</span><strong>${esc(g.materias?.nombre||'Materia')}</strong><small>Ver periodos y calificaciones →</small></button>`).join('')||'<div class="card">No tienes grupos asignados.</div>'}</div><div id="jaguar-grade-periods" class="mt-5" aria-live="polite"></div><div id="teacherGradesTable" class="mt-4"></div></div>`;
+ return `<div class="space-y-5"><div class="card"><span class="chip">JAGUAR 360 · EVALUACIONES</span><h2 class="text-2xl font-extrabold mt-3">📚 Mis calificaciones por grupo</h2><p class="text-sm mt-2">Selecciona la materia y después el periodo. Consulta las calificaciones de periodos anteriores sin editarlas aquí. Si Dirección abre la captura, usa la rúbrica y la bitácora para registrar notas desde un único flujo.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${unique.map(g=>`<button type="button" class="card jaguar-grade-tile" onclick="jaguarTeacherGradeGroup(${Number(g.id)})"><span class="jaguar-grade-tile__group">${esc(g.grupos?.clave||'Grupo')}</span><strong>${esc(g.materias?.nombre||'Materia')}</strong><small>Ver periodos y calificaciones →</small></button>`).join('')||'<div class="card">No tienes grupos asignados.</div>'}</div><div id="jaguar-grade-periods" class="mt-5" aria-live="polite"></div><div id="teacherGradesTable" class="mt-4"></div></div>`;
 }
 async function jaguarTeacherGradeGroup(groupId){
  const state=window.__jaguarTeacherGrade;if(!state)return;state.groupId=Number(groupId);state.periodId=0;
@@ -1781,7 +1794,7 @@ async function jaguarTeacherGradeGroup(groupId){
  state.windows=windows;
  // En caso de error se bloquea toda edición; la consulta de datos históricos sigue disponible.
  const known=new Map(windows.map(w=>[Number(w.id),w]));
- const card=`<div class="card"><h3>Periodos de ${esc(gm.materias?.nombre||'')}</h3><p class="text-sm mt-1">${state.statusError?`⚠️ ${esc(state.statusError)}. Edición desactivada hasta validar Dirección.`:'Elige uno para ver sus notas o continuar la captura autorizada.'}</p><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">${state.periods.map((per,i)=>{const status=known.get(Number(per.id));const open=Boolean(status?.habilitada);return `<button type="button" class="jaguar-grade-tile" onclick="jaguarTeacherGradePeriod(${Number(per.id)})"><span class="jaguar-grade-tile__group">${esc(per.nombre||`Periodo ${i+1}`)}</span><strong class="${open?'jaguar-grade-open':'jaguar-grade-closed'}">${open?'🔓 Captura abierta':'🔒 Solo consulta'}</strong><small id="jaguar-grade-count-${Number(per.id)}">Ver calificaciones →</small></button>`}).join('')}</div></div>`;
+ const card=`<div class="card"><h3>Periodos de ${esc(gm.materias?.nombre||'')}</h3><p class="text-sm mt-1">${state.statusError?`⚠️ ${esc(state.statusError)}. Edición desactivada hasta validar Dirección.`:'Elige uno para consultar notas o abrir su rúbrica autorizada.'}</p><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">${state.periods.map((per,i)=>{const status=known.get(Number(per.id));const open=Boolean(status?.habilitada);return `<button type="button" class="jaguar-grade-tile" onclick="jaguarTeacherGradePeriod(${Number(per.id)})"><span class="jaguar-grade-tile__group">${esc(per.nombre||`Periodo ${i+1}`)}</span><strong class="${open?'jaguar-grade-open':'jaguar-grade-closed'}">${open?'🔓 Captura abierta':'🔒 Solo consulta'}</strong><small id="jaguar-grade-count-${Number(per.id)}">Ver calificaciones →</small></button>`}).join('')}</div></div>`;
  container.innerHTML=card;
 }
 async function jaguarTeacherGradePeriod(periodId){
@@ -1797,9 +1810,8 @@ async function loadTeacherGradesTable(){try{
  const canEdit=Boolean(windowInfo?.habilitada)&&!state.statusError;
  const registered=students.filter(x=>x.grade?.calificacion!=null&&x.grade?.calificacion!=='').length;
  const count=document.getElementById('jaguar-grade-count-'+periodoId);if(count)count.textContent=`${registered}/${students.length} calificaciones registradas`;
- document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><span class="chip">${esc(period?.nombre||'Periodo')}</span><h3 class="mt-2">${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${registered} de ${students.length} notas capturadas · ${canEdit?'✍️ Captura autorizada':'🔒 Consulta histórica'}</p></div>${canEdit?`<button class="btn primary" onclick="saveTeacherGradesTable(${gmId},${periodoId})">💾 Guardar cambios</button>`:'<span class="chip">Dirección no habilitó edición</span>'}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><input id="grade_${x.id}" class="input" type="number" min="0" max="10" step="0.1" value="${x.grade?.calificacion??''}" ${canEdit?'':'disabled'}></td><td><input id="gobs_${x.id}" class="input" value="${esc(x.grade?.observaciones||'')}" ${canEdit?'':'disabled'}></td></tr>`).join('')}</tbody></table></div></div>`;
+ document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><span class="chip">${esc(period?.nombre||'Periodo')}</span><h3 class="mt-2">${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${registered} de ${students.length} notas capturadas · ${canEdit?'✍️ Rúbrica disponible':'🔒 Consulta histórica'}</p></div>${canEdit?`<button class="btn primary" onclick="openTeacherEvaluationHub()">📐 Abrir rúbrica y adopción</button>`:'<span class="chip">Consulta histórica</span>'}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><b>${x.grade?.calificacion==null?'—':esc(x.grade.calificacion)}</b></td><td>${esc(x.grade?.observaciones||'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
  }catch(e){toast(e.message);const region=document.getElementById('teacherGradesTable');if(region)region.innerHTML=`<div class="card">No se pudieron cargar las notas: ${esc(e.message)}</div>`;}}
-async function saveTeacherGradesTable(gmId,periodoId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const rows=sortStudents(d.students).map(s=>({alumno_id:s.id,calificacion:document.getElementById(`grade_${s.id}`)?.value??'',observaciones:document.getElementById(`gobs_${s.id}`)?.value??''}));const r=await apiPost('saveTeacherGrades',{grupo_materia_id:gmId,periodo_id:periodoId,rows});toast(r.message||'Calificaciones guardadas.');await loadTeacherGradesTable()}catch(e){toast(e.message)}}
 // Jaguar 360 · Asistencia por grupo, periodo y fechas ya registradas.
 async function teacherAttendanceModule(){
  const groups=await api('teacherGroups'),periods=await api('periods');const unique=[],seen=new Set();
@@ -3443,7 +3455,7 @@ async function jaguarSaveWorkshopEnrollment(){
 async function jaguarNotificationsModule(){
   const rows=await api('notifications');
   const unread=(rows||[]).filter(x=>!x.leida).length;
-  return `<div class="space-y-5"><div class="card"><div class="flex justify-between items-center gap-3"><div><h3>🔔 Mis notificaciones</h3><p class="text-sm text-[#8FA3B5] mt-1">Aquí recibirás solicitudes, resoluciones y otros avisos personales.</p></div>${unread?'<button class="btn" onclick="jaguarMarkAllNotifications()">Marcar todo como leído</button>':''}</div></div><div class="card">${(rows||[]).map(n=>`<button class="w-full text-left py-4 border-b border-white/5 ${n.leida?'opacity-70':''}" onclick="jaguarOpenNotification(${n.id})"><div class="flex justify-between gap-3"><b>${esc(n.titulo)}</b><span class="text-xs text-[#8FA3B5]">${new Date(n.created_at).toLocaleString('es-MX')}</span></div><p class="text-sm text-[#A9BAC8] mt-2">${esc(n.contenido)}</p>${!n.leida?'<span class="chip mt-2 inline-block">Nueva</span>':''}</button>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes notificaciones.</p>'}</div></div>`;
+  return `<div class="space-y-5"><div class="card"><div class="flex justify-between items-center gap-3"><div><h3>🔔 Mis notificaciones</h3><p class="text-sm text-[#8FA3B5] mt-1">Aquí recibirás solicitudes, resoluciones y otros avisos personales.</p></div>${unread?'<button class="btn" onclick="jaguarMarkAllNotifications()">Marcar todo como leído</button>':''}</div></div><div class="card">${(rows||[]).map(n=>`<button class="w-full text-left py-4 border-b border-white/5 ${n.leida?'opacity-70':''}" onclick="jaguarOpenNotification(${n.id})"><div class="flex justify-between gap-3"><b>${esc(n.titulo)}</b><span class="text-xs text-[#8FA3B5]">${new Date(n.created_at).toLocaleString('es-MX')}</span></div><p class="text-sm text-[#A9BAC8] mt-2">${esc(n.contenido)}</p>${!n.leida?'<span class="chip mt-2 inline-block">Nueva</span>':''}</button>${n.tipo==='oficio_precision_calificaciones'&&/ITHLA-PC-(\d+)/.test(n.titulo||'')?`<button class="btn mt-2 mb-3" onclick="jaguarDownloadGradePolicyOffice(${Number(/ITHLA-PC-(\d+)/.exec(n.titulo)[1])})">📄 Descargar oficio institucional</button>`:''}` ).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes notificaciones.</p>'}</div></div>`;
 }
 async function jaguarOpenNotification(id){try{await api('notifications',{method:'POST',body:{resource:'notifications',action:'mark_read',id}});await loadPage('notificaciones');}catch(e){toast(e.message)}}
 async function jaguarMarkAllNotifications(){try{await api('notifications',{method:'POST',body:{resource:'notifications',action:'mark_all_read'}});await loadPage('notificaciones');}catch(e){toast(e.message)}}
@@ -3827,6 +3839,7 @@ function jaguarAccessState(x){
 async function jaguarSchoolCycleConfig(){
   const periods=await api('periods');
   const ctx=await api('periodContext');
+  const [precision,offices]=await Promise.all([api('gradePrecisionPolicy'),api('gradePrecisionOffices')]);
   const canEdit=S.role==='control_escolar';
   const active=ctx?.ciclo_escolar||'—';
   const currentId=ctx?.periodo_actual?.id||null;
@@ -3840,7 +3853,46 @@ async function jaguarSchoolCycleConfig(){
   </div>
 
   <div class="card"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><h3>Periodos de ${esc(active)}</h3><p class="text-sm text-[#A9BAC8] mt-1">No se fija una cantidad de periodos. Control Escolar crea exactamente los que el ciclo necesite.</p></div>${canEdit?'<button class="btn primary" onclick="formFor(\'periods\')">＋ Crear periodo</button>':''}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Periodo</th><th>Inicio</th><th>Fin</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${currentRows.map(p=>`<tr><td>${esc(p.numero_periodo||'—')}</td><td><b>${esc(p.nombre||'Periodo')}</b>${p.id===currentId?'<div class="text-xs text-emerald-300 mt-1">● Periodo actual</div>':''}</td><td>${esc(p.fecha_inicio||'—')}</td><td>${esc(p.fecha_fin||'—')}</td><td>${p.activo===false?'<span class="chip">Inactivo</span>':'<span class="chip">Disponible</span>'}</td><td class="flex flex-wrap gap-2">${canEdit&&p.id!==currentId&&p.activo!==false?`<button class="btn primary" onclick="jaguarSetCurrentPeriod(${p.id})">Hacer actual</button>`:''}${canEdit?`<button class="btn" onclick='formFor("periods",${JSON.stringify(p)})'>Editar</button>`:''}</td></tr>`).join('')||'<tr><td colspan="6">Todavía no hay periodos para el ciclo actual.</td></tr>'}</tbody></table></div></div>
+  <div class="card border-[#D4AF3755]">
+    <h3>Precisión de calificaciones · ${esc(active)}</h3>
+    <p class="text-sm text-[#A9BAC8] mt-2">Control Escolar decide cómo se registran las <b>calificaciones finales oficiales</b> al cerrar un periodo. Por defecto se usan <b>enteros, sin decimales</b>. La Bitácora diaria y los archivos originales mantienen sus valores completos para auditoría; las notas de periodos ya cerrados no se reescriben.</p>
+    <div class="grid md:grid-cols-2 gap-4 mt-4"><div>
+      <label class="text-xs text-[#8FA3B5]">Criterio vigente</label>
+      <select id="jaguar_grade_precision" class="input mt-1" ${canEdit?'':'disabled'}>
+        <option value="no" ${!precision.permite_decimales?'selected':''}>Sin decimales · 9.4 → 9 · 9.5 → 10 (predeterminado)</option>
+        <option value="si" ${precision.permite_decimales?'selected':''}>Con un decimal · 9.45 → 9.5</option>
+      </select>
+    </div><div>
+      <label class="text-xs text-[#8FA3B5]">Estado actual</label>
+      <div class="card mt-1"><b>${precision.permite_decimales?'Con un decimal':'Sin decimales'}</b><p class="text-xs mt-1">Ciclo ${esc(active)} · Versión ${Number(precision.version||0)}</p></div>
+    </div></div>
+    ${canEdit?`<div class="mt-4"><label class="text-xs text-[#8FA3B5]">Motivo del cambio (se transcribirá al oficio institucional)</label><textarea id="jaguar_grade_reason" class="input mt-1 w-full" rows="3" maxlength="300" placeholder="Explica el acuerdo, fecha o justificación académica que debe conocer todo el personal..."></textarea><p class="text-xs text-[#8FA3B5] mt-2">Al confirmar se registrará un oficio circular con folio y se enviará una notificación con acceso al PDF a cada integrante activo del personal. El cambio no es retroactivo.</p><button class="btn primary mt-3" onclick="jaguarSaveGradePrecision(${Number(precision.version||0)})">Guardar criterio y comunicar por oficio</button></div>`:''}
+    <div class="mt-5"><b>Oficios y modificaciones del ciclo</b><div class="space-y-2 mt-3">${(offices||[]).map(o=>`<div class="card flex items-center justify-between gap-3"><div><b>ITHLA-PC-${Number(o.id)}</b> · ${o.ahora_permite_decimales?'Con un decimal':'Sin decimales'}<p class="text-xs text-[#8FA3B5] mt-1">${esc(new Date(o.creado_at).toLocaleDateString('es-MX'))} · ${esc(o.actor_nombre||'Control Escolar')} · ${esc(o.motivo||'')}</p></div><button class="btn" onclick="jaguarDownloadGradePolicyOffice(${Number(o.id)})">Descargar oficio</button></div>`).join('')||'<p class="text-sm text-[#8FA3B5]">Todavía no se han modificado los criterios del ciclo.</p>'}</div></div>
+  </div>
   <div class="card"><h3>Historial de ciclos</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Ciclo</th><th>Periodos</th><th>Marca actual</th></tr></thead><tbody>${cycles.map(c=>{const rs=(periods||[]).filter(p=>p.ciclo_escolar===c).sort((a,b)=>Number(a.numero_periodo||0)-Number(b.numero_periodo||0));const actual=rs.find(p=>p.es_periodo_actual);return `<tr><td><b>${esc(c)}</b></td><td>${rs.length}</td><td>${actual?esc(actual.nombre||`P${actual.numero_periodo}`):'Histórico'}</td></tr>`}).join('')||'<tr><td colspan="3">Sin historial.</td></tr>'}</tbody></table></div></div></div>`;
+}
+async function jaguarSaveGradePrecision(version){
+  if(S.role!=='control_escolar')return toast('El criterio lo administra Control Escolar.');
+  const selected=document.getElementById('jaguar_grade_precision')?.value;
+  const motivo=String(document.getElementById('jaguar_grade_reason')?.value||'').trim();
+  if(!['si','no'].includes(selected))return toast('Selecciona el criterio de calificaciones.');
+  if(motivo.length<15)return toast('Redacta un motivo institucional de por lo menos 15 caracteres.');
+  const next=selected==='si';
+  if(!confirm(`¿Cambiar calificaciones a ${next?'CON UN DECIMAL':'SIN DECIMALES'}?\n\nSe emitirá un oficio circular para todo el personal. Los cierres históricos NO se modificarán.\n\nMotivo: ${motivo}`))return;
+  try{
+    const result=await api('setGradePrecisionPolicy',{method:'POST',body:{resource:'setGradePrecisionPolicy',permite_decimales:next,motivo,version_esperada:version}});
+    toast(`Criterio actualizado. Oficio ITHLA-PC-${Number(result.oficio_id)} comunicado al personal.`);
+    await loadPage('config');
+    await jaguarDownloadGradePolicyOffice(result.oficio_id);
+  }catch(e){toast(e.message)}
+}
+async function jaguarDownloadGradePolicyOffice(id){
+  try{
+    const {data:{session}}=await supabaseClient.auth.getSession();if(!session)throw Error('Sesión no disponible.');
+    const r=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},body:JSON.stringify({action:'grade_policy_office_pdf',oficio_id:Number(id)})});
+    const d=await jaguarReadJson(r);if(!r.ok||!d.ok)throw Error(d.error||'No se pudo generar el oficio.');
+    downloadPdf(d.pdf_base64,d.filename||`ITHLA-Oficio-PC-${id}.pdf`);
+  }catch(e){toast(e.message)}
 }
 async function jaguarSetCurrentPeriod(id){if(S.role!=='control_escolar')return toast('Solo Control Escolar puede cambiar el periodo actual.');if(!confirm('Cambiar el periodo actual NO modifica los horarios del ciclo. ¿Continuar?'))return;try{const r=await api('setCurrentPeriod',{method:'POST',body:{resource:'setCurrentPeriod',periodo_id:Number(id)}});const d=r.data||r;S.activePeriod=d.period;S.activeCycle=d.period?.ciclo_escolar||S.activeCycle;S.periodNumber=d.period?.numero_periodo||null;const ctx=await api('periodContext');S.totalPeriods=Number(ctx?.total_periodos||S.totalPeriods||0);renderShell();toast(r.message||'Periodo actualizado.');await loadPage('config');}catch(e){toast(e.message)}}
 
@@ -4024,7 +4076,7 @@ async function ithlaSaveResponsible(dept){const nombre_responsable=document.getE
    ========================================================= */
 controlNav.splice(0,controlNav.length,
   ['inicio','⌂ Inicio'],['alumnos','👥 Alumnos y grupos'],['grupos','👥 Grupos'],['listas','📥 Listas por grupo'],
-  ['docentes','👨‍🏫 Docentes'],['materias','📚 Materias'],['horarios','🗓️ Horarios'],['calificaciones','📊 Calificaciones'],
+  ['docentes','👨‍🏫 Docentes'],['materias','📚 Materias'],['horarios','🗓️ Horarios'],['calificaciones','📊 Consulta de notas'],
   ['asistencia','✓ Asistencia'],['talleres','🎨 Talleres'],['solicitudes_taller','🔔 Cambios de grupo'],
   ['revision_acceso','🛡️ Revisiones de acceso'],['cambios_especiales','🚨 Cambio especial de grado'],
   ['solicitudes_academicas','📨 Solicitudes académicas'],['avisos','📢 Gestionar avisos'],['portal_publico','🌐 Contenido público'],['usuarios','🔐 Usuarios'],['documentos','🔎 Documentos verificables'],
@@ -4043,7 +4095,7 @@ roleNav.servicios_docentes=[['inicio','⌂ Inicio'],['bitacora_calificaciones','
 roleNav.servicios_estudiantiles=[['inicio','⌂ Inicio'],['solicitudes_taller','📨 Solicitudes'],['cambios_especiales','🚨 Cambio especial de grado'],['talleres','🎨 Talleres e inscripciones'],['alumnos','🎓 Alumnos'],['credenciales','🪪 Credenciales'],['horarios','🗓️ Horarios por grupo'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
 roleNav.prefectura=[['inicio','⌂ Inicio'],['cambios_especiales','🚨 Cambio especial de grado'],['incidencias','⚠️ Incidencias'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
 roleNav.coordinacion_academica=[['inicio','⌂ Inicio'],['materias','📚 Materias'],['docentes','👨‍🏫 Docentes'],['alumnos','🎓 Alumnos'],['grupos','👥 Grupos y listas'],['cargas','🧩 Asignaciones'],['horas_materias','⏱️ Horas por materia'],['horarios','🗓️ Horarios'],['solicitudes_taller','📨 Solicitudes'],['cambios_especiales','🚨 Cambio especial de grado'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
-roleNav.docente=[['inicio','⌂ Inicio'],['grupos','👥 Mis grupos'],['bitacora_calificaciones','📒 Bitácora Excel'],['calificaciones','📊 Calificaciones'],['asistencia','✓ Asistencia'],['horario','🗓️ Mi horario'],['clarificaciones','💬 Aclaraciones'],['planeaciones','📝 Planeaciones'],['centro_didactico','✦ Centro de Creación Didáctica'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
+roleNav.docente=[['inicio','⌂ Inicio'],['grupos','👥 Mis grupos'],['bitacora_calificaciones','📒 Bitácora Excel'],['calificaciones','📊 Consulta de notas'],['asistencia','✓ Asistencia'],['horario','🗓️ Mi horario'],['clarificaciones','💬 Aclaraciones'],['planeaciones','📝 Planeaciones'],['centro_didactico','✦ Centro de Creación Didáctica'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
 roleNav.archivo_escolar=[['inicio','⌂ Inicio'],['archivo','📁 Archivo escolar'],['documentos_oficiales','📄 Documentos oficiales'],['oficios_firma','✍️ Oficios y firmas'],['retencion','🗄️ Retención documental'],['avisos','📢 Avisos'],['perfil','👤 Perfil']];
 roleNav.recursos_monetarios=[['inicio','⌂ Inicio'],['recursos_monetarios','💰 Recursos monetarios'],['perfil','👤 Perfil']];
 for(const rr of ['direccion_escolar','control_escolar','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','recursos_monetarios']){if(roleNav[rr]&&!roleNav[rr].some(x=>x[0]==='oficios_firma'))roleNav[rr].splice(1,0,['oficios_firma','✍️ Oficios por firmar']);}
@@ -4371,7 +4423,32 @@ function dailyHex(hex,fallback='4EA72E'){const x=String(hex||'').replace('#','')
 function dailyCol(n){return xlsxColName(n)}
 function dailySafeName(v){return String(v||'').replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ_-]+/g,'_').slice(0,70)}
 function dailyActivityKey(name,index){const base=String(name||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);return `act-${base||'actividad'}-${index+1}`}
-function dailyMeta(wb){const meta=wb.Sheets['JAGUAR_META'];if(!meta){if(wb.Sheets['ITHLA_META'])throw Error('El archivo es una plantilla de Rúbricas y Evaluaciones, no una Bitácora diaria. Súbelo desde Evaluaciones del docente.');if(wb.Sheets['CALIFICACIONES'])throw Error('El archivo corresponde a la carga institucional de Control Escolar; no es una bitácora.');throw Error('No se reconoce este Excel como bitácora. Debe incluir las hojas ACTIVIDADES, ASISTENCIAS, VALORES PONDERACION y JAGUAR_META.');}const m=XLSX.utils.sheet_to_json(meta,{header:1,raw:true,defval:''});const get=k=>m.find(r=>String(r?.[0])===k)?.[1];return {get,m}}
+/** La bitácora registra APORTACIONES (máximo ponderación/10), no notas crudas.
+ * Formatos históricos sin unidad: si todos los valores caben en el límite de su
+ * aporte se conserva esa interpretación; valores superiores indican escala 0–10.
+ * Nunca se decide por fila/alumno, sino por el conjunto completo. */
+function dailyRubricUnit(state,rubric){
+ const declared=state?.meta?.unidad_ponderaciones;
+ if(['puntos_ponderados','escala_0_10'].includes(declared))return declared;
+ const comps=rubric?.components||[];let hasValue=false;
+ for(const [key,v] of Object.entries(state?.weightedValues||{})){
+  if(v==null||v==='')continue;
+  const id=Number(String(key).split('|')[1]),comp=comps.find(c=>Number(c.id)===id);
+  if(!comp)continue;hasValue=true;
+  if(Number(v)>Number(comp.ponderacion)/10+.001)return 'escala_0_10';
+ }
+ return hasValue?'puntos_ponderados':'puntos_ponderados';
+}
+function dailyContributionToNote(v,comp,unit){
+ const n=Number(v),weight=Number(comp?.ponderacion||0);
+ if(!Number.isFinite(n)||n<0||n>10)throw Error('Hay una nota de bitácora fuera de la escala permitida.');
+ if(unit==='puntos_ponderados'){
+  if(weight<=0||n>weight/10+.001)throw Error(`El aporte de ${comp?.nombre||'la rúbrica'} supera su máximo (${(weight/10).toFixed(2)}).`);
+  return Number((n*100/weight).toFixed(5));
+ }
+ return n;
+}
+function dailyMeta(wb){const meta=wb.Sheets['JAGUAR_META'];if(!meta){if(wb.Sheets['ITHLA_META'])throw Error('El archivo corresponde a la antigua plantilla de evaluación. Ya no se utiliza como bitácora. Para adoptar sus notas, abre Rúbrica y evaluaciones → Adoptar desde Excel, y selecciona su hoja y columnas.');if(wb.Sheets['CALIFICACIONES'])throw Error('El archivo corresponde a la carga institucional de Control Escolar; no es una bitácora.');throw Error('No se reconoce este Excel como bitácora. Debe incluir las hojas ACTIVIDADES, ASISTENCIAS, VALORES PONDERACION y JAGUAR_META.');}const m=XLSX.utils.sheet_to_json(meta,{header:1,raw:true,defval:''});const get=k=>m.find(r=>String(r?.[0])===k)?.[1];return {get,m}}
 function dailyStateFromWorkbook(wb,d){
   const {get}=dailyMeta(wb);
   const formatVersion=Number(get('formato_version')||0);
@@ -4468,6 +4545,21 @@ function dailyStateFromWorkbook(wb,d){
   if(Object.keys(weightedValues).length && (Number(get('rubrica_id')||0)!==Number(rubric.id||0)||Number(get('rubrica_version')||1)!==Number(rubric.version||1)))
     throw Error('La rúbrica institucional cambió desde que se descargó esta bitácora. Descarga el formato actualizado antes de guardar ponderaciones.');
 
+  const legacyUnidad=!['puntos_ponderados','escala_0_10'].includes(String(get('unidad_ponderaciones')||''));
+  const selectedUnit=legacyUnidad?dailyRubricUnit({weightedValues},rubric):String(get('unidad_ponderaciones'));
+  const totalDiscrepancies=[];
+  // VALOR TOTAL de un Excel antiguo pudo duplicar los porcentajes. Comparamos
+  // contra los aspectos originales, pero nunca reemplazamos datos en silencio.
+  for(let r=7;r<vr.length;r++){
+    const matricula=normalizeMatricula(vr[r]?.[2]),st=byMat.get(matricula);
+    if(!st||!rubric.components?.length)continue;
+    const values=rubric.components.map(c=>weightedValues[`${st.id}|${c.id}`]);
+    if(values.some(v=>v===undefined||v===null||v===''))continue;
+    const computed=rubric.components.reduce((sum,c,i)=>sum+(selectedUnit==='puntos_ponderados'?values[i]:values[i]*Number(c.ponderacion||0)/100),0);
+    const stored=vr[r]?.[3+rubric.components.length];
+    if(stored===''||stored==null||!Number.isFinite(Number(stored)))continue;
+    if(Math.abs(Number(stored)-computed)>.055)totalDiscrepancies.push({matricula,fila:r+1,total_excel:Number(stored),total_corregido:Number(computed.toFixed(2))});
+  }
   // ASISTENCIAS consolidada. También se lee como respaldo para formatos v3.
   const attSheet=wb.Sheets['ASISTENCIAS'];if(!attSheet)throw Error('Falta la hoja ASISTENCIAS.');
   const at=XLSX.utils.sheet_to_json(attSheet,{header:1,raw:true,defval:''});
@@ -4485,7 +4577,7 @@ function dailyStateFromWorkbook(wb,d){
       const estado=String(at[r]?.[c]??'').trim();if(estado)attendance[`${st.id}|${date}`]=estado;
     }
   }
-  return {activities,activityScores,weightedValues,attendance,rubric:{id:Number(rubric.id||0),version:Number(rubric.version||1),titulo:rubric.titulo||'Rúbrica de evaluación',components:rubric.components,total:Number(rubric.total||0)},meta:{version:4,grupo_materia_id:Number(d.grupo_materia?.id),periodo_id:Number(d.periodo?.id),ponderaciones_borrador:!!d.state?.meta?.ponderaciones_borrador}};
+  return {activities,activityScores,weightedValues,attendance,rubric:{id:Number(rubric.id||0),version:Number(rubric.version||1),titulo:rubric.titulo||'Rúbrica de evaluación',components:rubric.components,total:Number(rubric.total||0)},meta:{version:4,grupo_materia_id:Number(d.grupo_materia?.id),periodo_id:Number(d.periodo?.id),unidad_ponderaciones:selectedUnit,unidad_historica_sin_definir:legacyUnidad&&!!Object.keys(weightedValues).length,advertencias_total:totalDiscrepancies.slice(0,12),advertencias_total_cantidad:totalDiscrepancies.length,ponderaciones_borrador:!!d.state?.meta?.ponderaciones_borrador}};
 }
 function dailyStyle(mainColor,opts={}){return {font:{name:'Arial',sz:opts.sz||10,bold:!!opts.bold,color:{rgb:opts.text||'FF111111'}},fill:opts.fill?{fgColor:{rgb:opts.fill}}:undefined,alignment:{horizontal:opts.align||'center',vertical:'center',wrapText:true},border:xlsxBorder()}}
 function dailyWorkbook(d,options={}){
@@ -4497,6 +4589,8 @@ function dailyWorkbook(d,options={}){
   const subject=String(m.nombre||'MATERIA').toUpperCase();
   const groupLabel=`${g.grado||'—'}° ${String(g.letra||'').toUpperCase()}`.trim();
   const rosterRows=students.length;
+  const rubricUnit=dailyRubricUnit(state,rubric);
+  const totalGradeNumberFormat=d.grade_precision?.permite_decimales?'0.0':'0';
 
   const setCell=(ws,a,v,st={})=>xlsxSet(ws,a,v,st);
   const titleStyle=dailyStyle(dark,{sz:13,bold:true,text:'FFFFFFFF',fill:dark,align:'left'});
@@ -4555,22 +4649,22 @@ function dailyWorkbook(d,options={}){
   headerRows(wv,rubricStart+2,activityLastRow,'D8');XLSX.utils.book_append_sheet(wb,wv,'ACTIVIDADES');
 
   // VALORES PONDERACION
-  const ww={};setCell(ww,'A1',school,titleStyle);setCell(ww,'A2',`CICLO ${cycle} · GRUPO ${groupLabel} · ${subject}`,bandStyle);setCell(ww,'A3',`DOCENTE: ${teacher} · PERIODO: ${d.periodo?.nombre||'—'}`,subStyle);
+  const ww={};setCell(ww,'A1',school,titleStyle);setCell(ww,'A2',`CICLO ${cycle} · GRUPO ${groupLabel} · ${subject}`,bandStyle);setCell(ww,'A3',`DOCENTE: ${teacher} · PERIODO: ${d.periodo?.nombre||'—'}`,subStyle);setCell(ww,'A4',rubricUnit==='puntos_ponderados'?'CAPTURA APORTES PONDERADOS. Ejemplo: nota 8 x 70% = 5.6 puntos. VALOR TOTAL = SUMA de aportes.':'CAPTURA NOTAS SOBRE 10. VALOR TOTAL = suma de (nota x porcentaje), sin duplicar porcentajes.',{...left,font:{name:'Arial',sz:9,bold:true,color:{rgb:'FF1B365D'}}});
   setCell(ww,'A5','No.',bandStyle);setCell(ww,'B5','NOMBRE COMPLETO',bandStyle);setCell(ww,'C5','MATRÍCULA',bandStyle);
   (rubric.components||[]).forEach((c,i)=>{const col=4+i;setCell(ww,`${dailyCol(col)}5`,c.nombre,bandStyle);setCell(ww,`${dailyCol(col)}6`,Number(c.ponderacion||0)/100,{...center,numFmt:'0.00%'});setCell(ww,`${dailyCol(col)}7`,Number(c.id),{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});});
   const totalCol=4+(rubric.components||[]).length;setCell(ww,`${dailyCol(totalCol)}5`,'VALOR TOTAL',bandStyle);setCell(ww,`${dailyCol(totalCol)}6`,Number(rubric.total||0)/100,{...center,numFmt:'0.00%'});setCell(ww,`${dailyCol(totalCol)}7`,10,{...center,numFmt:'0.00'});
-  students.forEach((st,i)=>{const r=8+i;setCell(ww,`A${r}`,i+1,center);setCell(ww,`B${r}`,jaguarNombreInstitucional(st),left);setCell(ww,`C${r}`,st.matricula||'',center);(rubric.components||[]).forEach((c,j)=>{const v=state.weightedValues?.[`${st.id}|${c.id}`];setCell(ww,`${dailyCol(4+j)}${r}`,v??'',{...center,numFmt:'0.00'});});const vals=(rubric.components||[]).map(c=>state.weightedValues?.[`${st.id}|${c.id}`]);let total='';if(vals.some(v=>v!==null&&v!==undefined&&v!=='')){let sum=0,wt=0;(rubric.components||[]).forEach(c=>{const v=state.weightedValues?.[`${st.id}|${c.id}`];if(v!==null&&v!==undefined&&v!==''){sum+=Number(v)*Number(c.ponderacion||0);wt+=Number(c.ponderacion||0);}});if(wt)total=Number((sum/wt).toFixed(2));}const totalAddr=`${dailyCol(totalCol)}${r}`;
-    setCell(ww,totalAddr,total,{...center,numFmt:'0.00',font:{name:'Arial',sz:10,bold:true}});
+  students.forEach((st,i)=>{const r=8+i;setCell(ww,`A${r}`,i+1,center);setCell(ww,`B${r}`,jaguarNombreInstitucional(st),left);setCell(ww,`C${r}`,st.matricula||'',center);(rubric.components||[]).forEach((c,j)=>{const v=state.weightedValues?.[`${st.id}|${c.id}`];setCell(ww,`${dailyCol(4+j)}${r}`,v??'',{...center,numFmt:'0.00'});});const vals=(rubric.components||[]).map(c=>state.weightedValues?.[`${st.id}|${c.id}`]);let total='';if(vals.length>0&&vals.every(v=>v!==null&&v!==undefined&&v!=='')){let sum=0;(rubric.components||[]).forEach(c=>{const v=Number(state.weightedValues[`${st.id}|${c.id}`]);sum+=rubricUnit==='puntos_ponderados'?v:v*Number(c.ponderacion||0)/100;});total=Number(sum.toFixed(3));}const totalAddr=`${dailyCol(totalCol)}${r}`;
+    setCell(ww,totalAddr,total,{...center,numFmt:totalGradeNumberFormat,font:{name:'Arial',sz:10,bold:true}});
     if((rubric.components||[]).length){
       const lastAspect=dailyCol(totalCol-1);
       // Respeta la escala 0–10 y normaliza únicamente los aspectos ya capturados.
-      ww[totalAddr].f=`IF(COUNT(D${r}:${lastAspect}${r})=0,"",ROUND(SUMPRODUCT(D${r}:${lastAspect}${r},D$6:${lastAspect}$6)/SUMIF(D${r}:${lastAspect}${r},">=0",D$6:${lastAspect}$6),2))`;
+      ww[totalAddr].f=rubricUnit==='puntos_ponderados'?`IF(COUNT(D${r}:${lastAspect}${r})<${(rubric.components||[]).length},"",ROUND(SUM(D${r}:${lastAspect}${r}),3))`:`IF(COUNT(D${r}:${lastAspect}${r})<${(rubric.components||[]).length},"",ROUND(SUMPRODUCT(D${r}:${lastAspect}${r},D$6:${lastAspect}$6),3))`;
       ww[totalAddr].t='n';
       if(total==='')delete ww[totalAddr].v; // Excel calculará el valor al abrirse.
     }});
-  ww['!merges']=[0,1,2].map(r=>({s:{r,c:0},e:{r,c:totalCol-1}}));ww['!cols']=[{wch:5},{wch:38},{wch:20},...Array.from({length:(rubric.components||[]).length+1},()=>({wch:19}))];headerRows(ww,totalCol,7+rosterRows,'D8');XLSX.utils.book_append_sheet(wb,ww,'VALORES PONDERACION');
+  ww['!merges']=[0,1,2,3].map(r=>({s:{r,c:0},e:{r,c:totalCol-1}}));ww['!cols']=[{wch:5},{wch:38},{wch:20},...Array.from({length:(rubric.components||[]).length+1},()=>({wch:19}))];headerRows(ww,totalCol,7+rosterRows,'D8');XLSX.utils.book_append_sheet(wb,ww,'VALORES PONDERACION');
 
-  const meta=XLSX.utils.aoa_to_sheet([['JAGUAR_DAILY','VALOR'],['formato_version',4],['grupo_materia_id',gm.id],['periodo_id',d.periodo?.id],['fecha_clase',d.fecha],['latest_id',d.latest_id||''],['rubrica_id',rubric.id||0],['rubrica_version',rubric.version||1],['componentes_json',JSON.stringify((rubric.components||[]).map(c=>({id:c.id,nombre:c.nombre,ponderacion:c.ponderacion,maximo:c.maximo,orden:c.orden})))]]);
+  const meta=XLSX.utils.aoa_to_sheet([['JAGUAR_DAILY','VALOR'],['formato_version',4],['grupo_materia_id',gm.id],['periodo_id',d.periodo?.id],['fecha_clase',d.fecha],['latest_id',d.latest_id||''],['rubrica_id',rubric.id||0],['rubrica_version',rubric.version||1],['unidad_ponderaciones',rubricUnit],['permite_decimales',d.grade_precision?.permite_decimales?1:0],['componentes_json',JSON.stringify((rubric.components||[]).map(c=>({id:c.id,nombre:c.nombre,ponderacion:c.ponderacion,maximo:c.maximo,orden:c.orden})))]]);
   XLSX.utils.book_append_sheet(wb,meta,'JAGUAR_META');if(wb.Workbook?.Sheets){const sh=wb.Workbook.Sheets.find(x=>x.name==='JAGUAR_META');if(sh)sh.Hidden=1}
   return wb;
 }
@@ -4651,8 +4745,12 @@ async function uploadTeacherDailyExcel(gmId,periodoId){
     const count=Object.values(state.weightedValues||{}).filter(v=>v!==''&&v!=null).length;
     window._pendingDailyGradebook={gmId,periodoId,file,d,state,count};
     const cerrado=d.captura_evaluacion_habilitada!==true;
+    const historica=state.meta?.unidad_historica_sin_definir===true;
+    const discrepancias=Number(state.meta?.advertencias_total_cantidad||0);
     modal('Revisar bitácora antes de respaldar',`<div class="space-y-4">
       <div class="card"><b>${esc(file.name)}</b><p class="text-sm mt-2">Grupo: ${esc(d.grupo_materia?.grupos?.clave||'—')} · Materia: ${esc(d.grupo_materia?.materias?.nombre||'—')} · Fecha: ${esc(d.fecha)}</p><p class="text-sm mt-1">Actividades: <b>${state.activities.length}</b> · Valores de ponderación capturados: <b>${count}</b></p></div>
+      ${historica?`<div class="card border-amber-400/30"><b>Bitácora anterior sin unidad identificada</b><p class="text-sm mt-2">Confirma cómo están expresados los aspectos. En el PDF adjunto se ven aportaciones ya ponderadas (70% = máximo 7 puntos). Una elección incorrecta altera los totales, por lo que se mostrará en el respaldo.</p><select id="daily_legacy_unit" class="select w-full mt-2"><option value="puntos_ponderados" ${state.meta.unidad_ponderaciones==='puntos_ponderados'?'selected':''}>Aportes ponderados (máximo porcentaje ÷ 10)</option><option value="escala_0_10" ${state.meta.unidad_ponderaciones==='escala_0_10'?'selected':''}>Notas originales de 0 a 10</option></select></div>`:''}
+      ${discrepancias?`<div class="card border-amber-400/30"><b>⚠️ ${discrepancias} VALORES TOTALES del Excel no cuadran con sus aspectos</b><p class="text-sm mt-1">No se copiarán esos totales erróneos. Se conservarán las notas de cada aspecto y la nueva Bitácora recalculará el total correctamente.</p><div class="text-xs mt-2">${(state.meta.advertencias_total||[]).slice(0,5).map(x=>`${esc(x.matricula)} (fila ${x.fila}): ${x.total_excel} → ${x.total_corregido}`).join(' · ')}</div></div>`:''}
       ${count?`<div class="card border-[#D4AF3755]"><b>${cerrado?'Evaluaciones todavía no abiertas':'Valores en bitácora (sin publicación automática)'}</b><p class="text-sm mt-2">${cerrado?'Puedes guardar las actividades y sus calificaciones como <b>borrador privado</b>. Dirección deberá abrir el periodo para permitir que los traslades a la rúbrica de evaluación.':'Este respaldo no modifica las calificaciones oficiales; podrás incorporar los valores a tu rúbrica mediante revisión expresa.'}</p></div>`:'<p class="text-sm">Este archivo no contiene valores de ponderación. Puedes respaldar tus actividades diarias aunque las evaluaciones estén cerradas.</p>'}
       <div class="flex flex-wrap gap-2 justify-end"><button class="btn" onclick="window._pendingDailyGradebook=null;closeModal()">Cancelar</button><button class="btn primary" onclick="confirmTeacherDailyUpload()">${count?'💾 Guardar bitácora y borrador':'💾 Guardar bitácora'}</button></div>
     </div>`);
@@ -4662,6 +4760,17 @@ async function confirmTeacherDailyUpload(){
   const p=window._pendingDailyGradebook;if(!p)return;
   try{
     const {gmId,periodoId,file,d,state,count}=p;
+    if(state.meta?.unidad_historica_sin_definir){
+      const unit=document.getElementById('daily_legacy_unit')?.value;
+      if(!['puntos_ponderados','escala_0_10'].includes(unit))throw Error('Elige cómo están expresadas las notas del Excel anterior.');
+      state.meta.unidad_ponderaciones=unit;
+      if(unit==='puntos_ponderados'){
+        for(const [key,value] of Object.entries(state.weightedValues||{})){
+          const comp=(state.rubric?.components||[]).find(c=>String(c.id)===String(key).split('|')[1]);
+          if(comp)dailyContributionToNote(value,comp,unit);
+        }
+      }
+    }
     const prep=await apiPost('prepareTeacherDailyUpload',{grupo_materia_id:gmId,periodo_id:periodoId,fecha:d.fecha,filename:file.name});
     const up=await supabaseClient.storage.from(prep.bucket).uploadToSignedUrl(prep.path,prep.token,file,{contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     if(up.error)throw up.error;
@@ -4694,7 +4803,7 @@ async function jaguarDailyGradebookModule(){
         ||S.activePeriod
         ||null;
       const cards=normalized.map(g=>`<div class="card"><div class="font-bold text-lg">${esc(g.grupo?.clave||'—')} · ${esc(g.materia?.nombre||'—')}</div><div class="text-xs text-[#8FA3B5] mt-2">${g.horas?`${Number(g.horas)} h/semana · `:''}La rúbrica oficial y el color de la materia se aplican automáticamente.</div><div class="flex flex-wrap gap-2 mt-4"><button class="btn primary" onclick="openDailyGradebook(${g.id})">📥 Crear / ampliar Excel</button><button class="btn" onclick="showDailyUploadModal(${g.id},${Number(p?.id||0)})">📤 Subir Excel</button><button class="btn" onclick="downloadManualDailyGradebookPdf(${g.id},${Number(p?.id||0)})">📄 PDF para llenar a mano</button></div></div>`).join('');
-      return `<div class="space-y-5"><div class="card border-[#D4AF3755]"><span class="chip">RESPALDO ACADÉMICO</span><h2 class="text-2xl font-extrabold mt-3">📒 Bitácora diaria de Excel</h2><p class="text-sm text-[#A9BAC8] mt-2">Las materias se toman de tu <b>Carga docente</b> del ciclo actual. Puedes descargar y subir tu bitácora durante todo el periodo, aunque Dirección no haya abierto la captura de evaluaciones. Los valores de ponderación se guardan como borradores privados hasta que los revises y traslades a la rúbrica durante la apertura.</p></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${cards||'<div class="card md:col-span-2 lg:col-span-3"><b>No hay materias para la bitácora.</b><p class="text-sm text-[#A9BAC8] mt-2">Tu Carga docente no tiene asignaciones activas para este ciclo. Si en “Mis grupos” sí aparecen materias, vuelve a abrir este módulo; ahora ambas pantallas usan exactamente la misma fuente de asignaciones.</p></div>'}</div></div>`;
+      return `<div class="space-y-5"><div class="card border-[#D4AF3755]"><span class="chip">RESPALDO ACADÉMICO</span><h2 class="text-2xl font-extrabold mt-3">📒 Bitácora diaria de Excel</h2><p class="text-sm text-[#A9BAC8] mt-2">Las materias se toman de tu <b>Carga docente</b> del ciclo actual. Esta es la única plantilla Excel de captura docente. En «VALORES PONDERACION» escribe <b>los puntos ya ponderados</b> de cada aspecto (por ejemplo, una libreta de 8/10 con peso 70% aporta 5.6 puntos). El total suma esos aportes una sola vez. Puedes respaldar tus notas aunque Dirección no haya abierto evaluaciones. Los valores de ponderación se guardan como borradores privados hasta que los revises y traslades a la rúbrica durante la apertura.</p></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${cards||'<div class="card md:col-span-2 lg:col-span-3"><b>No hay materias para la bitácora.</b><p class="text-sm text-[#A9BAC8] mt-2">Tu Carga docente no tiene asignaciones activas para este ciclo. Si en “Mis grupos” sí aparecen materias, vuelve a abrir este módulo; ahora ambas pantallas usan exactamente la misma fuente de asignaciones.</p></div>'}</div></div>`;
     }catch(e){
       return `<div class="card border-red-500/30"><b>No se pudo cargar la Bitácora Excel.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`;
     }
@@ -4702,7 +4811,7 @@ async function jaguarDailyGradebookModule(){
   const rows=await api('dailyGradebooks');
   return `<div class="space-y-5"><div class="card"><span class="chip">CONSULTA INSTITUCIONAL</span><h2 class="text-2xl font-extrabold mt-3">📒 Bitácora diaria de calificaciones</h2><p class="text-sm text-[#A9BAC8] mt-2">Consulta las versiones históricas entregadas por los docentes. La salida institucional es PDF y la evidencia digital conserva su SHA-256.</p></div><div class="card"><div class="scroll"><table class="table"><thead><tr><th>Fecha</th><th>Docente</th><th>Grupo</th><th>Materia</th><th>Actividades</th><th>Rúbrica</th><th>Versión</th><th>Respaldo</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.fecha_clase)}</td><td>${esc(jaguarNombreInstitucional(r.docentes))}</td><td>${esc(r.grupo_materias?.grupos?.clave||'—')}</td><td>${esc(r.grupo_materias?.materias?.nombre||'—')}</td><td>${r.actividades||0}</td><td>${Number(r.ponderacion_total||0).toFixed(2)}%</td><td>${r.version}</td><td><button class="btn primary" onclick="downloadDailyGradebookPdf(${r.id})">📄 PDF</button></td></tr>`).join('')||'<tr><td colspan="8">Aún no hay respaldos diarios.</td></tr>'}</tbody></table></div></div></div>`;
 }
-function showDailyUploadModal(gmId,periodoId){modal('Subir Excel diario',`<div class="space-y-4"><label class="text-xs text-[#8FA3B5]">Fecha de clase</label><input id="daily_date" class="input" type="date" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10)}"><label class="btn primary cursor-pointer">📤 Seleccionar Excel<input id="daily_excel_file" class="hidden" type="file" accept=".xlsx" onchange="uploadTeacherDailyExcel(${gmId},${periodoId})"></label><div class="text-xs text-[#8FA3B5]">Puedes cambiar el aspecto visual (letra, bordes, tamaños), no las matrículas, claves, fórmulas ni los valores ya respaldados. La bitácora diaria puede subirse sin apertura de evaluaciones; las ponderaciones se conservarán como borrador hasta su revisión.</div></div>`)}
+function showDailyUploadModal(gmId,periodoId){modal('Subir Excel diario',`<div class="space-y-4"><label class="text-xs text-[#8FA3B5]">Fecha de clase</label><input id="daily_date" class="input" type="date" value="${new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10)}"><label class="btn primary cursor-pointer">📤 Seleccionar Excel<input id="daily_excel_file" class="hidden" type="file" accept=".xlsx" onchange="uploadTeacherDailyExcel(${gmId},${periodoId})"></label><div class="text-xs text-[#8FA3B5]">Puedes cambiar el aspecto visual (letra, bordes, tamaños), no las matrículas, claves, fórmulas ni los valores ya respaldados. En VALORES PONDERACION escribe aportes ya ponderados (peso 70% → máximo 7 puntos); el total no vuelve a ponderarlos. La bitácora puede subirse sin apertura de evaluaciones: los valores se guardan como borrador.</div></div>`)}
 async function downloadManualDailyGradebookPdf(gmId,periodoId){
  try{
   if(!Number(gmId)||!Number(periodoId))throw Error('Selecciona una materia y un periodo escolar.');
@@ -4906,7 +5015,7 @@ function jaguarPlanningPreview(){
   const gradesAccess=['control_escolar','control','direccion_escolar'];
   if(!roleNav.direccion_escolar.some(x=>x[0]==='calificaciones')){
     const pos=roleNav.direccion_escolar.findIndex(x=>x[0]==='horarios');
-    roleNav.direccion_escolar.splice(pos>=0?pos+1:1,0,['calificaciones','📊 Calificaciones']);
+    roleNav.direccion_escolar.splice(pos>=0?pos+1:1,0,['calificaciones','📊 Consulta de notas']);
   }
   if(!roleNav.control)roleNav.control=roleNav.control_escolar;
 })();
