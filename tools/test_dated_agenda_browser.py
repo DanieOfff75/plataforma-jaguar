@@ -1,0 +1,12 @@
+"""Mock API agenda smoke: distinct periods, suspension, escaped text and errors."""
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+root=Path(__file__).resolve().parents[1]
+with sync_playwright() as p:
+    b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=b.new_page();page.set_default_timeout(5000);errs=[];page.on('pageerror',lambda e:errs.append(str(e)))
+    page.set_content('<main id="host"></main>')
+    page.evaluate('''()=>{window.supabaseClient={auth:{getSession:async()=>({data:{session:{access_token:'mock'}}})}};window.jaguarReadJson=r=>r.json();window.calls=[];window.down=false;window.fetch=async(url,o)=>{calls.push({url,auth:o.headers.Authorization});return new Response(JSON.stringify(down?{ok:false,error:'Agenda no disponible'}:{ok:true,data:{cycle:'2026-2027',from:'2027-01-01',to:'2027-01-07',coverage:[{period:1,start:'2026-09-01',end:'2027-01-03',status:'disponible'},{period:2,start:'2027-01-04',end:'2027-04-01',status:'sin_padron_revisado'}],sessions:[{date:'2027-01-02',start:'08:00',end:'08:50',state:'cancelada',group:'1A',subject:'<b>Matemáticas</b>',teacher:'Docente A'},{date:'2027-01-03',start:'09:00',end:'09:50',state:'programada',group:'1A',subject:'Español',teacher:'Docente B'}]}}),{status:down?503:200,headers:{'Content-Type':'application/json'}})}}''')
+    page.add_script_tag(path=str(root/'assets/jaguar360-dated-agenda.js'));page.evaluate("document.getElementById('host').innerHTML=jaguarDatedAgenda.html()")
+    page.locator('[name=from]').fill('2027-01-01');page.locator('[name=to]').fill('2027-01-07');page.get_by_role('button',name='Consultar agenda').click();page.get_by_text('Suspendida',exact=True).wait_for();page.get_by_text('<b>Matemáticas</b>',exact=True).wait_for();assert page.get_by_text('Programada',exact=True).count()==1;assert page.get_by_text('Sin padrón vigente revisado',exact=False).count()==1;assert page.evaluate('calls[0].auth')=='Bearer mock';assert 'from=2027-01-01' in page.evaluate('calls[0].url');assert page.locator('.j360-agenda-output b').count()==1
+    page.evaluate('down=true');page.get_by_role('button',name='Consultar agenda').click();page.get_by_text('Agenda no disponible',exact=True).wait_for();assert page.get_by_text('Suspendida',exact=True).count()==0;assert not errs,errs
+    print('OK agenda por fechas, cobertura incompleta, cancelación, escape y fallo sin datos obsoletos (API simulada)');b.close()

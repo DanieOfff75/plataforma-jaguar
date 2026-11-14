@@ -1,0 +1,14 @@
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+root=Path(__file__).resolve().parents[1]
+with sync_playwright() as p:
+ b=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox']);page=b.new_page();page.set_default_timeout(5000);errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
+ page.set_content('<input id="jop_cycle" value="2027-2028"><div id="host"></div>');page.evaluate('''()=>{window.S={role:'coordinacion_academica'};window.supabaseClient={auth:{getSession:async()=>({data:{session:{access_token:'mock'}}})}};window.jaguarReadJson=r=>r.json();window.confirm=()=>true;window.prompt=q=>q.includes('Referencia')?'OFICIO-001':'Revisión independiente de publicación';window.ready=false;window.posted=[];window.ctx={version:1,plan:{policy:{periods:3,scheduleModel:'fixed'},curriculum:[]},groups:[],subjects:[],teachers:[],rooms:[],unscoped:0};window.fetch=async(url,opts={})=>{const body=opts.body?JSON.parse(opts.body):null;if(body)posted.push(body);let data;if(body?.operation==='publish')data={published:true,count:120,cycle:body.cycle};else if(String(url).includes('schedule_publication'))data={ready,published:false,cycle:'2027-2028',fingerprint:'a'.repeat(32),reasons:ready?[]:['Falta semana vigente revisada'],proposals:[{period:1,id:'2'}],experimental:true};else data={context:ctx,rows:[],experimental:true};return new Response(JSON.stringify({ok:true,data}),{headers:{'Content-Type':'application/json'}})}}''')
+ page.add_script_tag(path=str(root/'assets/jaguar360-institution.js'))
+ def open_panel(role):
+  page.evaluate('(role)=>{S.role=role;document.getElementById("host").innerHTML=jaguarInstitution.html()}',role)
+  page.get_by_text('Jornadas escolares y horarios propuestos',exact=True).click();page.get_by_role('button',name='Consultar catálogo de horarios').click();page.get_by_role('button',name='Comprobar publicación inicial').click()
+ open_panel('coordinacion_academica');page.get_by_text('Falta semana vigente revisada').wait_for();assert page.get_by_role('button',name='Publicar horario inicial (experimental)').count()==0
+ page.evaluate('ready=true');page.get_by_role('button',name='Comprobar publicación inicial').click();page.get_by_text('Horario compatible con publicación inicial.').wait_for();assert page.get_by_role('button',name='Publicar horario inicial (experimental)').count()==0
+ open_panel('direccion_escolar');page.get_by_role('button',name='Publicar horario inicial (experimental)').click();page.get_by_text('Horario registrado: 120 clases semanales').wait_for();assert page.evaluate('posted[0].fingerprint')=='a'*32;assert page.evaluate('posted[0].cycle')=='2027-2028';assert not errors,errors
+ print('OK: publicación inicial bloqueada sin revisión; consulta CA, ejecución Dirección, huella y resultado (API simulada)');b.close()

@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+// Read-only, offline comparison against the actual original and cumulative package hashes.
+import fs from 'node:fs';import path from 'node:path';import crypto from 'node:crypto';import {fileURLToPath} from 'node:url';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+function readEntry(base,rel){const parts=rel.split('/');if(parts.some(x=>!x||x==='.'||x==='..'||x.includes('\\')))throw Error('Ruta insegura: '+rel);let p=base;for(const part of parts){p=path.join(p,part);if(!fs.existsSync(p)){if(fs.lstatSync(p,{throwIfNoEntry:false})?.isSymbolicLink())throw Error('Enlace simbólico: '+p);return null;}if(fs.lstatSync(p).isSymbolicLink())throw Error('Enlace simbólico: '+p);}if(!fs.statSync(p).isFile())throw Error('No es archivo: '+p);return hash(fs.readFileSync(p));}
+const target=process.argv[2];if(!target||process.argv.length!==3||!fs.existsSync(target)){console.error('Uso: node tools/verificar-jaguar360-acumulado.mjs /ruta/al/repositorio-original');process.exit(2);}const dest=fs.realpathSync(target);if(dest===fs.realpathSync(root)){console.error('Selecciona el repositorio de destino, no el paquete.');process.exit(2);}
+const manifest=JSON.parse(fs.readFileSync(path.join(root,'JAGUAR360_INTEGRIDAD_V38.json'),'utf8'));let fail=0;const stats={original:0,new:0,already:0,conflict:0};
+for(const [rel,entry] of Object.entries(manifest.files)){try{if(readEntry(root,rel)!==entry.after){console.error('PAQUETE ALTERADO: '+rel);fail++;continue;}const value=readEntry(dest,rel);if(value===entry.after)stats.already++;else if(value===entry.before&&entry.before!==null)stats.original++;else if(value===null&&entry.before===null)stats.new++;else{stats.conflict++;console.error('CONFLICTO: '+rel);}}catch(e){fail++;console.error(e.message);}}
+for(const [rel,expected] of Object.entries(manifest.unchanged)){try{if(readEntry(dest,rel)!==expected){stats.conflict++;console.error('BASE DISTINTA: '+rel);}}catch(e){fail++;console.error(e.message);}}
+console.log(JSON.stringify({...stats,integrityErrors:fail}));console.log('Solo verificación. No se ha instalado ni escrito nada. No autoriza producción.');if(fail||stats.conflict)process.exitCode=1;
