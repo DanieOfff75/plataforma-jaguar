@@ -3,8 +3,9 @@ import {test} from 'node:test';
 import {sessionStatus,renewSession} from '../lib/ithla_session.js';
 const sid='11111111-2222-4333-8444-555555555555';
 function mockSession({id=sid,lastAgo=4,absoluteIn=60,role='docente',revoked=false}={}){
- const now=Date.now();const row={id,usuario_id:'U',aplicacion:'jaguar',ultimo_uso:new Date(now-lastAgo*60000).toISOString(),vence_absoluto:new Date(now+absoluteIn*60000).toISOString(),revocada_en:revoked?new Date(now).toISOString():null};let updates=0;
+ const now=Date.now();const row={id,usuario_id:'U',aplicacion:'jaguar',rol_activo:role,ultimo_uso:new Date(now-lastAgo*60000).toISOString(),vence_absoluto:new Date(now+absoluteIn*60000).toISOString(),revocada_en:revoked?new Date(now).toISOString():null};let updates=0;
  const admin={from(table){if(table==='ithla_config')return {select(){return this},eq(){return this},async single(){return {data:{valor:{}},error:null}}};
+  if(table==='docentes')return {select(){return this},eq(){return this},async maybeSingle(){return {data:{activo:true,estado_profesional:'activo'},error:null}}};
   if(table!=='ithla_sesiones')throw Error('Unexpected table');
   const query={
    update(changes){this.changes=changes;updates++;return this},select(){return this},eq(k,v){this.filters??=[];this.filters.push([k,v]);return this},is(k,v){this.filters??=[];this.filters.push([k,v]);return this},gt(k,v){this.checks??=[];this.checks.push([k,v]);return this},

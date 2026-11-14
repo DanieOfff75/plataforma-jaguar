@@ -55,7 +55,7 @@ test('Excel usa el formato visible 0 ó 0.0 y conserva el valor numérico bruto'
  assert.match(api,/permite_decimales:\(await currentGradePolicy\(admin,d\.period\.ciclo_escolar\)\)\.permite_decimales/);
 });
 
-test('regla oficial se usa también en cierre de rúbrica y adopción, sin reescribir historiales',()=>{
+test('regla oficial se usa también en cierre de rúbrica y adopción; migración base no reescribe historiales',()=>{
  assert.match(api,/async function currentGradePolicy\(/);
  assert.match(api,/finalizeGrade\(/);
  assert.match(api,/calificacion_sin_redondeo/);
@@ -77,7 +77,7 @@ test('la configuración ya existente de periodos es la única pantalla de decisi
  const html=await context.jaguarSchoolCycleConfig();
  assert.match(html,/Sin decimales/);
  assert.match(html,/option value="no" selected/);
- assert.match(html,/Guardar criterio y comunicar por oficio/);
+ assert.match(html,/Revisar impacto y guardar criterio/);
  assert.match(html,/Crear periodo/);
 });
 
@@ -91,7 +91,7 @@ test('cambio se registra con oficio, motivo y aviso a personal activo, no a estu
  assert.match(sql,/p\.rol not in \('alumno','aspirante','padre','tutor'\)/);
  assert.match(sql,/service_role/);
  assert.match(api,/profile\.rol!=='control_escolar'/);
- assert.match(api,/\.rpc\('jaguar_cambiar_precision_calificaciones'/);
+ assert.match(api,/\.rpc\('jaguar_aplicar_criterios_calificaciones'/);
  assert.match(api,/motivo\.length<15\|\|motivo\.length>300/);
  assert.match(ui,/maxlength="300"/);
  assert.match(office,/prepareInstitutionalPdf\(/);

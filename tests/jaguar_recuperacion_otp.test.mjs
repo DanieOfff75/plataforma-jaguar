@@ -44,5 +44,9 @@ test('La prueba se consume una sola vez y se cierran sesiones protegidas',()=>{
  assert.match(recovery,/jaguar_recuperacion_consumir/);
  assert.match(recovery,/ithla_sesiones/);
  assert.ok(recovery.indexOf('ithla_sesiones')<recovery.indexOf('updateUserById'));
- assert.match(recovery,/p\.length>=12/);
+ assert.match(recovery,/p\.length\s*>=\s*8/);
+ assert.match(recovery,/p\.length\s*<=\s*128/);
+ for(const id of ['new-password','confirm-password'])assert.match(html,new RegExp('id="'+id+'"[^>]*minlength="8"[^>]*maxlength="128"'));
+ assert.match(ui,/password.length < 8/);
+ assert.match(ui,/password!==confirm_password/);
 });

@@ -84,7 +84,7 @@ test('Importador UI muestra la misma nota oficial que el servidor',()=>{
  }
 });
 
-test('SQL protege todos los caminos de escritura y conserva cierres históricos',()=>{
+test('Migración base protege escrituras; la reaplicación posterior conserva las fuentes',()=>{
  const sql=read('sql/ITHLA_CALIFICACIONES_PRECISION_Y_OFICIOS_2026.sql');
  assert.match(sql,/v_original<v_minima/);
  assert.match(sql,/least\(v_final,v_max_reprobatorio\)/);
@@ -115,7 +115,7 @@ test('Coordinación Académica ve configuración de mínima, pero NO puede edita
  const rendered=await context.jaguarSchoolCycleConfig();
  assert.match(rendered,/id="jaguar_grade_precision" class="input mt-1" disabled/);
  assert.match(rendered,/id="jaguar_grade_pass" class="input mt-1"/);
- assert.match(rendered,/Guardar criterio y comunicar por oficio/);
+ assert.match(rendered,/Revisar impacto y guardar criterio/);
  assert.doesNotMatch(rendered,/\+ Crear periodo/);
 });
 

@@ -45,9 +45,17 @@ test('Separa módulos sensibles y no desbloquea notas desde el navegador',()=>{
  const data=readFileSync(new URL('../api/data.js',import.meta.url),'utf8');
  assert.match(page,/jaguarEvaluationDirectionPage/);assert.match(page,/jaguarLoadAttendanceHistory/);assert.match(page,/teacherGradesModule/);
  assert.match(route,/profile\.rol!=='direccion_escolar'/);assert.match(route,/jaguar_abrir_cerrar_evaluacion/);
- for(const resource of ['saveEvaluationScores','prepareEvaluationUpload','submitEvaluationPeriod','commitTeacherDailyUpload']){
+ for(const resource of ['saveEvaluationScores','prepareEvaluationUpload','submitEvaluationPeriod']){
   const position=data.indexOf("resource === '"+resource+"'");
   assert.ok(position>0,resource+' no encontrado');
   assert.match(data.slice(position,position+250),/requireEvaluationOpen/);
  }
+ // La bitácora es evidencia, no una publicación de calificaciones.
+ const pos=data.indexOf("resource === 'commitTeacherDailyUpload'");
+ assert.match(data.slice(pos,pos+450),/profile.rol!=='docente'/);
+ const daily=data.slice(data.indexOf('async function commitTeacherDailyUpload('),data.indexOf('async function listDailyGradebooks('));
+ assert.match(daily,/teacherDailyContext\(admin,user,gmId,periodoId\)/);
+ assert.match(daily,/weightedCount&&!windowStatus.habilitada&&body\?\.guardar_ponderaciones_como_borrador!==true/);
+ assert.match(daily,/ponderaciones_borrador:weightedCount>0/);
+ assert.doesNotMatch(daily,/\.from\(['"](?:calificaciones|evaluacion_notas|cierres_evaluacion)['"]\)/);
 });

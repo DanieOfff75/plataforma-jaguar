@@ -6,7 +6,7 @@ import path from 'node:path';
 const ROOT=path.resolve(import.meta.dirname,'..');
 const source=fs.readFileSync(path.join(ROOT,'assets/jaguar-admissions-director.js'),'utf8');
 const nav=source.substring(source.indexOf('/* Jaguar V6.0.2:'));
-const controlPath=path.join(ROOT,'centro-control/api/control.js');
+const controlPath=path.join(process.env.JAGUAR_CENTRO_DIR||path.join(ROOT,'centro-control'),'api/control.js');
 const control=fs.existsSync(controlPath)?fs.readFileSync(controlPath,'utf8'):null;
 const html=fs.readFileSync(path.join(ROOT,'sistema.html'),'utf8');
 test('dirección autenticada accede al módulo sin usar window.S',async()=>{

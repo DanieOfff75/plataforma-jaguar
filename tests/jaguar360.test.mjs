@@ -19,6 +19,9 @@ async function route(){
  let src=fs.readFileSync(new URL('../routes/jaguar360.js',import.meta.url),'utf8');
  src=src.replace("import {requireRoles} from '../lib/_admin.js';","const requireRoles=globalThis.__jaguar360RequireRoles;");
  src=src.replace("from '../lib/jaguar360_rules.js'",`from '${pathToFileURL(new URL('../lib/jaguar360_rules.js',import.meta.url).pathname).href}'`);
+ src=src.replace("from './internal-notices.js'",`from '${new URL('../routes/internal-notices.js',import.meta.url).href}'`);
+ src=src.replace("from './student-continuity.js'",`from '${new URL('../routes/student-continuity.js',import.meta.url).href}'`);
+ src=src.replace("from './dated-agenda.js'",`from '${new URL('../routes/dated-agenda.js',import.meta.url).href}'`);
  return (await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64')+'#'+(++loadSerial))).default;
 }
 function res(){return {statusCode:200,headers:{},status(code){this.statusCode=code;return this},setHeader(k,v){this.headers[k]=v;return this},json(body){this.body=body;return this}};}
@@ -96,7 +99,7 @@ test('migración protege modificación y deja rastro de auditoría en transacci�
 
 test('docente no puede consultar el historial de un trámite estudiantil',async()=>{
  const {db}=mockDb({student:{id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',departamento:'control_escolar',solicitante_id:'otra-cuenta',alumno_id:17}});
- const handler=await (async()=>{let src=fs.readFileSync(new URL('../routes/jaguar360.js',import.meta.url),'utf8');src=src.replace("import {requireRoles} from '../lib/_admin.js';","const requireRoles=globalThis.__jaguar360RequireRoles;").replace("from '../lib/jaguar360_rules.js'",`from '${new URL('../lib/jaguar360_rules.js',import.meta.url).href}'`);return (await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64')+'#historytest')).default;})();
+ const handler=await route();
  globalThis.__jaguar360RequireRoles=async()=>({user:{id:'11111111-1111-4111-8111-111111111111'},profile:{rol:'docente'},adminClient:db});
  const result=res();await handler({method:'GET',query:{mode:'history',id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'}},result);
  assert.equal(result.statusCode,403);

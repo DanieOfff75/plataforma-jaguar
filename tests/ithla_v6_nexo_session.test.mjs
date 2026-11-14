@@ -19,8 +19,8 @@ test('NEXO admite conocimiento autorizado y URL válida',()=>{
 test('clases de sesiones',()=>{assert.equal(sessionClass('direccion_escolar'),'direccion_escolar');assert.equal(sessionClass('control'),'control_escolar');assert.equal(sessionClass('prefectura'),'administrativo')});
 test('registro de sesión limita duración',async()=>{
  let saved=null;
- const mock={from:table=>table==='ithla_config'?{select:()=>({eq:()=>({single:async()=>({data:{valor:{docente:{inactividad:30,absoluta:480}}},error:null})})})}:{insert:async r=>{saved=r;return {error:null}}}};
- const p=await createSession(mock,'00000000-0000-0000-0000-000000000001','docente','jaguar');assert.equal(p.inactividad_min,30);assert.ok(saved.vence_absoluto);assert.equal(saved.perfil,'docente');
+ const mock={from:table=>table==='docentes'?{select:()=>({eq:()=>({maybeSingle:async()=>({data:{activo:true,estado_profesional:'activo'},error:null})})})}:table==='ithla_config'?{select:()=>({eq:()=>({single:async()=>({data:{valor:{docente:{inactividad:30,absoluta:480}}},error:null})})})}:{insert:async r=>{saved=r;return {error:null}}}};
+ const p=await createSession(mock,'00000000-0000-0000-0000-000000000001','docente','jaguar');assert.equal(p.inactividad_min,30);assert.ok(saved.vence_absoluto);assert.equal(saved.perfil,'docente');assert.equal(saved.rol_activo,'docente');
 });
 test('sesión sin identificador se rechaza',async()=>{
  const mock={};await assert.rejects(assertSession({headers:{}},mock,'user','docente','jaguar'),/Sesión protegida ausente/)
