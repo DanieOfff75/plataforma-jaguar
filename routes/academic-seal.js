@@ -7,7 +7,7 @@ export function sealRequest(b){
  if(b.confirmed!==true||!Number.isSafeInteger(b.planVersion)||b.planVersion<1||b.planVersion>2147483647||typeof b.fingerprint!=='string'||! /^[a-f0-9]{32}$/.test(b.fingerprint)||typeof b.reason!=='string'||b.reason.trim().length<15||b.reason.length>1500)throw err('Confirmación, versión, huella o motivo inválido.');
  return {p_periodo:checked(()=>evidenceId(b.period)),p_plan_version:b.planVersion,p_huella:b.fingerprint,p_motivo:b.reason.trim()};
 }
-async function rpc(db,name,args){const {data,error}=await db.rpc(name,args);if(error)throw err(error.code==='42501'?'Sin atribución.':error.code==='P0001'?error.message:error.code==='55P03'?'Hay escrituras en curso: vuelve a consultar.':'No fue posible acceder al cierre protegido. Comprueba V9.',error.code==='42501'?403:['P0001','55P03'].includes(error.code)?409:503);return data;}
+async function rpc(db,name,args){const {data,error}=await db.rpc(name,args);if(error)throw err(error.code==='42501'?'Sin atribución.':error.code==='P0001'?error.message:error.code==='55P03'?'Hay escrituras en curso: vuelve a consultar.':'No fue posible acceder al cierre protegido · código '+(String(error.code||'').match(/^[A-Z0-9]{5,10}$/)?.[0]||'sin código')+'.',error.code==='42501'?403:['P0001','55P03'].includes(error.code)?409:503);return data;}
 export async function academicSeal(req,res,{user,profile,adminClient:db}){
  const b=req.body||{},q=req.query||{};let data;
  const experimental=process.env.JAGUAR360_TEST_SEALS==='true';

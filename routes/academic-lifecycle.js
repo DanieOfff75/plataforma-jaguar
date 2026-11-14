@@ -1,3 +1,4 @@
+import {subjectEvaluationPreview} from './subject-evaluation-preview.js';
 import {schoolMovement} from './school-movement.js';
 import {recoveryWorkflow} from './recovery-workflow.js';
 import {recoveryCandidateRoute} from './recovery-candidate.js';
@@ -28,6 +29,7 @@ export default async function handler(req,res){
  try{
  const auth=await requireRoles(req,roles);
  const {user,profile,adminClient:db}=auth;
+ if(await subjectEvaluationPreview(req,res,auth))return;
  if(await schoolMovement(req,res,auth))return;
  if(await cycleOpening(req,res,auth))return;
  if(await institutionalPlanning(req,res,auth))return;
@@ -70,7 +72,7 @@ export default async function handler(req,res){
   if(req.query?.view==='verification'){
    const period=validate(()=>evidenceId(req.query.period));
    const {data,error}=await db.rpc('jaguar360_verificar_cierre',{p_actor:user.id,p_periodo:period});
-   if(error)throw fail(error.code==='42501'?'Sin atribución.':'No se pudo verificar el periodo. Comprueba la migración V6.',error.code==='42501'?403:503);
+   if(error)throw fail(error.code==='42501'?'Sin atribución.':error.code==='P0001'?error.message:'No se pudo verificar el periodo · código '+(String(error.code||'').match(/^[A-Z0-9]{5,10}$/)?.[0]||'sin código')+'.',error.code==='42501'?403:error.code==='P0001'?409:503);
    return res.status(200).json({ok:true,data});
   }
   if(req.query?.view==='closure'){
@@ -79,7 +81,7 @@ export default async function handler(req,res){
    return res.status(200).json({ok:true,data});
   }
   const cycle=req.query?.cycle?validate(()=>validateCycle(req.query.cycle)):null;
-  if(cycle){const rows=await read(db.from('jaguar360_planes_ciclo').select('*').eq('ciclo',cycle).order('version',{ascending:false}).limit(50));return res.status(200).json({ok:true,data:{rows}})}
+  if(cycle){const rows=await read(db.from('jaguar360_planes_ciclo').select('*').eq('ciclo',cycle).order('version',{ascending:false}).limit(50));const current=rows.find(r=>r.estado==='validada_para_planificacion');if(current)current.effectivePlan=await read(db.rpc('jaguar360_plan_con_modos',{p_plan:current.plan,p_ciclo:cycle}));return res.status(200).json({ok:true,data:{rows}})}
   const [periods,plans]=await Promise.all([read(db.from('periodos_escolares').select('id,nombre,ciclo_escolar,numero_periodo,fecha_inicio,fecha_fin,activo,es_periodo_actual').order('id',{ascending:false}).limit(100)),read(db.from('jaguar360_planes_ciclo').select('ciclo,version,estado,actor_nombre,creado_at').order('id',{ascending:false}).limit(100))]);
   return res.status(200).json({ok:true,data:{periods,plans}});
  }

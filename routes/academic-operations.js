@@ -33,7 +33,8 @@ export async function academicOperations(req,res,{user,profile,adminClient:db}){
   planVersion=version(b.planVersion);
   const {data,error}=await db.from('jaguar360_planes_ciclo').select('plan').eq('ciclo',cycle).eq('version',planVersion).eq('estado','validada_para_planificacion').maybeSingle();
   if(error||!data)throw fail('Plan validado no disponible.',409);
-  rules=checked(()=>validateCall(b.rules,data.plan));
+  const effective=await rpc(db,'jaguar360_plan_con_modos',{p_plan:data.plan,p_ciclo:cycle});
+  rules=checked(()=>validateCall(b.rules,effective));
  }else id=checked(()=>evidenceId(b.id));
  const data=await rpc(db,'jaguar360_registrar_convocatoria',{p_actor:user.id,p_ciclo:cycle,p_plan_version:planVersion,p_accion:op,p_id:id,p_version:version(b.version,op==='proponer'),p_reglas:rules,p_motivo:b.reason.trim()});
  res.status(200).json({ok:true,data});return true;

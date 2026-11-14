@@ -1,3 +1,4 @@
+import {projectedMarks,gradeNumber} from '../lib/jaguar360_mixed_grades.js';
 import {requestRoles,requestTypes,requestRole,requestId,canReadRequest,scopedRequests} from '../lib/jaguar360_request_scope.js';
 import {assertGenericAcademicWrite} from '../lib/jaguar360_legacy_write_guard.js';
 import {permanentMatricula,assertLegacyGroupMovement} from '../lib/jaguar360_identity.js';
@@ -515,7 +516,8 @@ async function getStudentOverview(admin, userId) {
   if (!studentQuery.data) throw Object.assign(new Error('Alumno no encontrado.'), { status: 404 });
 
   const enriched = (await enrichStudentsWithAccounts(admin, [studentQuery.data]))[0];
-  const values = (grades.data || []).map(x => Number(x.calificacion)).filter(Number.isFinite);
+  const visibleGrades=await projectedMarks(admin,grades.data||[]);
+  const values=visibleGrades.filter(x=>x.periodos_escolares?.ciclo_escolar===cycle).map(x=>gradeNumber(x.calificacion_visible)).filter(x=>x!==null);
   enriched.promedio_calculado = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
   enriched.horas_clase_semana = (schedules.data || []).length;
   enriched.suspendido = Boolean(enriched.suspension_fecha || enriched.suspension_motivo);
@@ -544,7 +546,7 @@ async function getStudentOverview(admin, userId) {
 
   return {
     student: enriched,
-    grades: grades.data || [],
+    grades: visibleGrades,
     attendance: attendance.data || [],
     schedules: schedules.data || [],
     workshops: workshops.data || [],
@@ -978,12 +980,10 @@ async function dashboard(admin, profile, user) {
     data: gradeRows
   } = await admin
     .from('calificaciones')
-    .select('calificacion')
+    .select('id,calificacion')
     .limit(2000);
 
-  const nums = (gradeRows || [])
-    .map(x => Number(x.calificacion))
-    .filter(Number.isFinite);
+  const nums = (await projectedMarks(admin,gradeRows||[])).map(x=>gradeNumber(x.calificacion_visible)).filter(x=>x!==null);
 
   const promedio = nums.length
     ? nums.reduce((a, b) => a + b, 0) / nums.length
@@ -1063,14 +1063,14 @@ async function dashboardAnalytics(admin,profile){
   }
   const limit=5000;
   const [gradesQ,attendanceQ,studentsQ]=await Promise.all([
-    admin.from('calificaciones').select('calificacion').order('id',{ascending:false}).limit(limit),
+    admin.from('calificaciones').select('id,calificacion').order('id',{ascending:false}).limit(limit),
     admin.from('asistencias').select('fecha,estado').order('fecha',{ascending:false}).limit(limit),
     admin.from('alumnos').select('grupos(grado)').eq('activo',true).not('estado_escolar','in','(archivado,baja,traslado,egresado)').limit(limit)
   ]);
   for(const q of [gradesQ,attendanceQ,studentsQ])if(q.error)throw q.error;
   const buckets=[0,0,0,0,0];
   let sum=0,graded=0,passed=0;
-  for(const row of gradesQ.data||[]){
+  for(const row of await projectedMarks(admin,gradesQ.data||[])){
     if(row.calificacion===null||row.calificacion===undefined||String(row.calificacion).trim()==='')continue;
     const n=Number(row.calificacion);
     if(!Number.isFinite(n)||n<0||n>10)continue;
@@ -2271,7 +2271,8 @@ async function getResource(
       ] = await Promise.all([
         admin
           .from('calificaciones')
-          .select('calificacion')
+          .select('id,calificacion,periodos_escolares!inner(ciclo_escolar)')
+          .eq('periodos_escolares.ciclo_escolar',await activeCycle(admin))
           .eq('alumno_id', alumno.id),
 
         admin
@@ -2317,9 +2318,7 @@ async function getResource(
         }
       }
 
-      const values = (gradesQuery.data || [])
-        .map(x => Number(x.calificacion))
-        .filter(Number.isFinite);
+      const values = (await projectedMarks(admin,gradesQuery.data||[])).map(x=>gradeNumber(x.calificacion_visible)).filter(x=>x!==null);
 
       alumno.promedio_calculado = values.length
         ? values.reduce((x, y) => x + y, 0) /
@@ -2473,7 +2472,7 @@ async function getResource(
     const enrichedStudent = (await enrichStudentsWithAccounts(admin, [student]))[0];
     return {
       student: enrichedStudent,
-      grades: grades.data || [],
+      grades: await projectedMarks(admin,grades.data||[]),
       attendance: attendance.data || [],
       workshops: workshops.data || [],
       movements: movements.data || []
@@ -2670,7 +2669,7 @@ async function getResource(
     if (!['direccion_escolar','control_escolar','control','servicios_estudiantiles','coordinacion_academica','servicios_docentes'].includes(profile.rol)) throw Object.assign(new Error('No autorizado.'), { status: 403 });
     const { data, error } = await admin.from('calificaciones').select('id,alumno_id,calificacion,observaciones,periodo_id,grupo_materia_id,docente_id,alumno:alumnos(id,nombre_completo,matricula,grupo_id,grupos(id,clave,grado,letra)),periodos_escolares(id,nombre,ciclo_escolar),grupo_materias(id,grupo_id,materia_id,horas_semana,materias(id,nombre,clave),grupos(id,clave,grado,letra))').order('id', { ascending:false }).limit(5000);
     if (error) throw error;
-    return data || [];
+    return projectedMarks(admin,data||[]);
   }
 
   /* -------------------------
@@ -2725,16 +2724,18 @@ async function getResource(
       admin.from('docentes').select('id,nombre_completo,numero_empleado,especialidad,correo').eq('id', tid).maybeSingle()
     ]);
     for (const q of [studentsQ,attendanceQ,gradesQ,periodsQ,teacherQ]) if(q.error) throw q.error;
-    const students=sortInstitutionalPeople(await enrichStudentsWithAccounts(admin, studentsQ.data||[])), attendance=attendanceQ.data||[], grades=gradesQ.data||[];
+    const students=sortInstitutionalPeople(await enrichStudentsWithAccounts(admin, studentsQ.data||[])), attendance=attendanceQ.data||[], grades=await projectedMarks(admin,gradesQ.data||[]);
     const byStudent=new Map(students.map(s=>[String(s.id),{...s,attendance:{},grades:{}}]));
     for(const a of attendance){const x=byStudent.get(String(a.alumno_id));if(x)x.attendance[a.fecha]=a.estado||'';}
-    for(const g of grades){const x=byStudent.get(String(g.alumno_id));if(x)x.grades[String(g.periodo_id)]={calificacion:g.calificacion,observaciones:g.observaciones||'',periodo:g.periodos_escolares?.nombre||''};}
+    for(const g of grades){const x=byStudent.get(String(g.alumno_id));if(x)x.grades[String(g.periodo_id)]={calificacion:g.calificacion_visible??g.calificacion,observaciones:g.observaciones||'',periodo:g.periodos_escolares?.nombre||''};}
     const periods=(periodsQ.data||[]).sort((a,b)=>Number(a.numero_periodo||0)-Number(b.numero_periodo||0)||Number(a.id)-Number(b.id)).map((p,i)=>({id:p.id,label:`P${Number(p.numero_periodo||i+1)}`,nombre:p.nombre}));
     return {assignment,teacher:teacherQ.data||{},students:[...byStudent.values()],attendanceDates:[...new Set(attendance.map(a=>a.fecha))].sort(),periods,cycle};
   }
 
   if (key === 'teacherGrades') {
-    return getTeacherRoster(admin, user, req.query?.grupo_materia_id, { periodo_id: req.query?.periodo_id });
+    const roster=await getTeacherRoster(admin,user,req.query?.grupo_materia_id,{periodo_id:req.query?.periodo_id});
+    const projected=await projectedMarks(admin,roster.students.map(s=>s.grade).filter(Boolean));const byId=new Map(projected.map(x=>[String(x.id),x]));
+    for(const student of roster.students)if(student.grade){const p=byId.get(String(student.grade.id));student.grade={...student.grade,calificacion_visible:p.calificacion_visible,modo_evaluacion:p.modo_evaluacion};}return roster;
   }
 
   if (key === 'teacherAttendance') {
@@ -3292,6 +3293,7 @@ async function getResource(
     return noticeRows.filter(notice=>noticeVisibleTo(notice,profile.rol)).map(notice=>({...notice,responsable:respMap.get(String(notice.responsable_id))||null}));
   }
 
+  if(key==='grades')return projectedMarks(admin,data||[]);
   return data || [];
 }
 

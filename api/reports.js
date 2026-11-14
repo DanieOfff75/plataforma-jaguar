@@ -1,3 +1,5 @@
+import {historicalBoletaValues} from '../lib/jaguar360_boleta_historica.js';
+import {mixedGradeSummary,averageText} from '../lib/jaguar360_mixed_grades.js';
 import {reportGradeText,legacyPeriodScope,countLegacyAbsenceDays,legacyEvaluationSummary,assignLegacyGrade} from '../lib/jaguar360_legacy_report.js';
 import {gradePolicyFromRow} from '../lib/grade_precision.js';
 import {requireLegacyReportCompatible} from '../lib/jaguar360_report_guard.js';
@@ -698,9 +700,15 @@ async function credentialPdf(admin,id,req=null){
   }catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
 }
 
-async function boletaPdf(admin,id,req=null){
+async function boletaPdf(admin,id,req=null,actor=null){
   const cycle=await activeCycle(admin);
-  await requireLegacyReportCompatible(admin,id,cycle);
+  let historical=null;
+  try{await requireLegacyReportCompatible(admin,id,cycle);}catch(e){
+    if(e.status!==409||!actor)throw e;
+    const {data,error}=await admin.rpc('jaguar360_boleta_historica',{p_actor:actor,p_ciclo:cycle,p_alumno:String(id)});
+    if(error){throw Object.assign(Error(error.code==='P0001'?error.message:'No se pudo conciliar la evidencia histórica de esta boleta.'),{status:409});}
+    historical=data;
+  }
   const institution=await institutionForPdf(admin);
   const {data:s,error:se}=await admin.from('alumnos').select('id,nombre_completo,matricula,grupo_id,turno,grupos(clave,grado,letra,turno)').eq('id',id).maybeSingle();
   if(se) throw se;
@@ -734,9 +742,15 @@ async function boletaPdf(admin,id,req=null){
   const attendanceQ=await admin.from('asistencias').select('fecha,estado,grupo_materia_id',{count:'exact'}).eq('alumno_id',id).eq('estado','falta').in('grupo_materia_id',groupMatterScope).gte('fecha',periods[0].fecha_inicio).lte('fecha',periods.at(-1).fecha_fin).order('fecha',{ascending:true}).limit(5000);
   if(attendanceQ.error)throw attendanceQ.error;
   if(!Number.isInteger(attendanceQ.count)||attendanceQ.count!==(attendanceQ.data||[]).length)throw Object.assign(Error('Consulta de faltas incompleta. Se requiere conciliación.'),{status:409});
+  const {data:modeSnapshot,error:modeError}=await admin.rpc('jaguar360_boleta_modos',{p_alumno:String(id),p_ciclo:cycle});
+  if(modeError||!Array.isArray(modeSnapshot?.notas)||!Array.isArray(modeSnapshot?.modos)||!/^[a-f0-9]{32}$/.test(modeSnapshot.huella||''))throw Object.assign(Error('No se pudo conciliar el modo de evaluación de la boleta.'),{status:503});
+  const gradeProjection=new Map(modeSnapshot.notas.map(r=>[r.id,r]));
+  if(gradeProjection.size!==(gradesQ.data||[]).length||(gradesQ.data||[]).some(g=>!gradeProjection.has(String(g.id))))throw Object.assign(Error('Las notas cambiaron durante la consulta. Genera la boleta de nuevo.'),{status:409});
+  const subjectModes=new Map(modeSnapshot.modos.map(r=>[r.id,r.modo]));
   const periodLabels=periods.map((p,i)=>({id:p.id,label:`P${Number(p.numero_periodo||i+1)}`,fullLabel:((p.nombre||'').trim()||['1.er periodo','2.º periodo','3.er periodo'][i]||`Periodo ${i+1}`)}));
   const periodIndex=new Map(periodLabels.filter(p=>p.id!=null).map((p,i)=>[String(p.id),i]));
 
+  const historicalValues=historical?historicalBoletaValues(historical,s,periods,groupSubjectsQ.data||[]):null;
   const subjectMap=new Map();
   // Registrar todas las materias oficiales del grupo, incluso sin nota.
   // Las exclusiones tradicionales se conservan; un nuevo plan requiere el motor histórico.
@@ -744,7 +758,7 @@ async function boletaPdf(admin,id,req=null){
     const name=String(gm.materias?.nombre||'Materia');
     if(/lengua\s+ind[ií]gena|^artes$/i.test(name.trim()))continue; // Exclusión histórica aprobada para el formato.
     if(!subjectMap.has(String(gm.materia_id)))subjectMap.set(String(gm.materia_id),{
-      materia_id:gm.materia_id,name,grades:{},teachers:new Set(),gradeTeachersFromGroup:new Set(),observations:[]
+      materia_id:gm.materia_id,name,mode:subjectModes.get(String(gm.materia_id))||'numerica',grades:{},teachers:new Set(),gradeTeachersFromGroup:new Set(),observations:[]
     });
   }
   for(const g of gradesQ.data||[]){
@@ -757,10 +771,16 @@ async function boletaPdf(admin,id,req=null){
     const x=subjectMap.get(String(sid));
     const pi=periodIndex.get(String(g.periodo_id));
     if(pi===undefined)throw Object.assign(Error('Periodo de la nota sin conciliar.'),{status:409});
-    assignLegacyGrade(x,pi,g.calificacion);
+    const projected=gradeProjection.get(String(g.id));
+    if(!historicalValues&&projected.modo!==x.mode)throw Object.assign(Error('Modo de evaluación incongruente.'),{status:409});
+    if(!historicalValues)assignLegacyGrade(x,pi,projected.valor);
     // Una nota de recursamiento puede haberla capturado otro docente: no lo hace titular del grupo.
     if(g.docente_id&&String(g.grupo_materias?.grupos?.id)===String(s.grupo_id)) x.gradeTeachersFromGroup.add(String(g.docente_id));
     if(g.observaciones) x.observations.push(String(g.observaciones));
+  }
+  if(historicalValues){
+    for(const x of subjectMap.values()){const h=historicalValues.subjects.get(String(x.materia_id));if(!h)throw Object.assign(Error('Falta resultado histórico conciliado para '+x.name),{status:409});x.mode=h.mode;x.grades=h.grades;}
+    for(const mid of historicalValues.subjects.keys()){if(!subjectMap.has(mid)){const gm=(groupSubjectsQ.data||[]).find(g=>String(g.materia_id)===mid);if(!/lengua\s+ind[ií]gena|^artes$/i.test(String(gm?.materias?.nombre||'').trim()))throw Object.assign(Error('Materia histórica fuera de la boleta.'),{status:409});}}
   }
   // Si hubo sustitución formal, el titular vigente proviene de la asignación activa.
   // Los docentes anteriores aparecen sólo como nota histórica cuando evaluaron este grupo.
@@ -775,7 +795,7 @@ async function boletaPdf(admin,id,req=null){
       const {data:vacancies,error:ve}=await admin.from('jaguar_vacantes_docentes').select('grupo_materia_id,docente_anterior_id,docente_nuevo_id,ciclo_escolar,estado').in('grupo_materia_id',groupMatterIds).eq('ciclo_escolar',cycle).eq('estado','cubierta');
       if(ve)throw ve;
       for(const v of vacancies||[]){const gm=(groupSubjectsQ.data||[]).find(g=>Number(g.id)===Number(v.grupo_materia_id));if(!gm)continue;
-        const before=(gradesQ.data||[]).some(g=>Number(g.grupo_materia?.id)===Number(v.grupo_materia_id)&&Number(g.docente_id)===Number(v.docente_anterior_id)&&g.periodos_escolares?.ciclo_escolar===cycle&&g.calificacion!=null);
+        const before=(gradesQ.data||[]).some(g=>Number(g.grupo_materias?.id)===Number(v.grupo_materia_id)&&Number(g.docente_id)===Number(v.docente_anterior_id)&&g.periodos_escolares?.ciclo_escolar===cycle&&g.calificacion!=null);
         const current=activeTeachersBySubject.get(String(gm.materia_id));if(!before||!current?.has(String(v.docente_nuevo_id)))continue;
         const k=String(gm.materia_id);if(!historicalTeachersBySubject.has(k))historicalTeachersBySubject.set(k,new Set());historicalTeachersBySubject.get(k).add(String(v.docente_anterior_id));
       }
@@ -807,20 +827,14 @@ async function boletaPdf(admin,id,req=null){
   if(subjects.length>10)throw Object.assign(new Error('El grupo tiene más de 10 materias oficiales; revisa las asignaciones antes de emitir una boleta incompleta.'),{status:409});
   for(const x of subjects){
     x.teacher=[...x.teachers].map(t=>teacherNames.get(t)).filter(Boolean)[0]||'Sin docente';
-    const vals=Object.values(x.grades).filter(v=>v!==null&&Number.isFinite(v));
-    x.avg=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
   }
-
-  const absenceDays=countLegacyAbsenceDays(attendanceQ.data||[],periods,groupSubjectsQ.data||[]);
-  const allGrades=subjects.flatMap(x=>Object.values(x.grades)).filter(v=>Number.isFinite(v));
-  const overall=allGrades.length?allGrades.reduce((a,b)=>a+b,0)/allGrades.length:null;
-  const summary=legacyEvaluationSummary(subjects,periods,gradePolicyFromRow(policyQ.data).minima_aprobatoria);
+  const absenceDays=historicalValues?.absenceDays??countLegacyAbsenceDays(attendanceQ.data||[],periods,groupSubjectsQ.data||[]);
+  const minimum=gradePolicyFromRow(policyQ.data).minima_aprobatoria;
+  const summary=mixedGradeSummary(subjects,periods.length,minimum);
+  subjects.forEach((x,i)=>{x.avg=summary.summaries[i].avg;});
+  const overall=summary.overall;
   const observations=[...new Set(subjects.flatMap(x=>x.observations))].filter(Boolean).slice(0,4);
   const folio=`${institution.siglas||'ITHLA'}-${cycle.replace(/[^0-9]/g,'')}-${String(s.id).padStart(6,'0')}-${Date.now().toString().slice(-5)}`;
-
-  const verification=await registerVerifiableDocument(admin,{folio,tipo:'boleta',titulo:'BOLETA DE CALIFICACIONES',alumno_id:s.id,req,payload:{alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:s.grupos?.clave,grado:s.grupos?.grado?`${s.grupos.grado}°`:'—',ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion,lema:institution.lema||institution.lema_traduccion||''},taller:workshopName,detalle:subjects.slice(0,40).map(x=>({label:x.name,value:`${periodLabels.map((_,i)=>x.grades[i]==null?'—':reportGradeText(x.grades[i])).join(' · ')} · Promedio ${x.avg==null?'—':x.avg.toFixed(2)}`}))}});
-  let verificationQr=null;
-  try{verificationQr=await qrPng(verification.verificationUrl,{size:180});}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
 
   // La estética es ahora el HTML exacto convertido una sola vez en fondo PDF.
   // Datos, QR y firmas se colocan sobre posiciones calculadas desde ese HTML.
@@ -847,11 +861,15 @@ async function boletaPdf(admin,id,req=null){
     const history=historyNames.length?`Antes: ${historyNames.join(', ')}`:'';
     teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:related.join(', '),history});
   }
+  const verification=await registerVerifiableDocument(admin,{folio,tipo:'boleta',titulo:'BOLETA DE CALIFICACIONES',alumno_id:s.id,created_by:actor,req,payload:{...(historicalValues?{huella_historica:historicalValues.hash}:{}),evaluacion_huella:modeSnapshot.huella,alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:s.grupos?.clave,grado:s.grupos?.grado?`${s.grupos.grado}°`:'—',ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion,lema:institution.lema||institution.lema_traduccion||''},taller:workshopName,detalle:subjects.slice(0,40).map(x=>({label:x.name,value:`${periodLabels.map((_,i)=>x.grades[i]==null?'—':reportGradeText(x.grades[i])).join(' · ')} · Promedio ${averageText(x.avg,2,minimum)}`}))}});
+  let verificationQr=null;
+  try{verificationQr=await qrPng(verification.verificationUrl,{size:180});}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
+
   let bytes;
   try{bytes=await renderBoletaVisual15({
     institution,cycle,student:{...s,workshop:workshopName},subjects,periodLabels,
     teachers:teacherProfiles,departments:departmentSigners,folio,qrBytes:verificationQr,
-    attendanceFaltas:absenceDays,overall,failed:summary.failed,evaluationStatus:summary.status,observations,
+    attendanceFaltas:absenceDays,overall,minimum,failed:summary.failed,evaluationStatus:summary.status,observations,
     loadSignature:(pdf,path)=>loadSignatureImage(pdf,admin,path)
   });}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
   return {pdf_base64:Buffer.from(bytes).toString('base64'),filename:`${institution.siglas||'ITHLA'}-Boleta-${safe(s.matricula||s.nombre_completo)}.pdf`};
@@ -1013,7 +1031,7 @@ export default async function handler(req,res){try{if(req.method!=='POST')return
     return res.status(200).json({ok:true,pdf_base64:Buffer.from(bytes).toString('base64'),filename:`ITHLA-Calificaciones-${safeFile(details.grupo?.clave)}-${safeFile(details.periodo?.nombre)}-${safeFile(details.materia?.nombre)}.pdf`});
   }
   if(b.action==='teacher_daily_blank_pdf'){if(profile.rol!=='docente')return res.status(403).json({ok:false,error:'Solo el docente asignado puede descargar esta lista.'});return res.status(200).json({ok:true,...await manualTeacherGradebookPdf(adminClient,user,b)});}
-  if(b.action==='daily_gradebook_pdf'){if(!['servicios_docentes','control_escolar','control','direccion_escolar','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,...await dailyGradebookPdf(adminClient,Number(b.snapshot_id||0),req)});}if(b.action==='signature_diagnostics'){if(!['direccion_escolar','control_escolar','control','servicios_docentes','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,data:await signatureDiagnostics(adminClient,b)});}if(b.action==='group_schedule'){if(!['direccion_escolar','control_escolar','control','coordinacion_academica','servicios_estudiantiles'].includes(profile.rol))return res.status(403).json({ok:false,error:'Este perfil no puede generar el horario de un grupo.'});const gid=Number(b.grupo_id||0);if(!gid)return res.status(400).json({ok:false,error:'Grupo no válido.'});return res.status(200).json({ok:true,...await groupSchedulePdf(adminClient,gid,req)});}if(b.action==='teacher_schedule'){if(profile.rol!=='docente')return res.status(403).json({ok:false,error:'Solo el docente puede descargar su horario.'});const {data:t}=await adminClient.from('docentes').select('id').eq('auth_user_id',user.id).maybeSingle();if(!t)return res.status(404).json({ok:false,error:'Docente no vinculado.'});return res.status(200).json({ok:true,...await teacherSchedulePdf(adminClient,t.id,req)});}if(b.action==='student_schedule'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su horario.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await studentSchedulePdf(adminClient,s.id,req)});}if(b.action==='student_boleta'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su boleta.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,s.id,req)});}if(b.action==='student_credential_photo_status'||b.action==='student_credential_photo_upload'){
+  if(b.action==='daily_gradebook_pdf'){if(!['servicios_docentes','control_escolar','control','direccion_escolar','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,...await dailyGradebookPdf(adminClient,Number(b.snapshot_id||0),req)});}if(b.action==='signature_diagnostics'){if(!['direccion_escolar','control_escolar','control','servicios_docentes','coordinacion_academica'].includes(profile.rol))return res.status(403).json({ok:false,error:'No autorizado.'});return res.status(200).json({ok:true,data:await signatureDiagnostics(adminClient,b)});}if(b.action==='group_schedule'){if(!['direccion_escolar','control_escolar','control','coordinacion_academica','servicios_estudiantiles'].includes(profile.rol))return res.status(403).json({ok:false,error:'Este perfil no puede generar el horario de un grupo.'});const gid=Number(b.grupo_id||0);if(!gid)return res.status(400).json({ok:false,error:'Grupo no válido.'});return res.status(200).json({ok:true,...await groupSchedulePdf(adminClient,gid,req)});}if(b.action==='teacher_schedule'){if(profile.rol!=='docente')return res.status(403).json({ok:false,error:'Solo el docente puede descargar su horario.'});const {data:t}=await adminClient.from('docentes').select('id').eq('auth_user_id',user.id).maybeSingle();if(!t)return res.status(404).json({ok:false,error:'Docente no vinculado.'});return res.status(200).json({ok:true,...await teacherSchedulePdf(adminClient,t.id,req)});}if(b.action==='student_schedule'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su horario.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await studentSchedulePdf(adminClient,s.id,req)});}if(b.action==='student_boleta'){if(profile.rol!=='alumno')return res.status(403).json({ok:false,error:'Solo el alumno puede descargar su boleta.'});const {data:s}=await adminClient.from('alumnos').select('id').eq('auth_user_id',user.id).maybeSingle();if(!s)return res.status(404).json({ok:false,error:'Alumno no vinculado.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,s.id,req,user.id)});}if(b.action==='student_credential_photo_status'||b.action==='student_credential_photo_upload'){
   if(profile.rol!=='servicios_estudiantiles')return res.status(403).json({ok:false,error:'Solo Servicios Estudiantiles puede gestionar fotografías de credenciales.'});
   const alumnoId=Number(b.alumno_id||0);
   if(!Number.isSafeInteger(alumnoId)||alumnoId<=0)return res.status(400).json({ok:false,error:'Alumno no válido.'});
@@ -1026,4 +1044,4 @@ export default async function handler(req,res){try{if(req.method!=='POST')return
   }
   const photo=await readCredentialPhoto(adminClient,alumnoId);
   return res.status(200).json({ok:true,data:{registered:!!photo,photo_base64:photo?photo.toString('base64'):null}});
-}if(b.action==='student_credential'){if(profile.rol!=='servicios_estudiantiles')return res.status(403).json({ok:false,error:'Solo Servicios Estudiantiles puede tramitar y generar credenciales.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await credentialPdf(adminClient,alumnoId,req)});}if(b.action==='student_boleta_admin'){if(!['control_escolar','control','direccion_escolar'].includes(profile.rol))return res.status(403).json({ok:false,error:'Solo Control Escolar o Dirección puede generar la boleta de otro alumno.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,alumnoId,req)});}return res.status(400).json({ok:false,error:'Acción de PDF no reconocida.'});}catch(e){return res.status(e.status||500).json({ok:false,error:e.message||'Error generando PDF.'});}}
+}if(b.action==='student_credential'){if(profile.rol!=='servicios_estudiantiles')return res.status(403).json({ok:false,error:'Solo Servicios Estudiantiles puede tramitar y generar credenciales.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await credentialPdf(adminClient,alumnoId,req)});}if(b.action==='student_boleta_admin'){if(!['control_escolar','control','direccion_escolar'].includes(profile.rol))return res.status(403).json({ok:false,error:'Solo Control Escolar o Dirección puede generar la boleta de otro alumno.'});const alumnoId=Number(b.alumno_id||0);if(!alumnoId)return res.status(400).json({ok:false,error:'Alumno no válido.'});return res.status(200).json({ok:true,...await boletaPdf(adminClient,alumnoId,req,user.id)});}return res.status(400).json({ok:false,error:'Acción de PDF no reconocida.'});}catch(e){return res.status(e.status||500).json({ok:false,error:e.message||'Error generando PDF.'});}}

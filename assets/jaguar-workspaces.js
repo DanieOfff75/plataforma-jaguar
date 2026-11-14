@@ -12,7 +12,7 @@
   ['archivo','Documentación',['archivo','documentos_oficiales','documentos','retencion']],
   ['finanzas','Finanzas',['recursos_monetarios','mis_pagos']],
   ['comunicaciones','Comunicaciones',['notificaciones','avisos','oficios_firma','portal_publico']],
-  ['institucion','Gobierno institucional',['planificacion_360','admision_control','departamentos','encargados','institucion','estadisticas']],
+  ['institucion','Gobierno institucional',['modo_materia_360','planificacion_360','admision_control','departamentos','encargados','institucion','estadisticas']],
   ['sistema','Configuración y seguridad',['config','usuarios','auditoria','salud_360','sms_gateway']],
   ['perfil','Mi perfil',['perfil','config_docente']]
  ];

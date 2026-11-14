@@ -1,0 +1,38 @@
+{
+  "base": "V38 + correcciones de planificación",
+  "migracion": "sql/ITHLA_JAGUAR_360_MODO_MATERIA_V40.sql",
+  "archivos": {
+    "api/data.js": "a086c11ea03732b446a6b0784950bc08e10a0bf9e2815052d8b50e6ab1352168",
+    "api/reports.js": "1a83680eb7bf6d4cf0d94998e9e531df9570c4074a809788d3cec100d2de3764",
+    "assets/jaguar-academic-lifecycle.js": "b85026d1ff29922b9126225e5d61687a1ce6592185c8d5c42649d2423e55fda6",
+    "assets/jaguar-subject-mode.js": "5ce401725dfcff38fc206a559e25be6c7b4e269debbcd17ab4c2c4893ebe08e4",
+    "assets/jaguar-workspaces.js": "b1d9eb941c7ef684a53abdd73307cbae9b8b39f6be572aa5ad246ecd20bd0ba7",
+    "assets/jaguar360-operations.js": "b1d93c1f0d1f29392a3e2ad33270c625adcc117e8257556fcbb001a551c1f57d",
+    "lib/academic_grade_explorer.js": "bcecadb8f19e32a54983e22d95d861abed798344a3c29698608f403d82560e8e",
+    "lib/academic_grade_report_pdf.js": "b6767353d8b7135118fcdd7c44f8255da311b9dfd151c86bb386c0a48c69e081",
+    "lib/boleta_visual15.js": "c9b2e8e0ded1066970b689e41152b0a9541b5411fa07d13734b50b7cac6a7771",
+    "lib/jaguar360_boleta_historica.js": "94c7040c410df878725a249b9b6fd82799fdc3bbdec31ca95c7dcdcc918921af",
+    "lib/jaguar360_legacy_report.js": "51ecf05fd4b053dc5d1e5a9d6ad29da3fe11d5b062de77508f0739599242025e",
+    "lib/jaguar360_mixed_grades.js": "a188e0186d9656328418492eae12927a6922adbee88c42608cb311caa77aeb57",
+    "lib/jaguar360_report_guard.js": "9157602250dc814f9d9a44b2e56e3deca049fd44d2e00d589c0b51baa599ad70",
+    "lib/jaguar_academic_lifecycle.js": "247936e12691619e7a40825c6a0830a5aeeb0d000b77a6f3452f29c79357536d",
+    "routes/academic-lifecycle.js": "12c46dd1100d7606323e1e1882d0b57b2f7c3e9e01084c3c75145d07b6648f1a",
+    "routes/academic-operations.js": "4a448a0413c8553f465623303136bfbe8e919f7c48b58883db5f378d337c1fd4",
+    "routes/academic-seal.js": "755475382d9daaac871ea37ca1293fc829476ce94ce6b2447e8970a440e7be0b",
+    "routes/subject-evaluation-preview.js": "a1caaa094b07532c9d72f3f0b75117d853a40678e80f97cf621150ac65ab6a6c",
+    "sistema.html": "7ce00db7d46f1b0e16ae66d1adc1682be98415425755d07c0245ff4693cf7da7",
+    "sql/ITHLA_JAGUAR_360_MODO_MATERIA_V40.sql": "28cd760ac975e693641414cca37315739043cd964d81ec41941badd8443d1f08",
+    "tests/jaguar360_mixed_grades_v40.test.mjs": "f116ed5cc902cf8cfc2b824172f649722cdd97c1a0843ad95e39626add2dd748",
+    "tests/jaguar360_operations.test.mjs": "c08292a3d6e528918d10d6884a32556625b05adfdd2e787c3aa1015ca6f6a944",
+    "tests/jaguar360_recovery_workflow.test.mjs": "3730f91f336394c38b369d863ac84b6e9ea5892f01ba9047845a19be0401b673",
+    "tests/subject-evaluation-preview.test.mjs": "ec937b10d0653c8f65b960eb9f63826578a2a9e255b5cb68119892bc68599745"
+  },
+  "validacion": {
+    "node": 484,
+    "fallidas": 0,
+    "omitidas": 0,
+    "postgresql_ejecutado": false,
+    "pdf_renderizado": false,
+    "chromium_api_simulada": true
+  }
+}
