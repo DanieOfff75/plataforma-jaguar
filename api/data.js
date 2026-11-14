@@ -1,9 +1,15 @@
+import {requestRoles,requestTypes,requestRole,requestId,canReadRequest,scopedRequests} from '../lib/jaguar360_request_scope.js';
+import {assertGenericAcademicWrite} from '../lib/jaguar360_legacy_write_guard.js';
+import {permanentMatricula,assertLegacyGroupMovement} from '../lib/jaguar360_identity.js';
+import {notificationId,notificationSummary} from '../lib/jaguar360_inbox.js';
+import {noticeVisibleTo,dashboardNotices} from '../lib/jaguar360_notice_scope.js';
 import {sortInstitutionalPeople} from '../lib/institutional_names.js';
 import crypto from 'node:crypto';
 import {createGroupGradeBatch,listGroupGradeReviews,approveGroupGradeReview} from '../lib/group_grade_batch.js';
 import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
 import { academicGradesNavigation, academicGradeDetail, allowGradeExplorer } from '../lib/academic_grade_explorer.js';
 import { getClients, requireRoles } from '../lib/_admin.js';
+import { assertSession } from '../lib/ithla_session.js';
 import {requireEvaluationOpen,evaluationWindow} from '../lib/jaguar_evaluation_window.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { departmentKeyForRole, validateResponsible, listResponsibleUsers } from '../lib/responsables.js';
@@ -111,7 +117,7 @@ async function academicContext(admin){
 /** Política única por ciclo; la ausencia de fila equivale a SIN decimales. */
 async function currentGradePolicy(admin,cycle){
   const {data,error}=await admin.from('jaguar_precision_calificaciones')
-    .select('ciclo_escolar,permite_decimales,minima_aprobatoria,permitir_reprobatorias_inferiores,version').eq('ciclo_escolar',cycle).maybeSingle();
+    .select('ciclo_escolar,permite_decimales,minima_aprobatoria,permitir_reprobatorias_inferiores,version,redondeo_ordinario').eq('ciclo_escolar',cycle).maybeSingle();
   if(error)throw Object.assign(new Error('Falta instalar sql/ITHLA_CALIFICACIONES_PRECISION_Y_OFICIOS_2026.sql. '+error.message),{status:409});
   return {...gradePolicyFromRow(data),ciclo_escolar:cycle};
 }
@@ -373,6 +379,7 @@ async function authContext(req) {
     );
   }
 
+  await assertSession(req,adminClient,user.id,profile.rol,'jaguar');
   return {
     user,
     profile,
@@ -848,6 +855,7 @@ async function commitTeacherDailyUpload(admin,user,body,profile){
   if(!gmId||!periodoId||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fecha)) throw Object.assign(new Error('Grupo, periodo y fecha son obligatorios.'),{status:400});
   const d=await teacherDailyContext(admin,user,gmId,periodoId);
   const incoming=stableDailyState(body?.state||{});
+  const allowed=new Set((d.students||[]).map(s=>String(s.id)));
   incoming.roster=(d.students||[]).map(st=>({id:Number(st.id),matricula:String(st.matricula||''),nombre_completo:String(st.nombre_completo||'')}));
   const windowStatus=await evaluationWindow(admin,periodoId).catch(e=>{if(e?.status===409)return {habilitada:false};throw e});
   // Los valores de rúbrica en la bitácora NO equivalen a una calificación oficial.
@@ -886,7 +894,6 @@ async function commitTeacherDailyUpload(admin,user,body,profile){
   if(d.rubric){const total=d.rubric.total;if(Math.abs(total-100)>0.001) throw Object.assign(new Error(`La rúbrica institucional debe sumar exactamente 100%. Actualmente suma ${total.toFixed(2)}%.`),{status:409}); incoming.rubric=d.rubric;}
   if(incoming.activities.length>40) throw Object.assign(new Error('El archivo no puede contener más de 40 actividades.'),{status:400});
   const latest=d.latest?.snapshot?stableDailyState(d.latest.snapshot):null; if(latest) compareDailyLocked(latest,incoming);
-  const allowed=new Set((d.students||[]).map(s=>String(s.id)));
   const validActivities=new Set(incoming.activities.map(a=>String(a.key)));
   for(const k of Object.keys(incoming.activityScores||{})){
     const [sid,activityKey]=k.split('|');
@@ -959,13 +966,13 @@ async function dashboard(admin, profile, user) {
   } = await admin
     .from('avisos')
     .select(
-      'id,titulo,contenido,fecha_publicacion,activo'
+      'id,titulo,contenido,fecha_publicacion,activo,publicado,destino_publicacion,audiencia'
     )
     .eq('activo', true)
     .order('fecha_publicacion', {
       ascending: false
     })
-    .limit(6);
+    .limit(100);
 
   const {
     data: gradeRows
@@ -1024,7 +1031,7 @@ async function dashboard(admin, profile, user) {
     return {
       counts,
       groups: groups || [],
-      notices: notices || [],
+      notices: dashboardNotices(notices,profile.rol,6),
       teacher: teacher || {},
       promedio,
       attendanceRate,
@@ -1035,7 +1042,7 @@ async function dashboard(admin, profile, user) {
   return {
     counts,
     groups: groups || [],
-    notices: notices || [],
+    notices: dashboardNotices(notices,profile.rol,6),
     promedio,
     attendanceRate,
     horariosCount: horariosCount || 0
@@ -1218,7 +1225,7 @@ async function generateOfficialDocument(admin,user,profile,body,req){
     const expedienteTipo=alumno?'alumno':docente?'docente':'institucional', expedienteId=alumno?Number(alumno.id):docente?Number(docente.id):Number(institution.id||0);
     const payload={tipo_codigo:code,alumno_id:alumno?.id||null,docente_id:docente?.id||null,destinatario:String(body.destinatario||'').trim(),asunto:String(body.asunto||'').trim(),cuerpo:String(body.cuerpo||'').trim(),departamentos_firma:defaultSigners,solicitado_por:user.id,fecha_solicitud:today};
     const {data:request,error:re}=await admin.from('solicitudes_documentos_oficiales').insert({folio:`SOL-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase()}`,tipo_codigo:code,expediente_tipo:expedienteTipo,expediente_id:expedienteId,alumno_id:alumno?.id||null,docente_id:docente?.id||null,destinatario:payload.destinatario||null,asunto:payload.asunto||null,cuerpo:payload.cuerpo||null,payload,departamentos_firma:defaultSigners,aprobaciones:{},estado:defaultSigners.length?'pendiente':'aprobada',solicitado_por:user.id}).select('*').single();if(re)throw re;
-    for(const dept of defaultSigners){const role=officialRoleFromDepartment(dept);if(role)try{await notifyJaguarRole(admin,role,{titulo:`Oficio pendiente de revisión · ${request.folio}`,contenido:`Archivo Escolar solicita que revises, aceptes/rechaces y firmes el documento ${catalog.nombre}.`,tipo:'oficio_firma',solicitudId:request.id});}catch(e){console.warn('No se pudo notificar firma interdepartamental:',e.message)}}
+    for(const dept of defaultSigners){const role=officialRoleFromDepartment(dept);if(role)try{await notifyJaguarRole(admin,role,{titulo:`Oficio pendiente de revisión · ${request.folio}`,contenido:`Archivo Escolar solicita que revises, aceptes/rechaces y firmes el documento ${catalog.nombre}.`,tipo:'oficio_firma'});}catch(e){console.warn('No se pudo notificar firma interdepartamental:',e.message)}}
     await audit(admin,{userId:user.id,role:profile.rol,action:'request_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:request.id,description:`Solicitud ${request.folio} para ${catalog.nombre}.`,after:request,req});
     if(defaultSigners.length) return {request_created:true,request_id:request.id,folio:request.folio,estado:request.estado,departamentos_firma:defaultSigners,message:'Documento preparado y enviado a revisión/firma interdepartamental.'};
     body={...body,internal_emit:true,approval_request_id:request.id};
@@ -1320,11 +1327,11 @@ async function resolveOfficialDocumentApproval(admin,user,profile,body,req){
   const dept=departmentKeyForRole(profile?.rol);if(!dept||dept==='AE')throw Object.assign(new Error('Este perfil no puede firmar oficios interdepartamentales.'),{status:403});
   const id=Number(body.id||0),decision=body.decision==='aprobada'?'aprobada':body.decision==='rechazada'?'rechazada':null;if(!id||!decision)throw Object.assign(new Error('Decisión no válida.'),{status:400});
   const {data:row,error}=await admin.from('solicitudes_documentos_oficiales').select('*').eq('id',id).maybeSingle();if(error)throw error;if(!row)throw Object.assign(new Error('Solicitud de oficio no encontrada.'),{status:404});if(!(row.departamentos_firma||[]).includes(dept))throw Object.assign(new Error('Este oficio no requiere la firma de tu departamento.'),{status:403});if(['emitida','cancelada'].includes(row.estado))throw Object.assign(new Error('El oficio ya fue resuelto.'),{status:409});
-  if(decision==='rechazada'){const motivo=String(body.motivo||'').trim();if(!motivo)throw Object.assign(new Error('El rechazo requiere un motivo.'),{status:400});const approvals={...(row.aprobaciones||{}),[dept]:{estado:'rechazada',usuario_id:user.id,motivo,at:new Date().toISOString()}};const {data:updated,error:ue}=await admin.from('solicitudes_documentos_oficiales').update({estado:'rechazada',aprobaciones:approvals,motivo_rechazo:motivo,actualizado_at:new Date().toISOString()}).eq('id',id).select('*').single();if(ue)throw ue;await audit(admin,{userId:user.id,role:profile.rol,action:'reject_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:id,description:`Firma ${dept} rechazada para ${row.folio}.`,after:updated,req});try{await createJaguarNotification(admin,row.solicitado_por,{titulo:`Oficio ${row.folio} rechazado`,contenido:`${dept} rechazó el oficio. Motivo: ${motivo}`,tipo:'oficio_firma',solicitudId:id});}catch{}return updated;}
+  if(decision==='rechazada'){const motivo=String(body.motivo||'').trim();if(!motivo)throw Object.assign(new Error('El rechazo requiere un motivo.'),{status:400});const approvals={...(row.aprobaciones||{}),[dept]:{estado:'rechazada',usuario_id:user.id,motivo,at:new Date().toISOString()}};const {data:updated,error:ue}=await admin.from('solicitudes_documentos_oficiales').update({estado:'rechazada',aprobaciones:approvals,motivo_rechazo:motivo,actualizado_at:new Date().toISOString()}).eq('id',id).select('*').single();if(ue)throw ue;await audit(admin,{userId:user.id,role:profile.rol,action:'reject_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:id,description:`Firma ${dept} rechazada para ${row.folio}.`,after:updated,req});try{await createJaguarNotification(admin,row.solicitado_por,{titulo:`Oficio ${row.folio} rechazado`,contenido:`${dept} rechazó el oficio. Motivo: ${motivo}`,tipo:'oficio_firma'});}catch{}return updated;}
   const responsible=await requireOfficialResponsible(admin,dept);const approvals={...(row.aprobaciones||{}),[dept]:{estado:'aprobada',usuario_id:user.id,nombre:profile?.nombre_completo||responsible?.nombre_completo,cargo:responsible?.cargo||`Responsable de ${dept}`,firma_path:profile?.firma_path||responsible?.perfil?.firma_path||responsible?.firma_path||null,firma_sha256:profile?.firma_sha256||responsible?.perfil?.firma_sha256||responsible?.firma_sha256||null,at:new Date().toISOString()}};
   const needed=row.departamentos_firma||[];const all=needed.every(x=>approvals?.[x]?.estado==='aprobada');const next=all?'aprobada':'en_revision';const {data:updated,error:ue}=await admin.from('solicitudes_documentos_oficiales').update({estado:next,aprobaciones:approvals,actualizado_at:new Date().toISOString(),resuelto_at:all?new Date().toISOString():null}).eq('id',id).select('*').single();if(ue)throw ue;
   await audit(admin,{userId:user.id,role:profile.rol,action:'approve_official_document_signature',module:'archivo_escolar',entity:'solicitudes_documentos_oficiales',entityId:id,description:`Firma ${dept} registrada para ${row.folio}.`,after:updated,req});
-  if(all){const payload=row.payload||{};await generateOfficialDocument(admin,{id:row.solicitado_por}, {rol:'archivo_escolar'}, {...payload,internal_emit:true,approval_request_id:id,departamentos_firma:needed},req);try{await notifyJaguarRole(admin,'archivo_escolar',{titulo:`Oficio ${row.folio} listo`,contenido:`Todas las firmas requeridas fueron registradas y el documento fue emitido.`,tipo:'oficio_firma',solicitudId:id});}catch{}}else{try{await createJaguarNotification(admin,row.solicitado_por,{titulo:`Firma registrada · ${row.folio}`,contenido:`El departamento ${dept} aceptó y firmó el oficio. Aún faltan otras firmas.`,tipo:'oficio_firma',solicitudId:id});}catch{}}
+  if(all){const payload=row.payload||{};await generateOfficialDocument(admin,{id:row.solicitado_por}, {rol:'archivo_escolar'}, {...payload,internal_emit:true,approval_request_id:id,departamentos_firma:needed},req);try{await notifyJaguarRole(admin,'archivo_escolar',{titulo:`Oficio ${row.folio} listo`,contenido:`Todas las firmas requeridas fueron registradas y el documento fue emitido.`,tipo:'oficio_firma'});}catch{}}else{try{await createJaguarNotification(admin,row.solicitado_por,{titulo:`Firma registrada · ${row.folio}`,contenido:`El departamento ${dept} aceptó y firmó el oficio. Aún faltan otras firmas.`,tipo:'oficio_firma'});}catch{}}
   return updated;
 }
 
@@ -2152,7 +2159,7 @@ async function getResource(
   if(key==='gradePrecisionOffices'){
     if(!staffGradePolicyRole(profile.rol))throw Object.assign(new Error('No autorizado.'),{status:403});
     const ctx=await academicContext(admin);
-    const {data,error}=await admin.from('jaguar_oficios_precision_calificaciones').select('id,ciclo_escolar,version,antes_permite_decimales,ahora_permite_decimales,antes_minima_aprobatoria,ahora_minima_aprobatoria,antes_permitir_reprobatorias_inferiores,ahora_permitir_reprobatorias_inferiores,motivo,actor_nombre,creado_at').eq('ciclo_escolar',ctx.ciclo_escolar).order('id',{ascending:false}).limit(30);
+    const {data,error}=await admin.from('jaguar_oficios_precision_calificaciones').select('id,ciclo_escolar,version,antes_permite_decimales,ahora_permite_decimales,antes_minima_aprobatoria,ahora_minima_aprobatoria,antes_permitir_reprobatorias_inferiores,ahora_permitir_reprobatorias_inferiores,motivo,actor_nombre,creado_at,reaplicacion_retroactiva,calificaciones_modificadas').eq('ciclo_escolar',ctx.ciclo_escolar).order('id',{ascending:false}).limit(30);
     if(error)throw error;return data||[];
   }
   if (key === 'periodContext') return academicContext(admin);
@@ -2168,7 +2175,7 @@ async function getResource(
     // igualmente las asignaciones activas para no mostrar un panel vacío.
     const [aQ,nQ,cQ,sQ,hQ,tQ] = await Promise.all([
       admin.from('asignaciones_docentes').select('id,grupo_materia_id,horas_asignadas,ciclo_escolar,grupo_materias(id,grupo_id,materia_id,horas_semana,grupos(id,clave,grado,letra,turno),materias(id,nombre,clave))').eq('docente_id',tid).eq('activo',true).eq('ciclo_escolar',cycle),
-      admin.from('avisos').select('id,titulo,contenido,fecha_publicacion').eq('activo',true).order('fecha_publicacion',{ascending:false}).limit(8),
+      admin.from('avisos').select('id,titulo,contenido,fecha_publicacion,activo,publicado,destino_publicacion,audiencia').eq('activo',true).order('fecha_publicacion',{ascending:false}).limit(100),
       admin.from('solicitudes_estudiantiles').select('id,tipo,motivo,estado,created_at,alumnos(nombre_completo,matricula),grupo_materias(materias(nombre))').eq('tipo','aclaracion_calificacion').eq('docente_destino_id',tid).order('id',{ascending:false}).limit(8),
       admin.from('alumnos').select('id,nombre_completo,matricula,grupo_id,grupos(id,clave,grado,letra)').eq('activo',true),
       admin.from('horarios').select('id,dia_semana,hora_inicio,hora_fin,aula,grupo_materia_id,grupo_materias(id,grupo_id,materia_id,grupos(id,clave,grado,letra),materias(id,nombre,clave))').eq('docente_id',tid).eq('ciclo_escolar',cycle).order('dia_semana').order('hora_inicio'),
@@ -2200,44 +2207,24 @@ async function getResource(
     if(colorQ.error) throw colorQ.error;
     const colorMap=new Map((colorQ.data||[]).map(x=>[String(x.materia_id),x.color_hex]));
     const subjectColors=subjects.map(m=>({materia_id:m.id,color_hex:colorMap.get(String(m.id))||'#4EA72E',materia:m}));
-    return {cycle,period:period||null,teacher:tQ.data||{},students:sortInstitutionalPeople(students),assignments,subjects,subjectColors,notices:nQ.data||[],clarifications:cQ.data||[],schedules:hQ.data||[]};
+    return {cycle,period:period||null,teacher:tQ.data||{},students:sortInstitutionalPeople(students),assignments,subjects,subjectColors,notices:dashboardNotices(nQ.data,profile.rol),clarifications:cQ.data||[],schedules:hQ.data||[]};
   }
 
   if (key === 'departmentDashboard') {
     const allowed=['servicios_estudiantiles','servicios_docentes','prefectura','coordinacion_academica','direccion_escolar','control_escolar','control'];
     if(!allowed.includes(profile.rol)) throw Object.assign(new Error('No autorizado.'),{status:403});
-    const {data:period}=await admin.from('periodos_escolares').select('id,nombre,ciclo_escolar,activo').eq('activo',true).order('id',{ascending:false}).limit(1).maybeSingle();
-    const cycle=period?.ciclo_escolar||'2026-2027';
-    const [students,teachers,groups,subjects,notices,requests,incidents,grades]=await Promise.all([
-      admin.from('alumnos').select('id,nombre_completo,grado_ingreso,grupo_id,activo,grupos(id,clave,grado,letra)').eq('activo',true),
-      admin.from('docentes').select('id,nombre_completo,activo').eq('activo',true),
-      admin.from('grupos').select('id,clave,grado,letra,turno').eq('activo',true),
-      admin.from('materias').select('id,nombre,activa').eq('activa',true),
-      admin.from('avisos').select('id,titulo,contenido,fecha_publicacion').eq('activo',true).order('fecha_publicacion',{ascending:false}).limit(8),
-      admin.from('solicitudes_estudiantiles').select('id,tipo,estado,created_at,alumnos(nombre_completo,matricula)').order('id',{ascending:false}).limit(500),
-      admin.from('incidencias_prefectura').select('id,tipo,alumno_id,fecha,alumnos(grupo_id,grupos(id,clave,grado,letra))').order('id',{ascending:false}).limit(1000),
-      admin.from('calificaciones').select('alumno_id,calificacion,grupo_materia_id,grupo_materias(grupo_id,grupos(id,clave,grado,letra))').limit(5000)
+    const [{data:metrics,error:me},notices]=await Promise.all([
+      admin.rpc('jaguar360_panel_departamento',{p_actor:user.id}),
+      admin.from('avisos').select('id,titulo,contenido,fecha_publicacion,activo,publicado,destino_publicacion,audiencia').eq('activo',true).order('fecha_publicacion',{ascending:false}).limit(100)
     ]);
-    for(const q of [students,teachers,groups,subjects,notices,requests,incidents,grades]) if(q.error) throw q.error;
-    const ss=students.data||[], gs=grades.data||[];
-    const avg=(rows)=>{const n=rows.map(x=>Number(x.calificacion)).filter(Number.isFinite);return n.length?n.reduce((a,b)=>a+b,0)/n.length:null};
-    const byGrade={}; for(const s of ss){const g=Number(s.grupos?.grado||s.grado_ingreso||0);if(g) (byGrade[g]??=[]).push(s)}
-    const byGroup={}; for(const s of ss){const k=s.grupos?.clave||'Sin grupo';(byGroup[k]??=[]).push(s)}
-    const groupAverages=Object.entries(byGroup).map(([group,arr])=>({group,count:arr.length,average:avg(gs.filter(x=>arr.some(s=>Number(s.id)===Number(x.alumno_id))))})).sort((a,b)=>String(a.group).localeCompare(String(b.group),'es',{numeric:true}));
-    const incidentByGroup={};for(const r of incidents.data||[]){const k=r.alumnos?.grupos?.clave||'Sin grupo';incidentByGroup[k]=(incidentByGroup[k]||0)+1}
-    const topIncidentGroup=Object.entries(incidentByGroup).sort((a,b)=>b[1]-a[1])[0]||null;
-    const reqPending=(requests.data||[]).filter(r=>r.estado==='pendiente');
-    return {cycle,period:period||null,totalStudents:ss.length,totalTeachers:(teachers.data||[]).length,totalGroups:(groups.data||[]).length,totalSubjects:(subjects.data||[]).length,average:avg(gs),averageByGrade:Object.fromEntries(Object.entries(byGrade).map(([g,arr])=>[g,{count:arr.length,average:avg(gs.filter(x=>arr.some(s=>Number(s.id)===Number(x.alumno_id))))}])),groupAverages,pendingRequests:reqPending.length,notifications:(notices.data||[]).slice(0,5),incidentCount:(incidents.data||[]).length,topIncidentGroup,incidents:incidents.data||[],grades:gs};
+    if(me||!metrics||typeof metrics.cycle!=='string') throw Object.assign(new Error('No se pudo calcular el panel del ciclo. Verifica la migración V35 y el periodo actual.'),{status:503});
+    if(notices.error)throw notices.error;
+    // No retornar expedientes ni registros individuales. El RPC calcula agregados del ciclo.
+    const keys=['cycle','period','totalStudents','totalTeachers','totalGroups','totalSubjects','average','averageByGrade','groupAverages','pendingRequests','incidentCount','topIncidentGroup','academicSource','incidentGrouping'];
+    return {...Object.fromEntries(keys.map(k=>[k,metrics[k]??null])),notifications:dashboardNotices(notices.data,profile.rol,5)};
   }
 
-  if (key === 'departmentRequests') {
-    const roleMap={servicios_docentes:['servicios_docentes'],servicios_estudiantiles:['servicios_estudiantiles'],prefectura:['prefectura'],coordinacion_academica:['coordinacion_academica'],control_escolar:['control_escolar'],direccion_escolar:['direccion_escolar','control_escolar','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica']};
-    if(profile.rol==='alumno') return [];
-    if(!roleMap[profile.rol]) throw Object.assign(new Error('Este departamento no administra solicitudes.'),{status:403});
-    let query=admin.from('solicitudes_estudiantiles').select('*,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))').order('id',{ascending:false}).limit(500);
-    const {data,error}=await query;if(error)throw error;
-    return (data||[]).filter(r=>{if(r.tipo==='aclaracion_calificacion')return false; const t=String(r.departamento_destino||r.destino_departamento||''); return profile.rol==='direccion_escolar'||!t||roleMap[profile.rol]?.includes(t)||({taller:'servicios_estudiantiles',grado:'servicios_estudiantiles',grupo:'servicios_estudiantiles',turno:'servicios_estudiantiles'}[r.tipo]===profile.rol);});
-  }
+  if (key === 'departmentRequests') return getDepartmentRequestsDirect(admin,profile);
 
   if (key === 'studentBoleta') {
     if(profile.rol!=='alumno') throw Object.assign(new Error('Solo alumnos pueden consultar su boleta.'),{status:403});
@@ -2579,20 +2566,21 @@ async function getResource(
     key = 'studentRequests';
   }
 
+  if (key === 'notificationSummary') return notificationSummary(admin,user);
   if (key === 'notifications') {
-    const {data,error}=await admin.from('notificaciones').select('*').eq('usuario_id',user.id).order('id',{ascending:false}).limit(100);
+    const {data,error}=await admin.from('notificaciones').select('id::text,titulo,contenido,tipo,leida,created_at').eq('usuario_id',user.id).order('leida',{ascending:true,nullsFirst:true}).order('id',{ascending:false}).limit(100);
     if(error)throw error;
     return data||[];
   }
 
   if (key === 'studentAvailableGroups') {
     if(profile.rol!=='alumno')throw Object.assign(new Error('Solo los alumnos pueden consultar sus grupos disponibles.'),{status:403});
-    const student=await studentId(admin,user.id); if(!student)throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
+    const student=await requestStudent(admin,user.id); if(!student)throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
     const {data:alumno,error:ae}=await admin.from('alumnos').select('id,grupo_id,grupos(id,clave,grado,letra,turno,activo)').eq('id',student.id).maybeSingle();
     if(ae)throw ae;if(!alumno?.grupos)throw Object.assign(new Error('El alumno no tiene un grupo asignado.'),{status:409});
     const {data:groups,error:ge}=await admin.from('grupos').select('id,clave,grado,letra,turno,activo').eq('activo',true).eq('grado',Number(alumno.grupos.grado)).order('letra');
     if(ge)throw ge;
-    const candidates=(groups||[]).filter(g=>Number(g.id)!==Number(alumno.grupo_id)); const cap=await groupCapacity(admin,candidates.map(g=>g.id)); return {actual:alumno.grupos,grupos:candidates.map(g=>({...g,...(cap[String(g.id)]||{ocupados:0,cupo:40,lleno:false})}))};
+    const candidates=(groups||[]).filter(g=>String(g.id)!==String(alumno.grupo_id)); const cap=await groupCapacity(admin,[alumno.grupo_id,...candidates.map(g=>g.id)]); return {actual:{...alumno.grupos,...cap[String(alumno.grupo_id)]},grupos:candidates.map(g=>({...g,...cap[String(g.id)]}))};
   }
 
   if (key === 'teacherScheduleAcceptance') {
@@ -2600,7 +2588,8 @@ async function getResource(
   }
 
   if (key === 'groupCapacity') {
-    const ids=String(req.query?.grupo_ids||'').split(',').map(Number).filter(Boolean);
+    if(!allAdmin.includes(profile.rol))throw Object.assign(Error('Sin atribución para consultar cupos generales.'),{status:403});
+    const ids=String(req.query?.grupo_ids||'').split(',').filter(Boolean);
     return await groupCapacity(admin,ids);
   }
 
@@ -2626,121 +2615,7 @@ async function getResource(
     return (data||[]).filter(r=>profile.rol==='direccion_escolar'||(r.aprobaciones_cambio_grado||[]).some(a=>a.departamento===profile.rol)).map(r=>({...r,mis_aprobaciones:(r.aprobaciones_cambio_grado||[]).filter(a=>a.departamento===profile.rol)}));
   }
 
-  if (key === 'studentRequests') {
-    if (profile.rol === 'alumno') {
-      const student = await studentId(
-        admin,
-        user.id
-      );
-
-      const {
-        data,
-        error
-      } = await admin
-        .from('solicitudes_estudiantiles')
-        .select(
-          '*,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))'
-        )
-        .eq(
-          'alumno_id',
-          student?.id || -1
-        )
-        .order('id', {
-          ascending: false
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      const {
-        data: workshops
-      } = await admin
-        .from('talleres')
-        .select('id,nombre');
-
-      const workshopMap =
-        Object.fromEntries(
-          (workshops || []).map(
-            x => [String(x.id), x]
-          )
-        );
-
-      return (data || []).map(
-        row =>
-          row.tipo === 'taller'
-            ? {
-                ...row,
-                taller_solicitado:
-                  workshopMap[
-                    String(row.valor_solicitado)
-                  ] || null
-              }
-            : row
-      );
-    }
-
-    if (
-      !studentServices.includes(profile.rol)
-    ) {
-      throw Object.assign(
-        new Error('No autorizado.'),
-        { status: 403 }
-      );
-    }
-
-    const {
-      data,
-      error
-    } = await admin
-      .from('solicitudes_estudiantiles')
-      .select(
-        '*,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))'
-      )
-      .order('id', {
-        ascending: false
-      });
-
-    if (error) {
-      throw error;
-    }
-
-    const {
-      data: workshops
-    } = await admin
-      .from('talleres')
-      .select('id,nombre');
-
-    const workshopMap =
-      Object.fromEntries(
-        (workshops || []).map(
-          x => [String(x.id), x]
-        )
-      );
-
-    const visible=(data||[]).filter(row=>{
-      if(profile.rol==='direccion_escolar') return true;
-      if(profile.rol==='servicios_estudiantiles') return !row.departamento_destino || row.departamento_destino==='servicios_estudiantiles';
-      if(profile.rol==='servicios_docentes') return row.departamento_destino==='servicios_docentes';
-      if(profile.rol==='prefectura') return row.departamento_destino==='prefectura';
-      if(profile.rol==='coordinacion_academica') return row.departamento_destino==='coordinacion_academica';
-      if(profile.rol==='control_escolar'||profile.rol==='control') return row.tipo==='grupo' || !row.departamento_destino || row.departamento_destino==='control_escolar';
-      return false;
-    });
-    return visible.map(
-      row =>
-        row.tipo === 'taller'
-          ? {
-              ...row,
-              taller_solicitado:
-                workshopMap[
-                  String(row.valor_solicitado)
-                ] || null
-            }
-          : row
-    );
-  }
-
+  if (key === 'studentRequests') return getStudentRequestsDirect(admin,user,profile);
 
   /* -------------------------
      RESUMEN / ESTADÍSTICAS
@@ -3414,17 +3289,7 @@ async function getResource(
       const names=new Map((rr||[]).filter(x=>x.activo).map(x=>[String(x.usuario_id),x]));
       respMap=new Map((rp||[]).map(x=>{const r=names.get(String(x.id));return [String(x.id),{...x,nombre_completo:r?.nombre_responsable||x.nombre_completo,cargo:r?.cargo||null}]}));
     }
-    return noticeRows.filter(
-      notice => notice.destino_publicacion!=='publica' && (
-        !Array.isArray(notice.audiencia) ||
-        notice.audiencia.length === 0 ||
-        notice.audiencia.includes(profile.rol) ||
-        notice.audiencia.includes(
-          profile.rol === 'control'
-            ? 'control_escolar'
-            : profile.rol
-        ))
-    ).map(notice=>({...notice,responsable:respMap.get(String(notice.responsable_id))||null}));
+    return noticeRows.filter(notice=>noticeVisibleTo(notice,profile.rol)).map(notice=>({...notice,responsable:respMap.get(String(notice.responsable_id))||null}));
   }
 
   return data || [];
@@ -3530,6 +3395,7 @@ async function writeResource(
   delete clean.id;
   delete clean.created_at;
   delete clean.updated_at;
+  assertGenericAcademicWrite(key,'insert',clean,profile.rol);
 
   if (key === 'periods') {
     // El formulario no debe decidir el ciclo. Leemos el periodo actual directamente
@@ -3558,7 +3424,7 @@ async function writeResource(
   if (key === 'notices') {
     const destino=String(clean.destino_publicacion||'plataforma');
     if(!['plataforma','publica','ambas'].includes(destino))throw Object.assign(new Error('Destino de publicación inválido.'),{status:400});
-    if(profile.rol==='docente'&&destino!=='plataforma')throw Object.assign(new Error('Solo un administrador departamental autorizado publica al público.'),{status:403});
+    if(destino!=='plataforma')throw Object.assign(new Error('Los avisos públicos nuevos requieren propuesta y resolución en Portal institucional.'),{status:409});
     clean.destino_publicacion=destino;
     const noticeDept=profile.rol==='docente'?'SD':departmentKeyForRole(profile.rol);
     const responsible=await validateResponsible(admin,clean.responsable_id,user?.role||profile.rol,noticeDept);
@@ -3675,6 +3541,7 @@ async function updateResource(
   delete clean.id;
   delete clean.created_at;
   delete clean.updated_at;
+  assertGenericAcademicWrite(key,'update',clean,profile.rol);
   if(key==='teachers'){
     for(const blocked of ['activo','estado_profesional','archivado_at','archivado_por','archivado_motivo','auth_user_id']){
       if(Object.hasOwn(clean,blocked))throw Object.assign(new Error('La baja o reactivación docente se realiza mediante Gestión de bajas y relevos.'),{status:409});
@@ -3702,12 +3569,16 @@ async function updateResource(
   }
 
   if (key === 'notices') {
-    const {data:before,error:be}=await admin.from('avisos').select('creado_por,publicado_por').eq('id',id).maybeSingle();
+    const {data:before,error:be}=await admin.from('avisos').select('creado_por,publicado_por,destino_publicacion').eq('id',id).maybeSingle();
     if(be||!before)throw Object.assign(new Error('Aviso no encontrado.'),{status:404});
-    if(String(before.creado_por||before.publicado_por||'')!==String(user.id))throw Object.assign(new Error('Solo puedes modificar avisos que tú publicaste.'),{status:403});
+    if(['publica','ambas'].includes(before.destino_publicacion)){
+      if(profile.rol!=='direccion_escolar')throw Object.assign(new Error('Solo Dirección puede retirar un aviso público anterior.'),{status:403});
+      throw Object.assign(new Error('Los avisos públicos anteriores se conservan; usa el retiro desde Portal institucional.'),{status:409});
+    }
+    if(String(before.creado_por||before.publicado_por||'')!==String(user.id)&&!(profile.rol==='direccion_escolar'&&['publica','ambas'].includes(before.destino_publicacion)))throw Object.assign(new Error('Solo puedes modificar avisos que tú publicaste.'),{status:403});
     const destino=String(clean.destino_publicacion||'plataforma');
     if(!['plataforma','publica','ambas'].includes(destino))throw Object.assign(new Error('Destino de publicación inválido.'),{status:400});
-    if(profile.rol==='docente'&&destino!=='plataforma')throw Object.assign(new Error('El docente solamente puede publicar avisos internos.'),{status:403});
+    if(destino!=='plataforma')throw Object.assign(new Error('Los avisos públicos nuevos requieren propuesta y resolución en Portal institucional.'),{status:409});
     // Protege responsable y trazabilidad; aquí solo puede editarse el alcance editorial.
     for(const k of Object.keys(clean))delete clean[k];
     clean.destino_publicacion=destino;
@@ -3719,10 +3590,12 @@ async function updateResource(
     if(!currentStudent) throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
     if(profile.rol==='control_escolar' && clean.grupo_id!==undefined && String(clean.grupo_id||'')!==String(currentStudent.grupo_id||'')) throw Object.assign(new Error('El cambio directo de grupo se realiza desde Más acciones > Cambiar grupo, para dejarlo registrado correctamente.'),{status:403});
     if(profile.rol==='control_escolar' && clean.grado_ingreso!==undefined && Number(clean.grado_ingreso)!==Number(currentStudent.grado_ingreso||0)) throw Object.assign(new Error('Los cambios de grado solo pueden ejecutarse mediante un cambio especial autorizado por todos los departamentos.'),{status:403});
-    const nextMat=clean.matricula===undefined?String(currentStudent.matricula||'').replace(/\s+/g,'').toLowerCase():String(clean.matricula||'').replace(/\s+/g,'').toLowerCase();
-    if(!nextMat) throw Object.assign(new Error('La matrícula es obligatoria para el alumno.'),{status:400});
-    if(currentStudent.auth_user_id && nextMat!==String(currentStudent.matricula||'').replace(/\s+/g,'').toLowerCase()) throw Object.assign(new Error('No se puede cambiar la matrícula de un alumno que ya tiene una cuenta institucional.'),{status:409});
-    clean.matricula=nextMat;
+    if(clean.grupo_id!==undefined&&String(clean.grupo_id??'')!==String(currentStudent.grupo_id??''))await assertLegacyGroupMovement(admin,[currentStudent.grupo_id,clean.grupo_id]);
+    if(clean.matricula!==undefined){
+      const existing=permanentMatricula(currentStudent);
+      if(String(clean.matricula).trim().toLowerCase()!==existing.trim().toLowerCase())throw Object.assign(Error('La matrícula existente es permanente.'),{status:409});
+      delete clean.matricula;
+    }
       }
 
   if (key === 'incidencias') {
@@ -3784,6 +3657,7 @@ async function deleteResource(
     .maybeSingle();
   if (be) throw be;
   if (!before) throw Object.assign(new Error('Registro no encontrado.'),{status:404});
+  if(key==='notices' && ['publica','ambas'].includes(before.destino_publicacion))throw Object.assign(new Error('Los avisos públicos anteriores se retiran cambiando su alcance; no se eliminan.'),{status:409});
   if(key==='notices' && String(before.creado_por||before.publicado_por||'')!==String(user.id)) throw Object.assign(new Error('Solo puedes borrar un aviso que tú publicaste.'),{status:403});
   if(key==='periods') throw Object.assign(new Error('Los periodos no se eliminan. Se conservan para el historial escolar.'),{status:403});
 
@@ -4003,6 +3877,7 @@ async function createLateStudent(admin,user,profile,body){
   const available=gradeGroups.filter(g=>!cap[String(g.id)]?.lleno);
   if(!available.length)throw Object.assign(new Error(`No hay grupos con cupo disponible para ${grado}°. Todos tienen 40 alumnos activos.`),{status:409});
   const group=available[Math.floor(Math.random()*available.length)];
+  await assertLegacyGroupMovement(admin,[group.id]);
   const turno=String(group.turno||'').trim();
   const ficha=`ALT-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
   const municipality=`${String(b.colonia||'').trim()}, ${String(b.municipio||'').trim()}, ${String(b.estado||'').trim()}`.replace(/^,\s*|,\s*$/g,'');
@@ -4058,6 +3933,7 @@ async function createLateStudentsBulk(admin,user,profile,rows){
   const {data:groups,error:ge}=await admin.from('grupos').select('id,clave,grado,letra,turno').eq('activo',true).order('grado').order('letra');
   if(ge)throw ge;
   const activeGroups=groups||[];
+  if(activeGroups.length)await assertLegacyGroupMovement(admin,activeGroups.map(g=>g.id));
   const cap=await groupCapacity(admin,activeGroups.map(g=>g.id));
   const counts=Object.fromEntries(activeGroups.map(g=>[String(g.id),cap[String(g.id)]?.ocupados||0]));
   const initialCapacityByGrade={};
@@ -4231,13 +4107,12 @@ async function getGroupSubjectColors(admin, groupId) {
 
 
 async function groupCapacity(admin, groupIds){
-  const ids=[...new Set((groupIds||[]).map(Number).filter(Boolean))];
-  if(!ids.length) return {};
-  const {data,error}=await admin.from('alumnos').select('grupo_id').in('grupo_id',ids).eq('activo',true);
-  if(error) throw error;
-  const counts=Object.fromEntries(ids.map(id=>[String(id),0]));
-  for(const a of data||[]) counts[String(a.grupo_id)]=(counts[String(a.grupo_id)]||0)+1;
-  return Object.fromEntries(ids.map(id=>[String(id),{ocupados:counts[String(id)]||0,cupo:Math.max(0,40-(counts[String(id)]||0)),lleno:(counts[String(id)]||0)>=40}]));
+  const ids=[...new Set((groupIds||[]).map(requestId))];
+  if(ids.some(id=>id===null)||ids.length>500)throw Object.assign(Error('Grupos inválidos.'),{status:400});
+  if(!ids.length)return {};
+  const {data,error}=await admin.rpc('jaguar360_cupos_grupos',{p_grupos:ids});
+  if(error||!data||typeof data!=='object'||Array.isArray(data)||ids.some(id=>!Object.hasOwn(data,id)))throw Object.assign(Error('No se pudieron verificar los cupos de todos los grupos.'),{status:503});
+  return data;
 }
 
 async function getTeacherScheduleAcceptance(admin,user){
@@ -4305,15 +4180,11 @@ async function respondGroupExchangeRequest(admin,user,body){
   }
   const a=reqRow.alumno_solicitante,b=reqRow.alumno_destino;
   if(Number(a.grupos?.grado)!==Number(b.grupos?.grado))throw Object.assign(new Error('Los grupos ya no pertenecen al mismo grado.'),{status:409});
-  // La función SQL mueve primero al alumno que sale del grupo lleno y luego al solicitante.
+  if(String(a.grupo_id)!==String(reqRow.grupo_solicitante_id)||String(b.grupo_id)!==String(reqRow.grupo_destino_id))throw Object.assign(Error('Los grupos cambiaron desde la solicitud.'),{status:409});
+  permanentMatricula(a);permanentMatricula(b);await assertLegacyGroupMovement(admin,[a.grupo_id,b.grupo_id]);
   const {error:swapErr}=await admin.rpc('inetch_intercambiar_grupos',{p_alumno_a:a.id,p_alumno_b:b.id}); if(swapErr)throw swapErr;
-  // Actualizar matrículas/correos conforme a los nuevos grupos.
   const {data:newA,error:ae}=await admin.from('alumnos').select('*,grupos(id,clave,grado,letra,turno)').eq('id',a.id).single(); if(ae)throw ae;
   const {data:newB,error:be}=await admin.from('alumnos').select('*,grupos(id,clave,grado,letra,turno)').eq('id',b.id).single(); if(be)throw be;
-  const newMatA=await buildNewGroupMatricula(admin,{...a,sexo:a.sexo},newA.grupos); const newMatB=await buildNewGroupMatricula(admin,{...b,sexo:b.sexo},newB.grupos);
-  const {error:u1}=await admin.from('alumnos').update({matricula:newMatA}).eq('id',a.id); if(u1)throw u1;
-  const {error:u2}=await admin.from('alumnos').update({matricula:newMatB}).eq('id',b.id); if(u2)throw u2;
-  for(const row of [{id:a.auth_user_id,mat:newMatA},{id:b.auth_user_id,mat:newMatB}]) if(row.id){const email=await institutionalEmail(admin,row.mat);await admin.auth.admin.updateUserById(row.id,{email,email_confirm:true,user_metadata:{matricula:row.mat,login_email:email}});await admin.from('perfiles').update({correo:email,correo_auth:email,matricula:row.mat}).eq('id',row.id);}
   const {data,error}=await admin.from('solicitudes_intercambio_grupo').update({estado:'aceptada',respondido_at:new Date().toISOString(),resuelto_at:new Date().toISOString()}).eq('id',id).eq('estado','pendiente').select('*').single(); if(error)throw error;
   try{await createJaguarNotification(admin,a.auth_user_id,{titulo:'Intercambio de grupo aceptado',contenido:`${b.nombre_completo} aceptó el intercambio. Tu nuevo grupo es ${newA.grupos?.clave||'—'}.`,tipo:'intercambio_grupo',solicitudId:id});}catch(e){console.warn(e.message)}
   return {request:data,students:[newA,newB]};
@@ -4323,62 +4194,32 @@ async function authContextForRole(admin,user){
   const {data:p,error}=await admin.from('perfiles').select('rol').eq('id',user.id).maybeSingle(); if(error)throw error; return p?.rol||null;
 }
 
+async function requestStudent(admin,userId){
+  const {data,error}=await admin.from('alumnos').select('id::text,grupo_id::text,matricula,nombre_completo').eq('auth_user_id',userId).maybeSingle();
+  if(error)throw Object.assign(Error('No se pudo verificar el expediente vinculado.'),{status:503});
+  if(!data)throw Object.assign(Error('Cuenta sin expediente vinculado. Consulta Control Escolar.'),{status:409});
+  return data;
+}
 async function getStudentRequestsDirect(admin,user,profile){
+  let query=admin.from('solicitudes_estudiantiles').select('id::text,alumno_id::text,tipo,valor_actual,valor_solicitado,motivo,estado,observaciones_resolucion,atendida_por,created_at,atendida_at,grupo_materia_id,calificacion_id,docente_destino_id,departamento_destino,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))');
   if(profile.rol==='alumno'){
-    const student=await studentId(admin,user.id);
-    const {data,error}=await admin.from('solicitudes_estudiantiles')
-      .select('*,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))')
-      .eq('alumno_id',student?.id||-1).order('id',{ascending:false});
-    if(error)throw error;
-    const {data:workshops,error:werror}=await admin.from('talleres').select('id,nombre');
-    if(werror)throw werror;
-    const map=Object.fromEntries((workshops||[]).map(x=>[String(x.id),x]));
-    return (data||[]).map(row=>row.tipo==='taller'?({...row,taller_solicitado:map[String(row.valor_solicitado)]||null}):row);
-  }
-  if(!studentServices.includes(profile.rol))throw Object.assign(new Error('No autorizado.'),{status:403});
-  const {data,error}=await admin.from('solicitudes_estudiantiles')
-    .select('*,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))')
-    .order('id',{ascending:false});
+    const student=await requestStudent(admin,user.id);
+    if(!student)return [];
+    query=query.eq('alumno_id',student.id);
+  }else query=scopedRequests(query,profile.rol);
+  const {data,error}=await query.order('id',{ascending:false}).limit(500);
   if(error)throw error;
   const {data:workshops,error:werror}=await admin.from('talleres').select('id,nombre');
   if(werror)throw werror;
   const map=Object.fromEntries((workshops||[]).map(x=>[String(x.id),x]));
-  const visible=(data||[]).filter(row=>{
-    if(row.tipo==='aclaracion_calificacion')return false;
-    if(profile.rol==='direccion_escolar')return true;
-    if(profile.rol==='servicios_estudiantiles')return !row.departamento_destino||row.departamento_destino==='servicios_estudiantiles';
-    if(profile.rol==='servicios_docentes')return row.departamento_destino==='servicios_docentes';
-    if(profile.rol==='prefectura')return row.departamento_destino==='prefectura';
-    if(profile.rol==='coordinacion_academica')return row.departamento_destino==='coordinacion_academica';
-    if(profile.rol==='control_escolar'||profile.rol==='control')return row.tipo==='grupo'||!row.departamento_destino||row.departamento_destino==='control_escolar';
-    return false;
-  });
+  const visible=(data||[]).filter(row=>profile.rol==='alumno'||canReadRequest(profile.rol,row));
   return visible.map(row=>row.tipo==='taller'?({...row,taller_solicitado:map[String(row.valor_solicitado)]||null}):row);
 }
-
 async function getDepartmentRequestsDirect(admin,profile){
-  const roleMap={
-    servicios_docentes:['servicios_docentes'],
-    servicios_estudiantiles:['servicios_estudiantiles'],
-    prefectura:['prefectura'],
-    coordinacion_academica:['coordinacion_academica'],
-    control_escolar:['control_escolar'],
-    direccion_escolar:['direccion_escolar','control_escolar','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica']
-  };
   if(profile.rol==='alumno')return [];
-  if(!roleMap[profile.rol])throw Object.assign(new Error('Este departamento no administra solicitudes.'),{status:403});
-  const {data,error}=await admin.from('solicitudes_estudiantiles')
-    .select('*,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))')
-    .order('id',{ascending:false}).limit(500);
+  const {data,error}=await scopedRequests(admin.from('solicitudes_estudiantiles').select('id::text,alumno_id::text,tipo,valor_actual,valor_solicitado,motivo,estado,observaciones_resolucion,atendida_por,created_at,atendida_at,grupo_materia_id,calificacion_id,docente_destino_id,departamento_destino,alumnos(id,nombre_completo,matricula,grupo_id,grupos(clave,grado,letra))'),profile.rol).order('id',{ascending:false}).limit(500);
   if(error)throw error;
-  return (data||[]).filter(r=>{
-    if(r.tipo==='aclaracion_calificacion')return false;
-    const destino=String(r.departamento_destino||r.destino_departamento||'');
-    if(profile.rol==='direccion_escolar')return true;
-    if(!destino)return true;
-    if(roleMap[profile.rol]?.includes(destino))return true;
-    return ({taller:'servicios_estudiantiles',grado:'servicios_estudiantiles',grupo:'servicios_estudiantiles',turno:'servicios_estudiantiles'}[r.tipo]===profile.rol);
-  });
+  return (data||[]).filter(row=>canReadRequest(profile.rol,row));
 }
 
 export default async function handler(
@@ -4393,7 +4234,8 @@ export default async function handler(
     } = await authContext(req);
 
     if (profile?.rol === 'alumno') {
-      const { data: suspendedStudent } = await adminClient.from('alumnos').select('suspension_fecha,suspension_motivo').eq('auth_user_id', user.id).maybeSingle();
+      const { data: suspendedStudent,error: suspensionError } = await adminClient.from('alumnos').select('suspension_fecha,suspension_motivo').eq('auth_user_id', user.id).maybeSingle();
+      if(suspensionError)throw Object.assign(Error('No se pudo verificar la situación escolar.'),{status:503});
       const isSuspended = !!(suspendedStudent?.suspension_fecha || suspendedStudent?.suspension_motivo);
       const blockedResources = new Set(['grades','attendance','schedules','studentBoleta','studentSchedule','workshopEnrollments','workshops','clarifications','studentRequests','teacherEvaluation','teacherGrades','teacherAttendance']);
       const requestedResource = String(req.query?.resource || req.body?.resource || '');
@@ -4418,7 +4260,7 @@ export default async function handler(
     }
 
     if(req.method==='POST'&&req.body?.resource==='setGradePrecisionPolicy'){
-      const role=String(profile.rol||'');
+      const role=profile.rol==='control'?'control_escolar':String(profile.rol||'');
       if(!['control_escolar','coordinacion_academica','direccion_escolar'].includes(role))return res.status(403).json({ok:false,error:'El criterio académico sólo lo administran Control Escolar, Coordinación Académica o Dirección Escolar.'});
       const cycle=await activeCycle(adminClient),previous=await currentGradePolicy(adminClient,cycle);
       const decimals=req.body.permite_decimales;
@@ -4431,14 +4273,23 @@ export default async function handler(
       if(motivo.length<15||motivo.length>300)return res.status(400).json({ok:false,error:'Explica el motivo del cambio para el oficio (15 a 300 caracteres).'});
       const version=Number(req.body.version_esperada);
       if(!Number.isInteger(version)||version<0)return res.status(400).json({ok:false,error:'Recarga la configuración antes de actualizar.'});
-      const {data:oficio,error}=await adminClient.rpc('jaguar_cambiar_precision_calificaciones',{
+      const alcance=req.body.alcance;
+      const previsualizar=req.body.previsualizar;
+      if(!['ciclo','todos'].includes(alcance)||typeof previsualizar!=='boolean')return res.status(400).json({ok:false,error:'Selecciona el alcance y revisa la vista previa de la actualización.'});
+      if(alcance==='todos'&&role!=='control_escolar')return res.status(403).json({ok:false,error:'Sólo Control Escolar puede aplicar criterios a todos los ciclos.'});
+      if(!previsualizar&&alcance==='todos')return res.status(403).json({ok:false,error:'Reaplicación histórica: solo vista previa; falta autorización versionada.'});
+      const huella=String(req.body.huella||'');
+      if(!previsualizar&&!/^[a-f0-9]{32}$/.test(huella))return res.status(400).json({ok:false,error:'Primero revisa la vista previa del impacto.'});
+      const {data:resultado,error}=await adminClient.rpc('jaguar_aplicar_criterios_calificaciones',{
         p_ciclo:cycle,p_permite_decimales:decimals,p_motivo:motivo,
         p_actor:user.id,p_actor_nombre:profile.nombre_completo||profile.correo||'Autoridad académica',p_version_esperada:version,
-        p_minima_aprobatoria:min,p_permitir_reprobatorias_inferiores:allow
+        p_minima_aprobatoria:min,p_permitir_reprobatorias_inferiores:allow,p_alcance:alcance,p_previsualizar:previsualizar,p_huella:previsualizar?null:huella
       });
-      if(error)throw Object.assign(new Error(error.message),{status:error.code==='40001'?409:400});
-      try{await audit(adminClient,{userId:user.id,role,action:'cambiar_politica_calificaciones',module:'configuracion',entity:'jaguar_oficios_precision_calificaciones',entityId:oficio,description:`Cambio de criterio académico ${cycle}, oficio ITHLA-PC-${oficio}.`,after:{permite_decimales:decimals,minima_aprobatoria:min,permitir_reprobatorias_inferiores:allow,motivo},req});}catch(err){console.warn('Auditoría complementaria no registrada',err.message);}
-      return res.status(200).json({ok:true,data:{oficio_id:oficio,policy:await currentGradePolicy(adminClient,cycle)},message:'Criterio actualizado y oficio comunicado al personal activo.'});
+      if(error)throw Object.assign(new Error(error.message),{status:error.code==='40001'?409:error.code==='42501'?403:400});
+      if(previsualizar)return res.status(200).json({ok:true,data:resultado});
+      const oficio=resultado.oficio_id;
+      try{await audit(adminClient,{userId:user.id,role,action:'cambiar_politica_calificaciones',module:'configuracion',entity:'jaguar_oficios_precision_calificaciones',entityId:oficio,description:`Cambio de criterio académico ${cycle}, oficio ITHLA-PC-${oficio}.`,after:{permite_decimales:decimals,minima_aprobatoria:min,permitir_reprobatorias_inferiores:allow,motivo,alcance,resultado},req});}catch(err){console.warn('Auditoría complementaria no registrada',err.message);}
+      return res.status(200).json({ok:true,data:{...resultado,policy:await currentGradePolicy(adminClient,cycle)},message:'Criterio reaplicado y oficios comunicados al personal activo.'});
     }
 
     /* GET */
@@ -4514,29 +4365,21 @@ export default async function handler(
 
     if(req.method==='POST' && req.body?.resource==='advanceSchoolCycle'){
       if(!['control_escolar','control'].includes(profile.rol)) return res.status(403).json({ok:false,error:'Solo Control Escolar puede ejecutar el avance del ciclo escolar.'});
-      const cycle=String(req.body?.ciclo_escolar||'').trim(); const result=await advanceSchoolCycle(adminClient,user,cycle,profile.rol);
-      return res.status(200).json({ok:true,data:result,message:`Ciclo ${cycle} activado. Se promovieron ${result.promoted} alumnos y ${result.graduated} alumnos quedaron como egresados.`});
+      return res.status(409).json({ok:false,error:'Avance masivo antiguo suspendido en Jaguar 360: todavía no se verifican cierres, adeudos y reinscripciones. Consulta Planificación de ciclos.'});
     }
     if(req.method==='POST' && req.body?.resource==='revertSchoolCycle'){
       if(!['control_escolar','control'].includes(profile.rol)) return res.status(403).json({ok:false,error:'Solo Control Escolar puede revertir el último avance de ciclo.'});
-      const result=await revertSchoolCycle(adminClient,user,profile.rol);return res.status(200).json({ok:true,data:result,message:`Se revirtió el ciclo ${result.reverted} y se restauró ${result.restored_cycle}.`});
+      return res.status(409).json({ok:false,error:'Reversión masiva antigua suspendida: requiere una operación histórica segura. No se eliminó ningún registro.'});
     }
 
     if(req.method==='POST' && req.body?.resource==='setCurrentPeriod'){
       if(!['control_escolar','control'].includes(profile.rol)) return res.status(403).json({ok:false,error:'Solo Control Escolar puede cambiar el periodo actual.'});
-      const id=Number(req.body?.periodo_id||0); if(!id) return res.status(400).json({ok:false,error:'Periodo no válido.'});
-      const cycle=await activeCycle(adminClient);
-      const {data:period,error:pe}=await adminClient.from('periodos_escolares').select('id,nombre,ciclo_escolar,activo,numero_periodo,es_periodo_actual,fecha_inicio,fecha_fin').eq('id',id).maybeSingle();
-      if(pe) throw pe; if(!period) return res.status(404).json({ok:false,error:'Periodo no encontrado.'});
-      if(period.ciclo_escolar!==cycle) return res.status(409).json({ok:false,error:'Solo puedes activar un periodo del ciclo escolar actual.'});
-      if(period.activo===false) return res.status(409).json({ok:false,error:'Ese periodo está inactivo. Actívalo antes de seleccionarlo como actual.'});
-      if(period.es_periodo_actual) return res.status(200).json({ok:true,data:{period},message:'Ese periodo ya es el actual.'});
-      const {error:clearError}=await adminClient.from('periodos_escolares').update({es_periodo_actual:false}).eq('es_periodo_actual',true);
-      if(clearError) throw clearError;
-      const {data:updated,error:upError}=await adminClient.from('periodos_escolares').update({es_periodo_actual:true}).eq('id',id).select('*').single();
-      if(upError) throw upError;
-      await audit(adminClient,{userId:user.id,role:profile.rol,action:'cambiar_periodo_actual',module:'periodos_escolares',entity:'periodos_escolares',entityId:id,description:`Periodo actual cambiado a ${updated.nombre||'Periodo'} del ciclo ${cycle}.`,before:{periodo_actual:period?.nombre||null},after:{periodo_actual:updated.nombre,numero_periodo:updated.numero_periodo,ciclo:updated.ciclo_escolar},req});
-      return res.status(200).json({ok:true,data:{period:updated},message:`Periodo actual: ${updated.nombre||'Periodo'}. Los horarios del ciclo no cambiaron.`});
+      const raw=req.body?.periodo_id;
+      if(typeof raw==='number'&&!Number.isSafeInteger(raw)||typeof raw!=='number'&&typeof raw!=='string'||!/^[1-9]\d{0,18}$/.test(String(raw))||BigInt(String(raw))>9223372036854775807n) return res.status(400).json({ok:false,error:'Periodo no válido.'});
+      const {data,error}=await adminClient.rpc('jaguar360_avanzar_periodo',{p_actor:user.id,p_destino:String(raw)});
+      if(error)return res.status(error.code==='42501'?403:['P0001','55P03','23514'].includes(error.code)?409:503).json({ok:false,error:error.code==='42501'?'Sin atribución.':error.code==='P0001'?error.message:error.code==='55P03'?'Otra operación de periodos está en curso.':'No fue posible avanzar el periodo. Comprueba la migración V9.'});
+      if(!data?.period||data.period.es_periodo_actual!==true)return res.status(500).json({ok:false,error:'Supabase no confirmó el periodo actual.'});
+      return res.status(200).json({ok:true,data:{period:data.period},message:data.changed?`Periodo actual: ${data.period.nombre}. Los horarios no cambiaron.`:'Ese periodo ya es el actual.'});
     }
 
     /* GENERADOR DE HORARIOS */
@@ -4701,52 +4544,8 @@ export default async function handler(
       return res.status(200).json({ok:true,message:'Colores de materias guardados.',data:await getTeacherSubjectColors(adminClient,tid)});
     }
 
-    if (req.method === 'POST' && req.body?.resource === 'renewMatriculas') {
-      const dryRun=req.body?.dry_run!==false;
-      const result=await renewActiveMatriculas(adminClient,user,profile,{dryRun});
-      return res.status(200).json({ok:true,data:result,message:dryRun?'Vista previa de renovación lista.':'Renovación de matrículas completada.'});
-    }
-
-    if (req.method === 'POST' && req.body?.resource === 'migrateLegacyMatriculas') {
-      if(profile.rol!=='control_escolar' && profile.rol!=='direccion_escolar') return res.status(403).json({ok:false,error:'Solo Control Escolar o Dirección Escolar pueden migrar matrículas.'});
-      const dryRun=req.body?.dry_run!==false;
-      const cycle=await activeCycle(adminClient);
-      const {data:students,error:se}=await adminClient.from('alumnos').select('id,nombre_completo,matricula,sexo,curp,auth_user_id,grupo_id,grado_ingreso,turno,activo,grupos(id,clave,grado,letra,turno)').eq('activo',true).not('grupo_id','is',null).order('id');
-      if(se)throw se;
-      const newFormat=/^[A-Z]{6}-[HM]\d{2}[A-Z][MV][A-Z]{2}\d$/i;
-      const pending=[],preview=[],used=new Set((students||[]).map(x=>String(x.matricula||'').toUpperCase()).filter(Boolean));
-      let updated=0,already=0,conflicts=0;
-      for(const st of students||[]){
-        const old=String(st.matricula||'').trim().toUpperCase();
-        if(newFormat.test(old)){already++;continue;}
-        let sexo=String(st.sexo||'').trim();
-        if(!['Hombre','Mujer'].includes(sexo)){
-          const curpSex=String(st.curp||'').trim().toUpperCase().charAt(10);
-          const oldSex=old.match(/[-_]([HM])(?:\d|$)/i)?.[1]?.toUpperCase();
-          if(curpSex==='H')sexo='Hombre'; else if(curpSex==='M')sexo='Mujer'; else if(oldSex==='H')sexo='Hombre'; else if(oldSex==='M')sexo='Mujer';
-        }
-        if(!['Hombre','Mujer'].includes(sexo)){pending.push({id:st.id,nombre:st.nombre_completo,matricula_anterior:old||'—',motivo:'Falta sexo y no pudo inferirse de CURP/matrícula.'});continue;}
-        let newMat=null;
-        for(let attempt=0;attempt<100;attempt++){
-          const candidate=await generateJaguarMatricula(adminClient,{nombre:st.nombre_completo,sexo,grupo:st.grupos,turno:st.grupos?.turno||st.turno});
-          if(!used.has(candidate)){newMat=candidate;break;}
-        }
-        if(!newMat){conflicts++;pending.push({id:st.id,nombre:st.nombre_completo,matricula_anterior:old||'—',motivo:'No se pudo obtener una matrícula única.'});continue;}
-        used.add(newMat);preview.push({id:st.id,nombre:st.nombre_completo,matricula_anterior:old||'—',matricula_nueva:newMat,grupo:st.grupos?.clave||'—',sexo});
-        if(!dryRun){
-          const institution=await getInstitution(adminClient); const institutionDomain=String(institution.dominio_institucional||'ithla.edu.mx').replace(/^@/,'').toLowerCase();
-          const newEmail=st.auth_user_id?`${newMat.toLowerCase()}@${institutionDomain}`:null;
-          const {error:au}=await adminClient.from('alumnos').update({matricula:newMat}).eq('id',st.id); if(au)throw au;
-          if(st.auth_user_id){
-            const {error:ae}=await adminClient.auth.admin.updateUserById(st.auth_user_id,{email:newEmail,email_confirm:true,user_metadata:{matricula:newMat,login_email:newEmail}}); if(ae){await adminClient.from('alumnos').update({matricula:old}).eq('id',st.id);throw ae;}
-            const {error:pe}=await adminClient.from('perfiles').update({matricula:newMat,correo:newEmail,correo_auth:newEmail}).eq('id',st.auth_user_id); if(pe)throw pe;
-          }
-          try{const {error:mh}=await adminClient.from('matricula_alumnos').update({numero_matricula:newMat}).eq('numero_matricula',old);if(mh && !/does not exist|schema cache/i.test(mh.message||''))throw mh;}catch(e){if(!/does not exist|schema cache/i.test(e.message||''))throw e;}
-          const {error:logErr}=await adminClient.from('matricula_migraciones').insert({alumno_id:st.id,matricula_anterior:old||null,matricula_nueva:newMat,sexo_fuente:sexo==='Hombre'?'Hombre':'Mujer',ciclo_escolar:cycle,ejecutado_por:user.id});if(logErr)throw logErr;
-          updated++;
-        }
-      }
-      return res.status(200).json({ok:true,data:{dry_run:dryRun,cycle,total:(students||[]).length,actualizados:updated,ya_nuevas:already,pendientes:pending.length,conflictos,preview,pending},message:dryRun?'Vista previa lista. Ninguna matrícula fue modificada.':'Migración masiva completada.'});
+    if(req.method==='POST'&&['renewMatriculas','migrateLegacyMatriculas'].includes(req.body?.resource)){
+      return res.status(409).json({ok:false,error:'La matrícula es permanente. La renovación y migración masivas anteriores están deshabilitadas; el formato nuevo solo se aplica a nuevos ingresos.'});
     }
 
     if (req.method === 'POST' && req.body?.resource === 'prepareSignatureUpload') {
@@ -4963,14 +4762,15 @@ export default async function handler(
       if(closingPeriodErr||!closingPeriod)throw closingPeriodErr||Error('Periodo no encontrado.');
       const gradePrecision=await currentGradePolicy(adminClient,closingPeriod.ciclo_escolar);
       for(const row of closure.gradeRows){
-        const raw=Number(row.calificacion);
+        const raw=Number(row.detalle_evaluacion?.calificacion_sin_redondeo??row.detalle_evaluacion?.valor_total_excel??row.calificacion);
+        row.calificacion_original_politica=raw;
         row.calificacion=finalizeGrade(raw,gradePrecision);
         row.observaciones=gradeObservations(raw,row.observaciones,gradePrecision);
         row.calificacion_calculada=row.calificacion;
         row.detalle_evaluacion={...(row.detalle_evaluacion||{}),calificacion_sin_redondeo:row.detalle_evaluacion?.calificacion_sin_redondeo??raw,politica_precision:gradePrecision,resultado:gradeStatus(raw,gradePrecision),calificacion:row.calificacion};
       }
       for(const item of closure.detail){
-        item.calificacion=finalizeGrade(item.calificacion,gradePrecision);
+        item.calificacion=finalizeGrade(item.snapshot?.calificacion_sin_redondeo??item.snapshot?.valor_total_excel??item.calificacion,gradePrecision);
       }
       const adjustments=Array.isArray(req.body?.adjustments)?req.body.adjustments:[];
       const allowedAdjustments=new Map(closure.detail.map(x=>[String(x.alumno_id),x]));
@@ -4984,11 +4784,11 @@ export default async function handler(
         const nuevo=Number(a.valor_nuevo);
         if(!Number.isFinite(nuevo)||nuevo<0||nuevo>10) throw Object.assign(new Error(`El ajuste de ${base.nombre_completo} debe estar entre 0 y 10.`),{status:400});
         if(Math.abs(nuevo-base.calificacion)>0.001 && !reason) throw Object.assign(new Error(`Debes indicar el motivo del ajuste de ${base.nombre_completo}.`),{status:400});
-        if(Math.abs(nuevo-base.calificacion)>0.001) normalizedAdjustments.push({alumno_id:base.alumno_id,valor_calculado:base.calificacion,valor_anterior:base.calificacion,valor_nuevo:finalizeGrade(nuevo,gradePrecision),motivo:reason,tipo:nuevo>base.calificacion?'aumento':'disminucion'});
+        if(Math.abs(nuevo-base.calificacion)>0.001) normalizedAdjustments.push({alumno_id:base.alumno_id,valor_calculado:base.calificacion,valor_anterior:base.calificacion,valor_nuevo:finalizeGrade(nuevo,gradePrecision),valor_original_ajuste:nuevo,motivo:reason,tipo:nuevo>base.calificacion?'aumento':'disminucion'});
       }
       if(normalizedAdjustments.length){const {error:aq}=await adminClient.from('ajustes_calificacion').select('id').limit(1);if(aq) throw Object.assign(new Error('No se puede registrar el ajuste porque falta la migración sql/ITHLA_DB_COMPLETO_2026_2027.sql. No se cerró el periodo.'),{status:409});}
       const adjustmentMap=new Map(normalizedAdjustments.map(x=>[String(x.alumno_id),x]));
-      for(const row of closure.gradeRows){const a=adjustmentMap.get(String(row.alumno_id));if(a){row.calificacion=a.valor_nuevo;row.observaciones=gradeObservations(a.valor_nuevo,`Ajuste docente registrado: ${a.motivo}`,gradePrecision);row.detalle_evaluacion={...(row.detalle_evaluacion||{}),resultado:gradeStatus(a.valor_nuevo,gradePrecision),calificacion:row.calificacion,ajuste:{valor_calculado:a.valor_calculado,valor_nuevo:a.valor_nuevo,tipo:a.tipo,motivo:a.motivo}};}}
+      for(const row of closure.gradeRows){const a=adjustmentMap.get(String(row.alumno_id));if(a){row.calificacion=a.valor_nuevo;row.calificacion_original_politica=a.valor_original_ajuste;row.observaciones=gradeObservations(a.valor_original_ajuste,`Ajuste docente registrado: ${a.motivo}`,gradePrecision);row.detalle_evaluacion={...(row.detalle_evaluacion||{}),resultado:gradeStatus(a.valor_original_ajuste,gradePrecision),calificacion:row.calificacion,ajuste:{valor_calculado:a.valor_calculado,valor_nuevo:a.valor_nuevo,tipo:a.tipo,motivo:a.motivo}};}}
       const filePath=String(req.body?.file_path||'');
       if(filePath && !filePath.startsWith(`${closure.ctx.tid}/`)) return res.status(403).json({ok:false,error:'Archivo de evidencia no autorizado.'});
       const closureRow={rubrica_id:closure.rubric.id,docente_id:closure.ctx.tid,grupo_materia_id:gmId,periodo_id:periodoId,archivo_path:filePath||null,archivo_nombre:String(req.body?.file_name||'').slice(0,180)||null,archivo_sha256:String(req.body?.file_sha256||'').slice(0,64)||null,registros:closure.detail.length,promedio_general:closure.gradeRows.length?closure.gradeRows.reduce((a,x)=>a+x.calificacion,0)/closure.gradeRows.length:null,estado:'cerrado',resumen:closure.detail.map(x=>({alumno_id:x.alumno_id,matricula:x.matricula,calificacion:closure.gradeRows.find(z=>z.alumno_id===x.alumno_id)?.calificacion??x.calificacion})),submitted_at:new Date().toISOString(),submitted_by:user.id};
@@ -5042,7 +4842,7 @@ export default async function handler(
       const nueva = req.body?.nueva_calificacion === '' || req.body?.nueva_calificacion == null ? null : Number(req.body.nueva_calificacion);
       if (nueva !== null && (!Number.isFinite(nueva) || nueva < 0 || nueva > 10)) return res.status(400).json({ ok:false, error:'La nueva calificación debe estar entre 0 y 10.' });
       if (estado === 'aprobada' && nueva !== null) {
-        const { error: ue } = await adminClient.from('calificaciones').update({ calificacion:nueva, observaciones:req.body?.observaciones || null }).eq('id', request.calificacion_id);
+        const { error: ue } = await adminClient.from('calificaciones').update({ calificacion:nueva, calificacion_original_politica:nueva, observaciones:req.body?.observaciones || null }).eq('id', request.calificacion_id);
         if (ue) throw ue;
       }
       const { error: ue } = await adminClient.from('solicitudes_estudiantiles').update({ estado, observaciones_resolucion:req.body?.observaciones || null, atendida_por:user.id, atendida_at:new Date().toISOString() }).eq('id', id);
@@ -5109,12 +4909,12 @@ export default async function handler(
       if(!user?.id)return res.status(401).json({ok:false,error:'Sesión inválida.'});
       const action=String(req.body?.action||'').trim();
       if(action==='mark_read'){
-        const id=Number(req.body?.id||0);
-        if(id){const {error}=await adminClient.from('notificaciones').update({leida:true}).eq('id',id).eq('usuario_id',user.id);if(error)throw error;}
+        const id=notificationId(req.body?.id);
+        const {error}=await adminClient.from('notificaciones').update({leida:true}).eq('id',id).eq('usuario_id',user.id);if(error)throw error;
         return res.status(200).json({ok:true});
       }
       if(action==='mark_all_read'){
-        const {error}=await adminClient.from('notificaciones').update({leida:true}).eq('usuario_id',user.id).eq('leida',false);if(error)throw error;
+        const {error}=await adminClient.from('notificaciones').update({leida:true}).eq('usuario_id',user.id).or('leida.eq.false,leida.is.null');if(error)throw error;
         return res.status(200).json({ok:true});
       }
       return res.status(400).json({ok:false,error:'Acción de notificación no válida.'});
@@ -6740,32 +6540,12 @@ async function changeStudentGroup(admin, user, profile, request, mode){
   if(Number(target.grado)!==Number(current.grado))throw Object.assign(new Error('El cambio de grupo solo puede hacerse dentro del mismo grado. Un alumno no puede pasar de 1° a 3° mediante una solicitud normal.'),{status:409});
   if(Number(target.id)===Number(current.id))throw Object.assign(new Error('El grupo destino es el mismo grupo actual.'),{status:400});
   const targetCap=await groupCapacity(admin,[target.id]);
-  if(targetCap[String(target.id)]?.lleno) throw Object.assign(new Error(`El grupo ${target.clave||''} ya tiene 40 alumnos y no tiene cupo. Para entrar a ese grupo se requiere un intercambio aceptado por otro alumno.`),{status:409});
-  const oldMat=String(student.matricula||'').trim();
-  const newMat=await buildNewGroupMatricula(admin,student,target);
-  const oldEmail=student.auth_user_id?await institutionalEmail(admin,oldMat):null;
-  const newEmail=student.auth_user_id?await institutionalEmail(admin,newMat):null;
-
-  const {data:updated,error:ue}=await admin.from('alumnos').update({grupo_id:target.id,grado_ingreso:Number(target.grado),turno:target.turno||null,matricula:newMat}).eq('id',student.id).select('*,grupos(id,clave,grado,letra,turno)').single();
+  if(targetCap[String(target.id)]?.lleno) throw Object.assign(new Error(`El grupo ${target.clave||''} alcanzó su cupo autorizado. Para entrar a ese grupo se requiere un intercambio aceptado por otro alumno.`),{status:409});
+  await assertLegacyGroupMovement(admin,[current.id,target.id]);
+  const oldMat=permanentMatricula(student);
+  const {data:updated,error:ue}=await admin.from('alumnos').update({grupo_id:target.id,grado_ingreso:Number(target.grado),turno:target.turno||null}).eq('id',student.id).eq('grupo_id',current.id).select('*,grupos(id,clave,grado,letra,turno)').single();
   if(ue)throw ue;
-
-  // Mantiene el historial de matrícula si la tabla existe en la instalación.
-  if(oldMat){
-    const {data:mr,error:me}=await admin.from('matricula_alumnos').select('id').eq('numero_matricula',oldMat).maybeSingle();
-    if(!me && mr){
-      const {error:mu}=await admin.from('matricula_alumnos').update({numero_matricula:newMat,matricula_anterior:oldMat}).eq('id',mr.id);
-      if(mu && !/column .*matricula_anterior.*does not exist/i.test(mu.message||'')) throw mu;
-      if(mu && /column .*matricula_anterior.*does not exist/i.test(mu.message||'')) await admin.from('matricula_alumnos').update({numero_matricula:newMat}).eq('id',mr.id);
-    }
-  }
-
-  if(student.auth_user_id){
-    const {error:ae}=await admin.auth.admin.updateUserById(student.auth_user_id,{email:newEmail,email_confirm:true,user_metadata:{login_email:newEmail,matricula:newMat}});
-    if(ae)throw ae;
-    const {error:pe}=await admin.from('perfiles').update({correo:newEmail,correo_auth:newEmail,matricula:newMat}).eq('id',student.auth_user_id);
-    if(pe)throw pe;
-  }
-  return {student:updated,current,target,oldMat,newMat,oldEmail,newEmail};
+  return {student:updated,current,target,oldMat,newMat:oldMat};
 }
 
 /* =========================================================
@@ -6785,19 +6565,13 @@ async function changeStudentGroupDirect(admin,user,profile,body){
   if(te)throw te;if(!target||target.activo===false)throw Object.assign(new Error('El grupo destino no está activo.'),{status:400});
   if(Number(target.grado)!==Number(current.grado))throw Object.assign(new Error('El cambio directo solo permite mover al alumno dentro de su mismo grado. Para cambiar de grado usa Cambio especial de grado.'),{status:409});
   if(Number(target.id)===Number(current.id))throw Object.assign(new Error('El alumno ya pertenece a ese grupo.'),{status:400});
-  const suppliedSex=String(body.sexo||'').trim();
-  if(suppliedSex && !['Hombre','Mujer'].includes(suppliedSex)) throw Object.assign(new Error('El sexo indicado no es válido.'),{status:400});
-  if(suppliedSex) student.sexo=suppliedSex;
-  const newMat=await buildNewGroupMatricula(admin,student,target), oldMat=String(student.matricula||'').trim();
-  const newEmail=student.auth_user_id?await institutionalEmail(admin,newMat):null;
-  const updatePayload={grupo_id:target.id,grado_ingreso:Number(target.grado),turno:target.turno||null,matricula:newMat};
-  if(suppliedSex) updatePayload.sexo=suppliedSex;
-  const {data:updated,error:ue}=await admin.from('alumnos').update(updatePayload).eq('id',student.id).select('*,grupos(id,clave,grado,letra,turno)').single();
+  await assertLegacyGroupMovement(admin,[current.id,target.id]);
+  const cap=await groupCapacity(admin,[target.id]);if(cap[String(target.id)]?.lleno)throw Object.assign(Error('El grupo destino no tiene cupo.'),{status:409});
+  const oldMat=permanentMatricula(student);
+  const {data:updated,error:ue}=await admin.from('alumnos').update({grupo_id:target.id,grado_ingreso:Number(target.grado),turno:target.turno||null}).eq('id',student.id).eq('grupo_id',current.id).select('*,grupos(id,clave,grado,letra,turno)').single();
   if(ue)throw ue;
-  if(oldMat){const {data:mr,error:me}=await admin.from('matricula_alumnos').select('id').eq('numero_matricula',oldMat).maybeSingle();if(!me&&mr){const {error:mu}=await admin.from('matricula_alumnos').update({numero_matricula:newMat,matricula_anterior:oldMat}).eq('id',mr.id);if(mu&&/column .*matricula_anterior.*does not exist/i.test(mu.message||''))await admin.from('matricula_alumnos').update({numero_matricula:newMat}).eq('id',mr.id);else if(mu)throw mu;}}
-  if(student.auth_user_id){const {error:ae}=await admin.auth.admin.updateUserById(student.auth_user_id,{email:newEmail,email_confirm:true,user_metadata:{...(body.user_metadata||{}),login_email:newEmail,matricula:newMat}});if(ae)throw ae;const {error:pe}=await admin.from('perfiles').update({correo:newEmail,correo_auth:newEmail,matricula:newMat}).eq('id',student.auth_user_id);if(pe)throw pe;}
   try{await createJaguarNotification(admin,student.auth_user_id,{titulo:'Cambio de grupo realizado',contenido:`Control Escolar realizó un cambio de grupo. Grupo anterior: ${current.clave}. Nuevo grupo: ${target.clave}.`,tipo:'cambio_grupo'});}catch(e){console.warn('No se pudo notificar el cambio directo:',e.message)}
-  return {student:updated,current,target,oldMat,newMat,newEmail};
+  return {student:updated,current,target,oldMat,newMat:oldMat};
 }
 
 async function createSpecialGradeRequest(admin,user,profile,body){
@@ -6856,12 +6630,11 @@ async function executeSpecialGradeChange(admin,user,profile,body){
   const id=Number(body.id||0);if(!id)throw Object.assign(new Error('Solicitud inválida.'),{status:400});
   const {data:reqRow,error:re}=await admin.from('solicitudes_cambio_grado').select('*,alumnos(id,auth_user_id,nombre_completo,matricula,sexo,grupo_id,grado_ingreso,turno)').eq('id',id).maybeSingle();if(re)throw re;if(!reqRow)throw Object.assign(new Error('Solicitud no encontrada.'),{status:404});if(reqRow.estado!=='aprobada')throw Object.assign(new Error('El cambio todavía no tiene la autorización de todos los departamentos.'),{status:409});
   const {data:aps,error:ae}=await admin.from('aprobaciones_cambio_grado').select('departamento,estado').eq('solicitud_id',id);if(ae)throw ae;if(!ITHLA_DEPARTMENTS.every(role=>(aps||[]).some(a=>a.departamento===role&&a.estado==='aprobada')))throw Object.assign(new Error('Falta la autorización de uno o más departamentos.'),{status:409});
-  const student=reqRow.alumnos;const {data:groups,error:ge}=await admin.from('grupos').select('id,clave,grado,letra,turno,activo').eq('activo',true).eq('grado',Number(reqRow.grado_solicitado));if(ge)throw ge;const caps=await groupCapacity(admin,(groups||[]).map(g=>g.id));let target=(groups||[]).find(g=>Number(g.id)===Number(reqRow.grupo_destino_id))||null;if(!target){const available=(groups||[]).filter(g=>!caps[String(g.id)]?.lleno);if(!available.length)throw Object.assign(new Error(`No hay grupos con cupo disponible para ${reqRow.grado_solicitado}°.`),{status:409});target=available[Math.floor(Math.random()*available.length)];}else if(caps[String(target.id)]?.lleno)throw Object.assign(new Error(`El grupo ${target.clave||''} está lleno (40 alumnos).`),{status:409});
+  const student=reqRow.alumnos;const {data:groups,error:ge}=await admin.from('grupos').select('id,clave,grado,letra,turno,activo').eq('activo',true).eq('grado',Number(reqRow.grado_solicitado));if(ge)throw ge;const caps=await groupCapacity(admin,(groups||[]).map(g=>g.id));let target=(groups||[]).find(g=>Number(g.id)===Number(reqRow.grupo_destino_id))||null;if(!target){const available=(groups||[]).filter(g=>!caps[String(g.id)]?.lleno);if(!available.length)throw Object.assign(new Error(`No hay grupos con cupo disponible para ${reqRow.grado_solicitado}°.`),{status:409});target=available[Math.floor(Math.random()*available.length)];}else if(caps[String(target.id)]?.lleno)throw Object.assign(new Error(`El grupo ${target.clave||''} alcanzó su cupo autorizado.`),{status:409});
   const current=student.grupo_id?await admin.from('grupos').select('id,clave,grado,letra,turno').eq('id',student.grupo_id).maybeSingle():{data:null};
-  const oldGroup=current.data;const newMat=await generateJaguarMatricula(admin,{nombre:student.nombre_completo,sexo:student.sexo,grupo:target,turno:target.turno});const oldMat=String(student.matricula||'').trim();const newEmail=student.auth_user_id?await institutionalEmail(admin,newMat):null;
-  const {data:updated,error:ue}=await admin.from('alumnos').update({grupo_id:target.id,grado_ingreso:Number(target.grado),turno:target.turno||null,matricula:newMat}).eq('id',student.id).select('*,grupos(id,clave,grado,letra,turno)').single();if(ue)throw ue;
-  if(oldMat){const {data:mr,error:me}=await admin.from('matricula_alumnos').select('id').eq('numero_matricula',oldMat).maybeSingle();if(!me&&mr){const {error:mu}=await admin.from('matricula_alumnos').update({numero_matricula:newMat,matricula_anterior:oldMat}).eq('id',mr.id);if(mu&&/column .*matricula_anterior.*does not exist/i.test(mu.message||''))await admin.from('matricula_alumnos').update({numero_matricula:newMat}).eq('id',mr.id);else if(mu)throw mu;}}
-  if(student.auth_user_id){const {error:ae2}=await admin.auth.admin.updateUserById(student.auth_user_id,{email:newEmail,email_confirm:true,user_metadata:{login_email:newEmail,matricula:newMat}});if(ae2)throw ae2;const {error:pe}=await admin.from('perfiles').update({correo:newEmail,correo_auth:newEmail,matricula:newMat}).eq('id',student.auth_user_id);if(pe)throw pe;}
+  const oldGroup=current.data;const oldMat=permanentMatricula(student),newMat=oldMat;
+  await assertLegacyGroupMovement(admin,[student.grupo_id,target.id]);
+  const {data:updated,error:ue}=await admin.from('alumnos').update({grupo_id:target.id,grado_ingreso:Number(target.grado),turno:target.turno||null}).eq('id',student.id).eq('grupo_id',student.grupo_id).select('*,grupos(id,clave,grado,letra,turno)').single();if(ue)throw ue;
   const {error:mark}=await admin.from('solicitudes_cambio_grado').update({estado:'ejecutada',ejecutada_at:new Date().toISOString(),atendida_at:new Date().toISOString()}).eq('id',id);if(mark)throw mark;
   if(student.auth_user_id)try{await createJaguarNotification(admin,student.auth_user_id,{titulo:'Cambio especial de grado realizado',contenido:`Tu cambio de grado fue autorizado por todos los departamentos y ejecutado por Control Escolar. ${oldGroup?.clave||''} → ${target.clave}.`,tipo:'cambio_grado_especial'});}catch(e){}
   return {student:updated,current:oldGroup,target,oldMat,newMat};
@@ -6891,7 +6664,7 @@ async function handleStudentRequest(
     'alumno'
   ) {
     const student =
-      await studentId(
+      await requestStudent(
         admin,
         user.id
       );
@@ -6917,6 +6690,7 @@ async function handleStudentRequest(
             'otro'
           );
 
+    if(!requestTypes.includes(type)||body.action==='resolve')return res.status(400).json({ok:false,error:'Tipo o acción de solicitud no válido.'});
     const reason =
       String(
         data.motivo || ''
@@ -6962,16 +6736,18 @@ async function handleStudentRequest(
     };
 
     if(type==='grupo') {
-      const targetId=Number(data.valor_solicitado||0);
-      const {data:studentGroup,error:sg}=await admin.from('alumnos').select('grupo_id,grupos(id,clave,grado,activo)').eq('id',student.id).maybeSingle();
+      const targetId=requestId(data.valor_solicitado);if(!targetId)throw Object.assign(Error('Grupo solicitado inválido.'),{status:400});
+      const {data:studentGroup,error:sg}=await admin.from('alumnos').select('grupo_id::text,grupos(id::text,clave,grado,activo)').eq('id',student.id).maybeSingle();
       if(sg)throw sg;
-      const {data:target,error:tg}=await admin.from('grupos').select('id,clave,grado,letra,turno,activo').eq('id',targetId).maybeSingle();
+      const {data:target,error:tg}=await admin.from('grupos').select('id::text,clave,grado,letra,turno,activo').eq('id',targetId).maybeSingle();
       if(tg)throw tg;
       if(!target||target.activo===false)throw Object.assign(new Error('El grupo solicitado no está disponible.'),{status:400});
+      if(String(target.id)===String(studentGroup?.grupo_id))throw Object.assign(Error('Ya perteneces a ese grupo.'),{status:400});
       if(!studentGroup?.grupos||Number(target.grado)!==Number(studentGroup.grupos.grado))throw Object.assign(new Error('Solo puedes solicitar cambio a otro grupo del mismo grado. Los cambios de grado se tramitan por una solicitud especial.'),{status:400});
       row.valor_actual=String(studentGroup.grupo_id||'');
       row.valor_solicitado=String(target.id);
-      const {data:pending}=await admin.from('solicitudes_estudiantiles').select('id').eq('alumno_id',student.id).eq('tipo','grupo').eq('estado','pendiente').limit(1);
+      const {data:pending,error:pe}=await admin.from('solicitudes_estudiantiles').select('id').eq('alumno_id',student.id).eq('tipo','grupo').eq('estado','pendiente').limit(1);
+      if(pe)throw pe;
       if(pending?.length)throw Object.assign(new Error('Ya tienes una solicitud de cambio de grupo pendiente.'),{status:409});
     }
 
@@ -6985,26 +6761,14 @@ async function handleStudentRequest(
         );
     }
 
-    const {
-      data: created,
-      error
-    } = await admin
-      .from(
-        'solicitudes_estudiantiles'
-      )
-      .insert(row)
-      .select('*')
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    if(type==='grupo') {
-      try{await notifyJaguarRole(admin,'control_escolar',{titulo:'Nueva solicitud de cambio de grupo',contenido:`${student.nombre_completo||'Un alumno'} solicitó cambio de grupo. Revisa la solicitud para aceptar el grupo solicitado o asignar uno aleatorio del mismo grado.`,tipo:'cambio_grupo',solicitudId:created.id});}catch(e){console.warn('No se pudo crear la notificación de Control Escolar:',e.message)}
-    } else if(type==='taller') {
-      try{await notifyJaguarRole(admin,'servicios_estudiantiles',{titulo:'Nueva solicitud de taller',contenido:`${student.nombre_completo||'Un alumno'} envió una solicitud relacionada con su taller extracurricular.`,tipo:'taller',solicitudId:created.id});}catch(e){console.warn('No se pudo crear la notificación de Servicios Estudiantiles:',e.message)}
-    }
+    // The SQL routine rechecks identity, ownership and pending duplicates with locks.
+    const {data:created,error}=await admin.rpc('jaguar360_crear_solicitud_ordinaria',{
+      p_actor:user.id,p_tipo:type,p_actual:row.valor_actual==null?null:String(row.valor_actual),
+      p_solicitado:row.valor_solicitado==null?null:String(row.valor_solicitado),
+      p_motivo:reason,p_destino:row.departamento_destino
+    });
+    if(error)throw Object.assign(Error(error.message),{status:error.code==='42501'?403:['40001','23514'].includes(error.code)?409:['22023','22003'].includes(error.code)?400:503});
+    if(!created?.id)throw Object.assign(Error('No se pudo confirmar la solicitud.'),{status:503});
 
     return res
       .status(200)
@@ -7019,268 +6783,15 @@ async function handleStudentRequest(
      RESUELVE
      ------------------------- */
 
-  const allowedRequestResolvers=['direccion_escolar','control_escolar','servicios_estudiantiles','servicios_docentes','prefectura','coordinacion_academica'];
-  if (!allowedRequestResolvers.includes(profile.rol)) {
-    return res.status(403).json({ok:false,error:'Este perfil no administra solicitudes.'});
-  }
-
-  const id =
-    Number(
-      body.id || 0
-    );
-
-  if (
-    body.action ===
-    'resolve'
-  ) {
-    if (!id) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error:
-            'Solicitud inválida.'
-        });
-    }
-
-    const estado =
-      body.estado ===
-      'aprobada'
-        ? 'aprobada'
-        : body.estado ===
-          'rechazada'
-        ? 'rechazada'
-        : null;
-
-    if (!estado) {
-      return res
-        .status(400)
-        .json({
-          ok: false,
-          error:
-            'Estado inválido.'
-        });
-    }
-
-    const {
-      data: request,
-      error: requestError
-    } = await admin
-      .from(
-        'solicitudes_estudiantiles'
-      )
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (
-      requestError ||
-      !request
-    ) {
-      throw Object.assign(
-        new Error(
-          requestError?.message ||
-          'Solicitud no encontrada.'
-        ),
-        { status: 404 }
-      );
-    }
-    if (profile.rol!=='direccion_escolar' && !(request.tipo==='grupo' && ['control_escolar','control'].includes(profile.rol)) && request.departamento_destino && request.departamento_destino!==profile.rol) {
-      return res.status(403).json({ok:false,error:'Esta solicitud pertenece a otro departamento.'});
-    }
-
-    if (
-      estado ===
-      'aprobada'
-    ) {
-      const alumnoId =
-        request.alumno_id;
-
-      if (request.tipo === 'grupo') {
-        const mode=body.grupo_modo==='random'?'random':'solicitado';
-        const result=await changeStudentGroup(admin,user,profile,request,mode);
-        const quien=profile.nombre_completo||user.email||'Control Escolar';
-        try{await createJaguarNotification(admin,result.student.auth_user_id,{
-          titulo:'Solicitud de cambio de grupo resuelta',
-          contenido:`Tu solicitud fue aceptada por ${quien}. Grupo anterior: ${result.current.clave}. Nuevo grupo: ${result.target.clave}. ${mode==='random'?'La reasignación se realizó aleatoriamente dentro de tu mismo grado.':'Se asignó el grupo que solicitaste.'}`,
-          tipo:'cambio_grupo',
-          solicitudId:id
-        });}catch(e){console.warn('No se pudo notificar al alumno:',e.message)}
-      }
-
-      if (
-        request.tipo ===
-          'turno' &&
-        request.valor_solicitado
-      ) {
-        await admin
-          .from('alumnos')
-          .update({
-            turno:
-              request.valor_solicitado
-          })
-          .eq(
-            'id',
-            alumnoId
-          );
-      }
-
-      if (
-        request.tipo ===
-          'grado' &&
-        request.valor_solicitado
-      ) {
-        await admin
-          .from('alumnos')
-          .update({
-            grado_ingreso:
-              Number(
-                request.valor_solicitado
-              )
-          })
-          .eq(
-            'id',
-            alumnoId
-          );
-      }
-
-      if (
-        request.tipo ===
-          'taller' &&
-        request.valor_solicitado
-      ) {
-        const {
-          data: current
-        } = await admin
-          .from(
-            'inscripciones_talleres'
-          )
-          .select(
-            'id,ciclo_escolar'
-          )
-          .eq(
-            'alumno_id',
-            alumnoId
-          )
-          .eq(
-            'estado',
-            'inscrito'
-          )
-          .order('id', {
-            ascending: false
-          })
-          .limit(1)
-          .maybeSingle();
-
-        if (current?.id) {
-          await admin
-            .from(
-              'inscripciones_talleres'
-            )
-            .update({
-              estado:
-                'cambio'
-            })
-            .eq(
-              'id',
-              current.id
-            );
-        }
-
-        const ciclo =
-          current?.ciclo_escolar ||
-          `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`;
-
-        const {
-          error: workshopError
-        } = await admin
-          .from(
-            'inscripciones_talleres'
-          )
-          .upsert(
-            {
-              alumno_id:
-                alumnoId,
-
-              taller_id:
-                Number(
-                  request.valor_solicitado
-                ),
-
-              ciclo_escolar:
-                ciclo,
-
-              estado:
-                'inscrito',
-
-              fecha_inscripcion:
-                new Date()
-                  .toISOString()
-                  .slice(0, 10)
-            },
-            {
-              onConflict:
-                'alumno_id,taller_id,ciclo_escolar'
-            }
-          );
-
-        if (workshopError) {
-          throw workshopError;
-        }
-      }
-    }
-
-    if(request.tipo==='grupo' && estado==='rechazada') {
-      const {data:st}=await admin.from('alumnos').select('auth_user_id').eq('id',request.alumno_id).maybeSingle();
-      const quien=profile.nombre_completo||user.email||'Control Escolar';
-      try{await createJaguarNotification(admin,st?.auth_user_id,{titulo:'Solicitud de cambio de grupo rechazada',contenido:`Tu solicitud fue rechazada por ${quien}. Consulta la resolución en Solicitudes para conocer las observaciones.`,tipo:'cambio_grupo',solicitudId:id});}catch(e){console.warn('No se pudo notificar al alumno:',e.message)}
-    }
-
-    const {
-      error: updateError
-    } = await admin
-      .from(
-        'solicitudes_estudiantiles'
-      )
-      .update({
-        estado,
-
-        observaciones_resolucion:
-          body.observaciones_resolucion ||
-          null,
-
-        atendida_por:
-          user.id,
-
-        atendida_at:
-          new Date().toISOString()
-      })
-      .eq(
-        'id',
-        id
-      );
-
-    if (updateError) {
-      throw updateError;
-    }
-
-    return res
-      .status(200)
-      .json({
-        ok: true,
-        message:
-          estado ===
-          'aprobada'
-            ? 'Solicitud aprobada.'
-            : 'Solicitud rechazada.'
-      });
-  }
-
-  return res
-    .status(400)
-    .json({
-      ok: false,
-      error:
-        'Acción no válida.'
-    });
+  if(!requestRoles.includes(requestRole(profile.rol)))return res.status(403).json({ok:false,error:'Este perfil no administra solicitudes.'});
+  const id=requestId(body.id),estado=body.estado;
+  if(body.action!=='resolve'||!id||!['aprobada','rechazada'].includes(estado))return res.status(400).json({ok:false,error:'Solicitud o resolución inválida.'});
+  const observaciones=String(body.observaciones_resolucion||'').trim();
+  if(observaciones.length>2000)return res.status(400).json({ok:false,error:'Observaciones demasiado extensas.'});
+  const {data,error}=await admin.rpc('jaguar360_resolver_solicitud',{p_actor:user.id,p_id:id,p_estado:estado,p_modo:body.grupo_modo==='random'?'random':'solicitado',p_observaciones:observaciones});
+  if(error)throw Object.assign(Error(error.message),{status:error.code==='42501'?403:error.code==='40001'||error.code==='23514'?409:error.code==='22023'||error.code==='22003'?400:503});
+  if(!data||data.estado!==estado)throw Object.assign(Error('No se pudo confirmar la resolución.'),{status:503});
+  // The same SQL transaction registers the student's inbox notification.
+  const notification=data.notification||'no_confirmada';
+  return res.status(200).json({ok:true,data,notification,message:estado==='aprobada'?'Solicitud aprobada.':'Solicitud rechazada.'});
 }

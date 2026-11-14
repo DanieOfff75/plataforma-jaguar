@@ -204,7 +204,7 @@ async function jaguarClassroomModule(gmId=0){
  ${manager&&googleStatus?.connected?`<div class="card"><h3>Crear todas las materias de un grupo</h3><p class="text-sm mt-2">Solo crea las que selecciones; nunca vuelve a crear materias ya vinculadas. Revisa docentes y PROF./PROFA. antes de confirmar.</p><select id="j574batchGroup" class="input mt-3" onchange="j574batchGroupChanged()"><option value="">Seleccionar grupo</option>${groups.map(([id,g])=>`<option value="${id}">${j56esc(g.clave)}</option>`).join('')}</select><div class="scroll mt-3"><table class="table"><thead><tr><th>Materia</th><th>Docente</th><th>Tratamiento</th><th>Crear</th></tr></thead><tbody id="j574batchRows"></tbody></table></div><div class="flex flex-wrap gap-3 mt-3"><button id="j574batchButton" class="btn primary" onclick="j574batchCreate()">Crear clases seleccionadas</button><button class="btn" onclick="j574ensureGroupTopics()">Preparar temas de todo el grupo</button></div><div id="j574batchStatus" class="text-sm mt-3"></div></div>
  <div class="card"><h3>Preparar temas por periodo</h3><p class="text-sm mt-2">Genera PRIMER PERIODO, SEGUNDO PERIODO, etc. desde los periodos oficiales de Jaguar. También sirve para las clases creadas manualmente.</p><select id="j574topicGm" class="input mt-3" onchange="j574topicClassChanged()"><option value="">Seleccionar clase vinculada</option>${(J56.catalog.rows||[]).filter(r=>r.google_course_id).map(r=>`<option value="${Number(r.grupo_materia_id)}">${j56esc(r.nombre)}</option>`).join('')}</select><p id="j574topicInfo" class="text-xs mt-2"></p><button id="j574topicButton" class="btn primary mt-3" onclick="j574ensureTopics()">Preparar temas</button><div id="j574topicResults" class="text-sm mt-3"></div></div>
  <div class="card"><h3>Relacionar cuentas Google con matrículas</h3><p class="text-sm mt-2">Servicios Docentes comprueba la identidad antes de que las notas puedan pasar a las rúbricas.</p><select id="j574rosterGm" class="input mt-3"><option value="">Seleccionar clase vinculada</option>${(J56.catalog.rows||[]).filter(r=>r.google_course_id).map(r=>`<option value="${Number(r.grupo_materia_id)}">${j56esc(r.nombre)}</option>`).join('')}</select><button class="btn primary mt-3" onclick="j574loadRoster()">Consultar alumnos y matrículas</button><div id="j574rosterResult" class="mt-3"></div></div>`:''}
- ${(manager&&googleStatus?.connected)||S.role==='docente'?`<div class="card"><h3>Calificaciones de Google Classroom por periodo</h3><p class="text-sm mt-2">Sólo actividades del tema académico correspondiente. El docente clasifica cada trabajo como Actividad, Examen o Excluir y elige la fuente de los exámenes. Sólo las actividades entran al componente Classroom; la rúbrica se confirma por separado.</p><div class="grid md:grid-cols-2 gap-3 mt-3"><label>Grupo y materia<select id="j574gradeGm" class="input mt-1" onchange="j574gradeChanged()"><option value="">Seleccionar</option>${J56.catalog.gms.filter(g=>J56.records.get(Number(g.id))?.google_course_id).map(g=>`<option value="${Number(g.id)}" ${Number(g.id)===Number(gmId)?'selected':''}>${j56esc(j56group(g))} · ${j56esc(j56matter(g))}</option>`).join('')}</select></label><label>Periodo<select id="j574gradePeriod" class="input mt-1" onchange="j574gradeChanged()"><option value="">Cargando periodos…</option></select></label></div><button class="btn primary mt-3" onclick="j574loadGrades()">Consultar actividades y notas</button>${manager?'<button class="btn mt-3 ml-2" onclick="j587checkSchema()">Diagnosticar tablas de Classroom</button><div id="j587schemaResult" class="mt-3"></div>':''}<div id="j574gradeResult" class="mt-3"></div>${S.role==='docente'?`<div class="card mt-4"><h4>¿Tu primer periodo fue sin Classroom?</h4><p class="text-sm mt-2">Ya puedes subir el Excel de la rúbrica tradicional desde Evaluaciones. No necesitas vincular alumnos de Google ni crear actividades ficticias. Si la rúbrica está cerrada, solicita revisión a Control Escolar.</p><button class="btn primary mt-3" onclick="openTeacherEvaluationHub(${Number(gmId)||0})">Abrir Evaluaciones → Excel del primer periodo</button></div>`:''}</div>`:''}
+ ${(manager&&googleStatus?.connected)||S.role==='docente'?`<div class="card"><h3>Calificaciones de Google Classroom por periodo</h3><p class="text-sm mt-2">Sólo actividades del tema académico correspondiente. El docente clasifica cada trabajo como Actividad, Examen o Excluir y elige la fuente de los exámenes. Sólo las actividades entran al componente Classroom; la rúbrica se confirma por separado.</p><div class="grid md:grid-cols-2 gap-3 mt-3"><label>Grupo y materia<select id="j574gradeGm" class="input mt-1" onchange="j574gradeContextChanged()"><option value="">Seleccionar</option>${J56.catalog.gms.filter(g=>J56.records.get(Number(g.id))?.google_course_id).map(g=>`<option value="${Number(g.id)}" ${Number(g.id)===Number(gmId)?'selected':''}>${j56esc(j56group(g))} · ${j56esc(j56matter(g))}</option>`).join('')}</select></label><label>Periodo<select id="j574gradePeriod" class="input mt-1" onchange="j574gradeContextChanged()"><option value="">Cargando periodos…</option></select></label></div><button class="btn primary mt-3" onclick="j574loadGrades()">Consultar actividades y notas</button>${manager?'<button class="btn mt-3 ml-2" onclick="j587checkSchema()">Diagnosticar tablas de Classroom</button><div id="j587schemaResult" class="mt-3"></div>':''}<div id="j574gradeResult" class="mt-3"></div>${S.role==='docente'?`<div class="card mt-4"><h4>¿Tu primer periodo fue sin Classroom?</h4><p class="text-sm mt-2">Ya puedes subir el Excel de la rúbrica tradicional desde Evaluaciones. No necesitas vincular alumnos de Google ni crear actividades ficticias. Si la rúbrica está cerrada, solicita revisión a Control Escolar.</p><button class="btn primary mt-3" onclick="openTeacherEvaluationHub(${Number(gmId)||0})">Abrir Evaluaciones → Excel del primer periodo</button></div>`:''}</div>`:''}
  <div class="grid md:grid-cols-3 gap-3"><div class="card"><small>Clases previstas</small><div class="metric">${displayed}</div></div><div class="card"><small>Clases registradas</small><div class="metric">${registered}</div></div><div class="card"><small>Pendientes</small><div class="metric">${pending}</div></div></div>
  ${manager&&first?`<div class="card" id="j56editor"><h3>Crear o actualizar registro de una clase</h3><p class="text-xs mt-2">Registra manualmente una clase existente aquí. Para crear una clase nueva utiliza el panel «Crear clase en Google Classroom».</p><div class="grid md:grid-cols-2 gap-3 mt-4"><label class="text-sm">Grupo y materia<select id="j56gm" class="input mt-1" onchange="j56selectGroupMatter(this.value)">${j56gmOptions()}</select></label><label class="text-sm">Docente asignado<select id="j56teacher" class="input mt-1"></select></label><label class="text-sm">Nombre de Classroom<input id="j56name" class="input mt-1" maxlength="150" placeholder="Ej. Historia I · 1F"></label><label class="text-sm">Código de unión<input id="j56code" class="input mt-1" maxlength="15" placeholder="Ej. abc12345"></label><label class="text-sm">Enlace del Classroom<input id="j56url" class="input mt-1" type="url" maxlength="500" placeholder="https://classroom.google.com/c/..."></label><label class="text-sm">ID de Google (opcional)<input id="j56gid" class="input mt-1" maxlength="70" placeholder="ID de curso si lo conoces"></label><label class="text-sm">Estado<select id="j56status" class="input mt-1"><option value="pendiente">Pendiente</option><option value="registrada">Registrada</option><option value="archivada">Archivada</option></select></label><label class="text-sm">Datos generales<input id="j56desc" class="input mt-1" maxlength="800" placeholder="Indicaciones, turno, observaciones"></label></div><p id="j56source" class="text-xs mt-3 text-[#8FA3B5]">Registro manual.</p><button id="j56save" class="btn primary mt-4" onclick="j56save()">Guardar clase</button></div>`:''}
  <div class="card"><div class="flex flex-wrap gap-3 justify-between items-center"><div><h3>Clases por grupo y asignatura</h3><p class="text-xs mt-1">Muestra los datos autorizados, incluidas las clases pendientes.</p></div><input class="input" style="max-width:270px" placeholder="Filtrar grupo o materia" oninput="j56search(this.value)"></div>
@@ -232,7 +232,7 @@ async function j574get(action,params={}){
  if(!response.ok||!body.ok)throw Error(body.error||'Consulta no disponible.');return body.data;
 }
 /* V5.7.4: batch creation, official period topics and supervised grade import. */
-const J574={grade:null,proof:null,periods:[],batchBusy:false};
+const J574={grade:null,proof:null,periods:[],batchBusy:false,revision:0,context:null,committing:false,classificationDirty:false,savingClassification:false};
 function j574gmsForGroup(groupId){return (J56.catalog?.gms||[]).filter(g=>Number(g.grupo_id)===Number(groupId)).sort((a,b)=>j56matter(a).localeCompare(j56matter(b),'es'));}
 function j574batchGroupChanged(){
  const groupId=Number(document.getElementById('j574batchGroup')?.value||0);
@@ -320,17 +320,17 @@ async function j574map(googleId,i){
 }
 async function j574loadGrades(){
  const gm=Number(document.getElementById('j574gradeGm')?.value||0),period=Number(document.getElementById('j574gradePeriod')?.value||0),el=document.getElementById('j574gradeResult');
- J574.grade=null;J574.proof=null;if(!el||!gm||!period)return toast('Selecciona la materia y el periodo.');
+ const revision=++J574.revision;J574.grade=null;J574.context=null;J574.proof=null;if(!el||!gm||!period)return toast('Selecciona la materia y el periodo.');
  el.textContent='Consultando trabajos y calificaciones de Google…';
  try{
-  const data=await j574get('grades',{grupo_materia_id:gm,periodo_id:period});J574.grade=data;
+  const data=await j574get('grades',{grupo_materia_id:gm,periodo_id:period});if(revision!==J574.revision||document.getElementById('j574gradeResult')!==el)return;J574.grade=data;J574.context={gm,period};J574.classificationDirty=false;
   const canClassify=S.role==='docente'&&!data.closed;
   const workRows=data.work.map((w,i)=>{
    const selected=(w.classification&&w.classification!=='pendiente')?w.classification:'';
    const suggested=/\b(examen|exámen|exam|prueba)\b/i.test(w.title)?'Sugerencia: examen':'';
    const options=[['','Sin clasificar'],['actividad','Actividad Classroom'],['examen','Examen'],['excluir','Excluir']].map(([val,label])=>`<option value="${val}" ${selected===val?'selected':''}>${label}</option>`).join('');
    const source=[['','Seleccionar origen'],['classroom','Calificación de Classroom'],['forms','Google Forms'],['manual','Captura manual']].map(([val,label])=>`<option value="${val}" ${w.exam_source===val?'selected':''}>${label}</option>`).join('');
-   return `<tr><td><b>${j56esc(w.title)}</b><div class="text-xs">${w.max_points} puntos ${j56esc(suggested)}</div></td><td><select class="input" data-j575-type="${i}" onchange="j575classChanged(${i})" ${!canClassify?'disabled':''}>${options}</select></td><td><select class="input" data-j575-source="${i}" onchange="j575classChanged(${i})" ${!canClassify||selected!=='examen'?'disabled':''}>${source}</select></td><td><input class="input" data-j575-form="${i}" placeholder="ID o enlace Forms (requerido)" value="${j56esc(w.google_form_id||'')}" maxlength="400" ${!canClassify||selected!=='examen'||w.exam_source!=='forms'?'disabled':''} oninput="j574gradeChanged()"></td></tr>`;
+   return `<tr><td><b>${j56esc(w.title)}</b><div class="text-xs">${w.max_points} puntos ${j56esc(suggested)}</div></td><td><select class="input" data-j575-type="${i}" onchange="j575classChanged(${i})" ${!canClassify?'disabled':''}>${options}</select></td><td><select class="input" data-j575-source="${i}" onchange="j575classChanged(${i})" ${!canClassify||selected!=='examen'?'disabled':''}>${source}</select></td><td><input class="input" data-j575-form="${i}" placeholder="ID o enlace Forms (requerido)" value="${j56esc(w.google_form_id||'')}" maxlength="400" ${!canClassify||selected!=='examen'||w.exam_source!=='forms'?'disabled':''} oninput="j575markClassificationDirty()"></td></tr>`;
   }).join('');
   const included=data.work.map((w,i)=>({...w,index:i})).filter(w=>w.classification==='actividad');
   const exams=data.work.filter(w=>w.classification==='examen');
@@ -346,10 +346,13 @@ async function j574loadGrades(){
    ${exams.length?`<div class="card mt-4"><h4>Exámenes separados (${exams.length})</h4><p class="text-xs mt-2">${exams.map(w=>`${j56esc(w.title)} — ${j56esc(w.exam_source==='classroom'?'Nota de Classroom':w.exam_source==='forms'?'Google Forms':'Captura manual')}`).join(' · ')}</p><p class="text-xs mt-2">La elección de la fuente documenta de dónde obtener la nota. Esta versión todavía no descarga respuestas de Forms ni copia automáticamente estos exámenes al componente Examen: regístralos mediante Rúbricas y Evaluaciones para evitar dobles cargas.</p></div>`:''}
    ${S.role==='docente'?`<button class="btn primary mt-3" onclick="j574gradePreview()" ${data.closed?'disabled':''}>Calcular y revisar importación de actividades Classroom</button><div id="j574gradePreview" class="mt-3"></div>`:'<p class="text-sm mt-2">Servicios Docentes vincula matrículas; el docente confirma su propia rúbrica.</p>'}
    ${data.closed?'<p class="text-sm mt-2">Periodo cerrado: consulta únicamente. Las notas oficiales no pueden modificarse desde aquí.</p>':''}`;
- }catch(e){el.textContent=e.message;}
+ }catch(e){if(revision===J574.revision&&document.getElementById('j574gradeResult')===el)el.textContent=e.message;}
+}
+function j574gradeContextChanged(){
+ J574.revision++;J574.grade=null;J574.context=null;J574.proof=null;const el=document.getElementById('j574gradeResult');if(el)el.textContent='Selección modificada. Consulta nuevamente las actividades y notas.';
 }
 function j574gradeChanged(){
- J574.proof=null;
+ J574.revision++;J574.proof=null;
  const preview=document.getElementById('j574gradePreview');if(preview)preview.textContent='Hay cambios. Revisa y calcula de nuevo antes de importar.';
 }
 function j575classChanged(i){
@@ -358,7 +361,10 @@ function j575classChanged(i){
  const form=document.querySelector(`[data-j575-form="${i}"]`);
  if(source){source.disabled=type!=='examen';if(type!=='examen')source.value='';}
  if(form){form.disabled=type!=='examen'||source?.value!=='forms';if(form.disabled)form.value='';}
- j574gradeChanged();
+ j575markClassificationDirty();
+}
+function j575markClassificationDirty(){
+ J574.classificationDirty=true;j574gradeChanged();
  const status=document.getElementById('j575classStatus');if(status)status.textContent='Clasificación sin guardar. Confírmala antes de importar.';
 }
 function j575allActivities(){
@@ -368,8 +374,9 @@ function j575allActivities(){
  }
 }
 async function j575saveClassifications(){
+ if(J574.savingClassification||J574.committing)return;
  const gm=Number(document.getElementById('j574gradeGm')?.value||0),period=Number(document.getElementById('j574gradePeriod')?.value||0);
- const d=J574.grade;if(!d)return toast('Consulta primero los trabajos.');
+ const d=J574.grade;if(!d||J574.context?.gm!==gm||J574.context?.period!==period)return toast('Consulta primero los trabajos de este grupo y periodo.');
  const trabajos=d.work.map((w,i)=>({
   work_id:w.id,
   tipo:document.querySelector(`[data-j575-type="${i}"]`)?.value||'',
@@ -380,13 +387,15 @@ async function j575saveClassifications(){
  if(trabajos.some(w=>w.tipo==='examen'&&!w.fuente_examen))return toast('Selecciona Forms, Classroom o captura manual para cada examen.');
  if(trabajos.some(w=>w.tipo==='examen'&&w.fuente_examen==='forms'&&!w.google_form_id.trim()))return toast('Pega el ID o enlace del formulario de cada examen de Forms para evitar duplicados.');
  if(!confirm(`¿Guardar la clasificación de ${trabajos.length} trabajos? Las notas de los exámenes no contarán en Actividades Classroom.`))return;
+ const revision=++J574.revision;J574.proof=null;J574.savingClassification=true;
  try{
   await j57api('google-classroom','save_work_types',{grupo_materia_id:gm,periodo_id:period,trabajos});
-  toast('Clasificación guardada y verificada.');await j574loadGrades();
- }catch(e){toast(e.message||'No se guardó la clasificación.');}
+  toast('Clasificación guardada y verificada.');if(revision===J574.revision&&J574.grade===d)await j574loadGrades();
+ }catch(e){toast(e.message||'No se guardó la clasificación.');}finally{J574.savingClassification=false;}
 }
 function j574selection(){
- const d=J574.grade;if(!d)throw Error('Consulta primero las calificaciones.');
+ const d=J574.grade;if(!d||J574.context?.gm!==Number(document.getElementById('j574gradeGm')?.value)||J574.context?.period!==Number(document.getElementById('j574gradePeriod')?.value))throw Error('Consulta primero las calificaciones de este grupo y periodo.');
+ if(J574.classificationDirty||J574.savingClassification)throw Error('Guarda y verifica la clasificación modificada antes de importar.');
  if(d.work.some(w=>!['actividad','examen','excluir'].includes(w.classification)))throw Error('Clasifica y guarda todos los trabajos antes de importar.');
  const excluded=d.work.filter(w=>w.classification!=='actividad').map(w=>String(w.id));
  const decisions=[];
@@ -398,18 +407,20 @@ function j574selection(){
 }
 async function j574gradePreview(){
  const gm=Number(document.getElementById('j574gradeGm')?.value||0),period=Number(document.getElementById('j574gradePeriod')?.value||0),el=document.getElementById('j574gradePreview');if(!el)return;
- J574.proof=null;
+ const revision=++J574.revision;J574.proof=null;
  try{const p=await j57api('google-classroom','grade_preview',{grupo_materia_id:gm,periodo_id:period,...j574selection()});
-  J574.proof=p.proof;el.innerHTML=`<p class="text-sm">Componente <b>${j56esc(p.component.nombre)}</b>: ${p.component.ponderacion}% del periodo. Vista previa: ${p.grades.length} alumnos.</p><div class="scroll"><table class="table"><thead><tr><th>Matrícula</th><th>Nota Classroom /10</th></tr></thead><tbody>${p.grades.map(g=>`<tr><td>${j56esc(J574.grade.alumnos.find(a=>Number(a.id)===Number(g.alumno_id))?.matricula||g.alumno_id)}</td><td>${Number(g.valor).toFixed(2)}</td></tr>`).join('')}</tbody></table></div><button class="btn primary mt-3" onclick="j574commitGrades()">Confirmar e importar al componente Classroom</button><p class="text-xs mt-2">No cierra el periodo ni reemplaza la nota final. El docente deberá cerrar su evaluación mediante el proceso habitual de rúbricas.</p>`;
- }catch(e){el.textContent=e.message;}
+  if(revision!==J574.revision||document.getElementById('j574gradePreview')!==el)return;J574.proof=p.proof;el.innerHTML=`<p class="text-sm">Componente <b>${j56esc(p.component.nombre)}</b>: ${p.component.ponderacion}% del periodo. Vista previa: ${p.grades.length} alumnos.</p><div class="scroll"><table class="table"><thead><tr><th>Matrícula</th><th>Nota fuente /10 (sin redondear)</th></tr></thead><tbody>${p.grades.map(g=>`<tr><td>${j56esc(J574.grade.alumnos.find(a=>Number(a.id)===Number(g.alumno_id))?.matricula||g.alumno_id)}</td><td>${j56esc(String(g.valor))}</td></tr>`).join('')}</tbody></table></div><button class="btn primary mt-3" onclick="j574commitGrades()">Confirmar e importar al componente Classroom</button><p class="text-xs mt-2">No cierra el periodo ni reemplaza la nota final. El docente deberá cerrar su evaluación mediante el proceso habitual de rúbricas.</p>`;
+ }catch(e){if(revision===J574.revision&&document.getElementById('j574gradePreview')===el)el.textContent=e.message;}
 }
 async function j574commitGrades(){
+ if(J574.committing)return;
  if(!J574.proof)return toast('Calcula la vista previa antes de confirmar.');
  const gm=Number(document.getElementById('j574gradeGm')?.value||0),period=Number(document.getElementById('j574gradePeriod')?.value||0);
  if(!confirm('¿Importar estas notas únicamente al componente Classroom de tu rúbrica del periodo? Esta acción actualizará ese componente; no modifica exámenes ni la nota final cerrada.'))return;
+ const revision=J574.revision;J574.committing=true;
  try{const d=await j57api('google-classroom','grade_commit',{grupo_materia_id:gm,periodo_id:period,...j574selection(),proof:J574.proof,confirmado:true});
-  toast(`Se importaron ${d.imported} calificaciones al componente ${d.component}.`);J574.proof=null;const el=document.getElementById('j574gradePreview');if(el)el.textContent='Importación registrada. Consulta tu rúbrica para verificar los valores.';
- }catch(e){toast(e.message);}
+  toast(`Se importaron ${d.imported} calificaciones al componente ${d.component}.`);if(revision===J574.revision){J574.proof=null;const el=document.getElementById('j574gradePreview');if(el)el.textContent='Importación registrada. Consulta tu rúbrica para verificar los valores.';}
+ }catch(e){toast(e.message);}finally{J574.committing=false;}
 }
 
 /* V5.8.7: diagnóstico de lectura, sin tocar notas ni autorizaciones de Google. */

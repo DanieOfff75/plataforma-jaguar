@@ -57,6 +57,7 @@ async function firstAccess(req,res){
 
   if(pe) return res.status(500).json({ok:false,error:pe.message});
   if(!profile||!profile.activo) return res.status(403).json({ok:false,error:'Perfil no disponible o inactivo.'});
+  await assertSession(req,adminClient,user.id,profile.rol,'jaguar');
   // Impedir que first_access omita Jaguar Shield cuando ya existe un correo de recuperación.
   if(profile.correo_recuperacion && String(profile.correo_recuperacion).toLowerCase()!==recovery)
     return res.status(403).json({ok:false,error:'Para cambiar un correo existente utiliza Mi perfil → Jaguar Shield.'});
@@ -85,7 +86,6 @@ async function firstAccess(req,res){
   // No consume un desafío si solo se actualiza la contraseña manteniendo el correo.
   const isFirstRecovery=!profile.correo_recuperacion;
   if(isFirstRecovery){
-    await assertSession(req,adminClient,user.id,profile.rol,'jaguar');
     await consumeProof(adminClient,user.id,sessionId(req),'enroll',recovery,body.shield_proof);
   }
 

@@ -1,3 +1,4 @@
+import {publicVerificationRecord,canInspectPublicOriginal} from '../lib/jaguar360_public_verification.js';
 import crypto from 'node:crypto';
 import { getClients, requireRoles } from '../lib/_admin.js';
 import { documentStatus } from '../lib/documentos.js';
@@ -13,7 +14,7 @@ function publicData(row,status){
 // puede entregar una vista basada en el archivo original. Los archivos de alumnos,
 // pagos, credenciales y expedientes restringidos jamás salen por un enlace QR.
 async function publicOriginalIfApproved(admin,row,status){
-  if(status!=='valido')return null;
+  if(!canInspectPublicOriginal(row,status))return null;
   const {data:official,error:oe}=await admin.from('documentos_oficiales_emitidos')
     .select('id,archivo_path,archivo_sha256,estado').eq('documento_verificable_id',row.id).limit(1).maybeSingle();
   if(oe||!official||official.estado!=='emitido'||!official.archivo_path)return null;
@@ -35,10 +36,13 @@ export default async function handler(req,res){
   try{
     const {adminClient}=getClients(req);
     if(req.method==='GET'){
+      res.setHeader('Cache-Control','private, no-store, max-age=0');
+      res.setHeader('Referrer-Policy','no-referrer');
+      res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');
       const token=String(req.query?.token||'').trim();
       if(token.length<20||token.length>200)return res.status(400).json({ok:false,error:'Código de verificación inválido.'});
       const {data,error}=await adminClient.from('documentos_verificables')
-        .select('id,folio,tipo,titulo,estado,fecha_emision,fecha_expiracion,datos_publicos,token_hash')
+        .select('id,folio,tipo,titulo,estado,fecha_emision,fecha_expiracion,alumno_id,datos_publicos,token_hash')
         .eq('token_hash',hashToken(token)).maybeSingle();
       if(error)throw error;
       if(!data)return res.status(404).json({ok:false,estado:'no_valido',error:'Documento no encontrado o código de verificación inválido.'});
@@ -46,16 +50,15 @@ export default async function handler(req,res){
       if(status==='expirado'&&data.estado!=='expirado'){
         try{await adminClient.from('documentos_verificables').update({estado:'expirado'}).eq('id',data.id);}catch{}
       }
-      res.setHeader('Cache-Control','private, no-store, max-age=0');
-      res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');
+      const publicRecord=publicVerificationRecord(data);
       if(String(req.query?.pdf||'')==='1'){
         let originalBytes=null;
         try{originalBytes=await publicOriginalIfApproved(adminClient,data,status);}catch{/* la vista pública nunca debe revelar el original si algo falla */}
         let pdf;
-        try{pdf=await makeVerificationPdf({record:data,status,originalBytes});}
+        try{pdf=await makeVerificationPdf({record:publicRecord,status,originalBytes});}
         catch{
           // Un PDF original corrupto no debe impedir visualizar la validación.
-          pdf=await makeVerificationPdf({record:data,status,originalBytes:null});
+          pdf=await makeVerificationPdf({record:publicRecord,status,originalBytes:null});
         }
         res.setHeader('Content-Type','application/pdf');
         res.setHeader('Content-Disposition','inline; filename="verificacion-jaguar.pdf"');
@@ -63,7 +66,7 @@ export default async function handler(req,res){
         res.setHeader('Content-Security-Policy',"frame-ancestors 'self'");
         return res.status(200).send(pdf);
       }
-      return res.status(200).json(publicData(data,status));
+      return res.status(200).json(publicData(publicRecord,status));
     }
     if(req.method==='POST'){
       const {user,profile}=await requireRoles(req,['control','control_escolar','direccion_escolar']);

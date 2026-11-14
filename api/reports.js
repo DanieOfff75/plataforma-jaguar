@@ -1,3 +1,6 @@
+import {reportGradeText,legacyPeriodScope,countLegacyAbsenceDays,legacyEvaluationSummary,assignLegacyGrade} from '../lib/jaguar360_legacy_report.js';
+import {gradePolicyFromRow} from '../lib/grade_precision.js';
+import {requireLegacyReportCompatible} from '../lib/jaguar360_report_guard.js';
 import {sortInstitutionalPeople} from '../lib/institutional_names.js';
 import {renderBoletaVisual15} from '../lib/boleta_visual15.js';
 import {buildStudentCredentialPDF} from '../lib/credencial_escolar_pdf.js';
@@ -697,23 +700,23 @@ async function credentialPdf(admin,id,req=null){
 
 async function boletaPdf(admin,id,req=null){
   const cycle=await activeCycle(admin);
+  await requireLegacyReportCompatible(admin,id,cycle);
   const institution=await institutionForPdf(admin);
   const {data:s,error:se}=await admin.from('alumnos').select('id,nombre_completo,matricula,grupo_id,turno,grupos(clave,grado,letra,turno)').eq('id',id).maybeSingle();
   if(se) throw se;
   if(!s) throw Object.assign(new Error('Alumno no encontrado.'),{status:404});
 
-  const [gradesQ,periodsQ,attendanceQ,incidentsQ,scheduleTeachersQ,groupSubjectsQ]=await Promise.all([
-    admin.from('calificaciones').select('id,calificacion,periodo_id,docente_id,observaciones,periodos_escolares(id,nombre,ciclo_escolar),grupo_materias(id,materia_id,materias(id,nombre),grupos(id,clave,grado,letra,turno))').eq('alumno_id',id).order('grupo_materia_id').order('periodo_id'),
-    admin.from('periodos_escolares').select('id,nombre,ciclo_escolar,activo,numero_periodo,es_periodo_actual').eq('ciclo_escolar',cycle).order('numero_periodo',{ascending:true}).order('id',{ascending:true}),
-    admin.from('asistencias').select('id,fecha,estado,observaciones,grupo_materia_id').eq('alumno_id',id).order('fecha',{ascending:true}).limit(5000),
-    admin.from('incidencias_prefectura').select('id,tipo,titulo,descripcion,fecha,estado,observaciones').eq('alumno_id',id).order('fecha',{ascending:false}).limit(500),
+  const [gradesQ,periodsQ,scheduleTeachersQ,groupSubjectsQ,policyQ]=await Promise.all([
+    admin.from('calificaciones').select('id,calificacion,periodo_id,docente_id,observaciones,periodos_escolares!inner(id,nombre,ciclo_escolar),grupo_materias(id,materia_id,materias(id,nombre),grupos(id,clave,grado,letra,turno))',{count:'exact'}).eq('alumno_id',id).eq('periodos_escolares.ciclo_escolar',cycle).order('grupo_materia_id').order('periodo_id'),
+    admin.from('periodos_escolares').select('id,nombre,ciclo_escolar,activo,numero_periodo,es_periodo_actual,fecha_inicio,fecha_fin').eq('ciclo_escolar',cycle).order('numero_periodo',{ascending:true}).order('id',{ascending:true}),
     admin.from('horarios').select('grupo_materias!inner(id,grupo_id,materia_id,materias(id,nombre)),docente:docentes(id,nombre_completo,correo,auth_user_id)').eq('grupo_materias.grupo_id',s.grupo_id).eq('ciclo_escolar',cycle),
-    admin.from('grupo_materias').select('id,grupo_id,materia_id,materias(id,nombre)').eq('grupo_id',s.grupo_id)
+    admin.from('grupo_materias').select('id,grupo_id,materia_id,materias(id,nombre)').eq('grupo_id',s.grupo_id).eq('activo',true),
+    admin.from('jaguar_precision_calificaciones').select('minima_aprobatoria').eq('ciclo_escolar',cycle).maybeSingle()
   ]);
-  for(const q of [gradesQ,periodsQ,attendanceQ,incidentsQ,scheduleTeachersQ,groupSubjectsQ]) if(q.error) throw q.error;
+  for(const q of [gradesQ,periodsQ,scheduleTeachersQ,groupSubjectsQ,policyQ]) if(q.error) throw q.error;
 
   let workshopName='Sin taller asignado';
-  try{const {data:ws}=await admin.from('inscripciones_talleres').select('talleres(nombre),estado,ciclo_escolar').eq('alumno_id',id).eq('estado','inscrito').order('id',{ascending:false}).limit(1).maybeSingle();if(ws?.talleres?.nombre)workshopName=ws.talleres.nombre;}catch{}
+  try{const {data:ws}=await admin.from('inscripciones_talleres').select('talleres(nombre),estado,ciclo_escolar').eq('alumno_id',id).eq('estado','inscrito').eq('ciclo_escolar',cycle).order('id',{ascending:false}).limit(1).maybeSingle();if(ws?.talleres?.nombre)workshopName=ws.talleres.nombre;}catch{}
   let departmentSigners=[];
   try{
     const {data:deps,error:de}=await admin.from('departamentos').select('id,clave,nombre,activo').eq('activo',true).order('nombre',{ascending:true});
@@ -724,23 +727,22 @@ async function boletaPdf(admin,id,req=null){
     }
   }catch{}
   // Sin departamentos configurados no se imprimen firmas departamentales ficticias.
-  let periods=(periodsQ.data||[]).filter(p=>p.ciclo_escolar===cycle);
-  if(!periods.length){
-    const seen=new Map();
-    for(const g of gradesQ.data||[]){if(g.periodos_escolares?.ciclo_escolar!==cycle)continue;const p=g.periodos_escolares;if(!seen.has(p.id))seen.set(p.id,p);}
-    periods=[...seen.values()].sort((a,b)=>Number(a.id)-Number(b.id));
-  }
-  periods=periods.sort((a,b)=>Number(a.numero_periodo||0)-Number(b.numero_periodo||0)||Number(a.id)-Number(b.id));
+  const periods=legacyPeriodScope(periodsQ.data||[],cycle);
+  if(!Number.isInteger(gradesQ.count)||gradesQ.count!==(gradesQ.data||[]).length)throw Object.assign(Error('Consulta de notas incompleta. Se requiere conciliación.'),{status:409});
+  const groupMatterScope=(groupSubjectsQ.data||[]).map(g=>g.id);
+  if(!groupMatterScope.length)throw Object.assign(Error('No hay materias vigentes conciliadas.'),{status:409});
+  const attendanceQ=await admin.from('asistencias').select('fecha,estado,grupo_materia_id',{count:'exact'}).eq('alumno_id',id).eq('estado','falta').in('grupo_materia_id',groupMatterScope).gte('fecha',periods[0].fecha_inicio).lte('fecha',periods.at(-1).fecha_fin).order('fecha',{ascending:true}).limit(5000);
+  if(attendanceQ.error)throw attendanceQ.error;
+  if(!Number.isInteger(attendanceQ.count)||attendanceQ.count!==(attendanceQ.data||[]).length)throw Object.assign(Error('Consulta de faltas incompleta. Se requiere conciliación.'),{status:409});
   const periodLabels=periods.map((p,i)=>({id:p.id,label:`P${Number(p.numero_periodo||i+1)}`,fullLabel:((p.nombre||'').trim()||['1.er periodo','2.º periodo','3.er periodo'][i]||`Periodo ${i+1}`)}));
   const periodIndex=new Map(periodLabels.filter(p=>p.id!=null).map((p,i)=>[String(p.id),i]));
 
   const subjectMap=new Map();
   // Registrar todas las materias oficiales del grupo, incluso sin nota.
-  // La versión anterior omitía Artes explícitamente y además ocultaba materias
-  // que aún no tenían una fila en calificaciones.
+  // Las exclusiones tradicionales se conservan; un nuevo plan requiere el motor histórico.
   for(const gm of groupSubjectsQ.data||[]){
     const name=String(gm.materias?.nombre||'Materia');
-    if(/lengua\s+ind[ií]gena/i.test(name))continue; // Exclusión histórica aprobada para el formato.
+    if(/lengua\s+ind[ií]gena|^artes$/i.test(name.trim()))continue; // Exclusión histórica aprobada para el formato.
     if(!subjectMap.has(String(gm.materia_id)))subjectMap.set(String(gm.materia_id),{
       materia_id:gm.materia_id,name,grades:{},teachers:new Set(),gradeTeachersFromGroup:new Set(),observations:[]
     });
@@ -750,11 +752,12 @@ async function boletaPdf(admin,id,req=null){
     const sid=g.grupo_materias?.materia_id||g.grupo_materia_id;
     const name=g.grupo_materias?.materias?.nombre||'Materia';
     // Reglas del formato aprobado: estas áreas no se imprimen en la boleta oficial.
-    if(/lengua\s+ind[ií]gena/i.test(String(name))) continue;
-    if(!subjectMap.has(String(sid))) subjectMap.set(String(sid),{materia_id:sid,name,grades:{},teachers:new Set(),gradeTeachersFromGroup:new Set(),observations:[]});
+    if(/lengua\s+ind[ií]gena|^artes$/i.test(String(name).trim())) continue;
+    if(!subjectMap.has(String(sid))||String(g.grupo_materias?.grupos?.id)!==String(s.grupo_id))throw Object.assign(Error('Materia o grupo histórico sin conciliar; consulta el expediente.'),{status:409});
     const x=subjectMap.get(String(sid));
     const pi=periodIndex.get(String(g.periodo_id));
-    if(pi!==undefined) x.grades[pi]=(g.calificacion!==null&&g.calificacion!==''&&Number.isFinite(Number(g.calificacion)))?Number(g.calificacion):null;
+    if(pi===undefined)throw Object.assign(Error('Periodo de la nota sin conciliar.'),{status:409});
+    assignLegacyGrade(x,pi,g.calificacion);
     // Una nota de recursamiento puede haberla capturado otro docente: no lo hace titular del grupo.
     if(g.docente_id&&String(g.grupo_materias?.grupos?.id)===String(s.grupo_id)) x.gradeTeachersFromGroup.add(String(g.docente_id));
     if(g.observaciones) x.observations.push(String(g.observaciones));
@@ -808,22 +811,14 @@ async function boletaPdf(admin,id,req=null){
     x.avg=vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:null;
   }
 
-  const attendance=attendanceQ.data||[];
-  const attCounts={presente:0,retardo:0,falta:0,justificada:0};
-  for(const a of attendance){const k=String(a.estado||'').toLowerCase();if(k in attCounts)attCounts[k]++;}
-  const attTotal=Object.values(attCounts).reduce((a,b)=>a+b,0);
-  const attPresent=attCounts.presente+attCounts.justificada;
-  const attRate=attTotal?Math.round(attPresent/attTotal*100):null;
-  const incidents=incidentsQ.data||[];
-  const incidentCounts={}; for(const r of incidents){const k=String(r.tipo||'otro');incidentCounts[k]=(incidentCounts[k]||0)+1;}
+  const absenceDays=countLegacyAbsenceDays(attendanceQ.data||[],periods,groupSubjectsQ.data||[]);
   const allGrades=subjects.flatMap(x=>Object.values(x.grades)).filter(v=>Number.isFinite(v));
   const overall=allGrades.length?allGrades.reduce((a,b)=>a+b,0)/allGrades.length:null;
-  const approved=subjects.filter(x=>x.avg!=null&&x.avg>=6).length;
-  const failed=subjects.filter(x=>x.avg!=null&&x.avg<6).length;
+  const summary=legacyEvaluationSummary(subjects,periods,gradePolicyFromRow(policyQ.data).minima_aprobatoria);
   const observations=[...new Set(subjects.flatMap(x=>x.observations))].filter(Boolean).slice(0,4);
   const folio=`${institution.siglas||'ITHLA'}-${cycle.replace(/[^0-9]/g,'')}-${String(s.id).padStart(6,'0')}-${Date.now().toString().slice(-5)}`;
 
-  const verification=await registerVerifiableDocument(admin,{folio,tipo:'boleta',titulo:'BOLETA DE CALIFICACIONES',alumno_id:s.id,req,payload:{alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:s.grupos?.clave,grado:s.grupos?.grado?`${s.grupos.grado}°`:'—',ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion,lema:institution.lema||institution.lema_traduccion||''},taller:workshopName,detalle:subjects.slice(0,40).map(x=>({label:x.name,value:`${periodLabels.map((_,i)=>x.grades[i]==null?'—':Number(x.grades[i]).toFixed(1)).join(' · ')} · Promedio ${x.avg==null?'—':x.avg.toFixed(2)}`}))}});
+  const verification=await registerVerifiableDocument(admin,{folio,tipo:'boleta',titulo:'BOLETA DE CALIFICACIONES',alumno_id:s.id,req,payload:{alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:s.grupos?.clave,grado:s.grupos?.grado?`${s.grupos.grado}°`:'—',ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion,lema:institution.lema||institution.lema_traduccion||''},taller:workshopName,detalle:subjects.slice(0,40).map(x=>({label:x.name,value:`${periodLabels.map((_,i)=>x.grades[i]==null?'—':reportGradeText(x.grades[i])).join(' · ')} · Promedio ${x.avg==null?'—':x.avg.toFixed(2)}`}))}});
   let verificationQr=null;
   try{verificationQr=await qrPng(verification.verificationUrl,{size:180});}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
 
@@ -856,7 +851,7 @@ async function boletaPdf(admin,id,req=null){
   try{bytes=await renderBoletaVisual15({
     institution,cycle,student:{...s,workshop:workshopName},subjects,periodLabels,
     teachers:teacherProfiles,departments:departmentSigners,folio,qrBytes:verificationQr,
-    attendanceFaltas:attCounts.falta,overall,failed,observations,
+    attendanceFaltas:absenceDays,overall,failed:summary.failed,evaluationStatus:summary.status,observations,
     loadSignature:(pdf,path)=>loadSignatureImage(pdf,admin,path)
   });}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
   return {pdf_base64:Buffer.from(bytes).toString('base64'),filename:`${institution.siglas||'ITHLA'}-Boleta-${safe(s.matricula||s.nombre_completo)}.pdf`};

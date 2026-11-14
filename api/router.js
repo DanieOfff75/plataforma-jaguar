@@ -15,6 +15,7 @@ import evaluationWindow from '../routes/evaluation-window.js';
 import ithlaPublic from '../routes/ithla-public.js';
 import jaguar360 from '../routes/jaguar360.js';
 import shield from '../routes/shield.js';
+import academicLifecycle from '../routes/academic-lifecycle.js';
 
 const handlers=Object.freeze({
   'academic-tools':academicTools,
@@ -27,7 +28,8 @@ const handlers=Object.freeze({
   'evaluation-window':evaluationWindow,
   'ithla-public':ithlaPublic,
   'jaguar360':jaguar360,
-  shield
+  shield,
+  'academic-lifecycle':academicLifecycle
 });
 
 export default async function handler(req,res){

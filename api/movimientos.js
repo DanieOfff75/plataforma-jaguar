@@ -1,3 +1,4 @@
+import {assertLegacyStudentDeparture} from '../lib/jaguar360_legacy_write_guard.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile } from 'node:fs/promises';
 import { requireControl } from '../lib/_admin.js';
@@ -351,6 +352,7 @@ export default async function handler(req,res){
   }
 
   const cycle=await currentSchoolCycle(adminClient,student.ciclo_escolar||'2026-2027');
+  await assertLegacyStudentDeparture(adminClient,student);
   const fecha=safe(b.fecha)||new Date().toISOString().slice(0,10);
   const {data:seq,error:seqError}=await adminClient.from('movimientos_alumnos').insert({alumno_id:alumnoId,tipo,motivo:safe(b.motivo)||null,escuela_destino:null,fecha_movimiento:fecha,observaciones:safe(b.observaciones)||null,realizado_por:user.id,responsable_id:responsible.usuario_id,responsable_nombre:responsible.nombre_responsable||responsible.perfil?.nombre_completo||null,modalidad_documento:modalidad}).select('id,tipo,fecha_movimiento,motivo,escuela_destino,observaciones,modalidad_documento,responsable_id').single();
   if(seqError) return res.status(500).json({ok:false,error:seqError.message});
@@ -364,10 +366,7 @@ export default async function handler(req,res){
     verification.qrBytes=await qrPng(verification.verificationUrl,{size:180});
     const bytes=await makeTransferPdf({student,movement,admin:adminClient,user,responsible,average,institution,verification});
     const {error:ae}=await adminClient.rpc('ithla_archivar_alumno',{p_alumno_id:alumnoId,p_tipo:tipo,p_motivo:b.motivo||b.observaciones||null,p_usuario:user.id,p_ciclo:cycle});
-    if(ae){
-      const {error:fallback}=await adminClient.from('alumnos').update({activo:false,grupo_id:null,estado_escolar:tipo==='baja'?'baja':'traslado',archivado_at:new Date().toISOString(),archivado_por:user.id,archivado_motivo:safe(b.motivo)||safe(b.observaciones)||null,archivado_tipo:tipo,ciclo_archivo:cycle}).eq('id',alumnoId);
-      if(fallback) throw ae;
-    }
+    if(ae)throw ae;
     const nuevoEstado=tipo==='baja'?'baja':'traslado';
     if(student.matricula){const {error:me}=await adminClient.from('matricula_alumnos').update({estado:nuevoEstado}).eq('numero_matricula',student.matricula);if(me && !/does not exist|schema cache/i.test(me.message||''))throw me;}
     await audit(adminClient,{userId:user.id,role:profile.rol,action:tipo==='traslado'?'archivar_traslado':'archivar_baja',module:'movimientos',entity:'alumnos',entityId:alumnoId,description:`Alumno archivado por ${tipo}.`,after:{alumno_id:alumnoId,folio,tipo},req});

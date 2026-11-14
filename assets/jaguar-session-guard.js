@@ -9,13 +9,13 @@ function fire(){window.dispatchEvent(new CustomEvent('ithla:session',{detail:sta
 function statusLocal(){return {authenticated:!!id(),remainingSeconds:clockDeadline?Math.max(0,Math.ceil((clockDeadline-Date.now())/1000)):null,expiresAt:reportedExpiry,absoluteExpiresAt:reportedAbsolute,canExtend:!logoutBusy&&!!id()&&!!clockDeadline&&clockDeadline>Date.now()};}
 window.fetch=async(input,init={})=>{
  const url=typeof input==='string'?input:input?.url||'';
- const path=new URL(url,location.href).pathname;
- if(!path.startsWith('/api/'))return nativeFetch(input,init);
+ const target=new URL(url,location.href);
+ if(target.origin!==location.origin||!target.pathname.startsWith('/api/'))return nativeFetch(input,init);
  const opts={...init,headers:new Headers(init.headers|| (typeof input!=='string'?input.headers:undefined)||{})};
  const sid=id();if(sid)opts.headers.set('X-ITHLA-Session',sid);
  const result=await nativeFetch(input,opts);
- if(result.status===401&&sid&&!logoutBusy){
-  try{const body=await result.clone().json();if(/sesi[oó]n.*(expir|caduc|protegida|no est[aá] disponible)/i.test(body.error||''))void end();}catch{}
+ if([401,403].includes(result.status)&&sid&&!logoutBusy){
+  try{const body=await result.clone().json();if((result.status===401&&/sesi[oó]n.*(expir|caduc|protegida|no est[aá] disponible)/i.test(body.error||''))||(result.status===403&&body.error==='Acceso institucional no vigente. Consulta al departamento responsable.'))void end();}catch{}
  }
  return result;
 };

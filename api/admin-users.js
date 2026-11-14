@@ -1,3 +1,5 @@
+import {assertLegacyStudentDeparture,assertStudentSuspensionAccount} from '../lib/jaguar360_legacy_write_guard.js';
+import {assertLegacyGroupMovement} from '../lib/jaguar360_identity.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { readFile } from 'node:fs/promises';
 import { requireRoles } from '../lib/_admin.js';
@@ -124,17 +126,19 @@ export default async function handler(req,res){
     const fechaHasta=String(b.fecha_hasta||'').trim()||null;
     const observaciones=String(b.observaciones||'').trim()||null;
     const responsible=await validateResponsible(adminClient,b.responsable_id,profile.rol,departmentKeyForRole(profile.rol));
-    const {data:alumno,error:ae}=await adminClient.from('alumnos').select('id,auth_user_id,nombre_completo').eq('id',alumnoId).maybeSingle();
+    const {data:alumno,error:ae}=await adminClient.from('alumnos').select('id,auth_user_id,nombre_completo,activo,estado_escolar').eq('id',alumnoId).maybeSingle();
     if(ae)throw ae;if(!alumno)return res.status(404).json({ok:false,error:'Alumno no encontrado.'});
+    assertStudentSuspensionAccount(alumno);
     const {error}=await adminClient.from('alumnos').update({suspension_fecha:new Date().toISOString().slice(0,10),suspension_hasta:fechaHasta,suspension_motivo:motivo,suspension_observaciones:observaciones,revision_acceso_estado:null,suspension_responsable_id:responsible.usuario_id}).eq('id',alumnoId);
     if(error)throw error;
     if(alumno.auth_user_id){try{await adminClient.from('notificaciones').insert({usuario_id:alumno.auth_user_id,titulo:'Acceso escolar suspendido',contenido:`Tu acceso a ITHLA fue suspendido.${motivo?` Motivo: ${motivo}`:''}${fechaHasta?` Vigencia hasta: ${fechaHasta}.`:''} Puedes solicitar una revisión desde tu inicio de sesión.`,tipo:'suspension',leida:false});}catch(e){console.warn('No se pudo notificar la suspensión al alumno:',e.message)}}
     return res.status(200).json({ok:true,message:'Alumno suspendido. Se habilitó la revisión de acceso para el alumno.'});
    }
    const responsible=await validateResponsible(adminClient,b.responsable_id,profile.rol,departmentKeyForRole(profile.rol));
-   const {data:alumno,error:ae}=await adminClient.from('alumnos').select('id,auth_user_id,nombre_completo').eq('id',alumnoId).maybeSingle();
+   const {data:alumno,error:ae}=await adminClient.from('alumnos').select('id,auth_user_id,nombre_completo,activo,estado_escolar').eq('id',alumnoId).maybeSingle();
    if(ae)throw ae;if(!alumno)return res.status(404).json({ok:false,error:'Alumno no encontrado.'});
-   const {error}=await adminClient.from('alumnos').update({activo:true,suspension_fecha:null,suspension_hasta:null,suspension_motivo:null,suspension_observaciones:null,revision_acceso_estado:'aprobada',suspension_responsable_id:responsible.usuario_id}).eq('id',alumnoId);if(error)throw error;
+    assertStudentSuspensionAccount(alumno);
+   const {error}=await adminClient.from('alumnos').update({suspension_fecha:null,suspension_hasta:null,suspension_motivo:null,suspension_observaciones:null,revision_acceso_estado:'aprobada',suspension_responsable_id:responsible.usuario_id}).eq('id',alumnoId);if(error)throw error;
    if(alumno.auth_user_id){try{await adminClient.from('notificaciones').insert({usuario_id:alumno.auth_user_id,titulo:'Acceso escolar reactivado',contenido:'Tu acceso a ITHLA fue reactivado por la autoridad escolar.',tipo:'suspension',leida:false});}catch(e){console.warn('No se pudo notificar la reactivación al alumno:',e.message)}}
    return res.status(200).json({ok:true,message:'Alumno reactivado. El acceso vuelve a estar disponible.'});
   }
@@ -200,12 +204,10 @@ export default async function handler(req,res){
    if(kind==='student'){
      const {data:s,error:se}=await adminClient.from('alumnos').select('id,auth_user_id,nombre_completo,matricula,grupo_id,activo,estado_escolar').eq('id',id).maybeSingle();
      if(se||!s)return res.status(404).json({ok:false,error:'Alumno no encontrado.'});
+     await assertLegacyStudentDeparture(adminClient,s);
      const reason=String(b.motivo||'Archivo escolar administrativo').trim();
      const {error:ae}=await adminClient.rpc('ithla_archivar_alumno',{p_alumno_id:id,p_tipo:'archivado',p_motivo:reason,p_usuario:user.id,p_ciclo:null});
-     if(ae){
-       const {error:fallback}=await adminClient.from('alumnos').update({activo:false,grupo_id:null,estado_escolar:'archivado',archivado_at:new Date().toISOString(),archivado_por:user.id,archivado_motivo:reason,archivado_tipo:'archivado'}).eq('id',id);
-       if(fallback)throw fallback;
-     }
+     if(ae)throw ae;
      if(s.auth_user_id){try{await adminClient.auth.admin.updateUserById(s.auth_user_id,{ban_duration:'876000h'});}catch{};const {error:pp}=await adminClient.from('perfiles').update({activo:false}).eq('id',s.auth_user_id);if(pp)throw pp;}
      await audit(adminClient,{userId:user.id,role:profile.rol,action:'archivar_alumno',module:'archivo_escolar',entity:'alumnos',entityId:id,description:`Alumno ${s.nombre_completo||s.matricula||id} enviado al archivo escolar.`,before:{activo:s.activo,grupo_id:s.grupo_id,estado_escolar:s.estado_escolar},after:{activo:false,grupo_id:null,estado_escolar:'archivado'},req});
      return res.status(200).json({ok:true,message:`Alumno ${s.nombre_completo||s.matricula||id} fue enviado al Archivo Escolar. Su expediente histórico se conserva y ya no ocupa cupo.`});
@@ -249,6 +251,7 @@ export default async function handler(req,res){
    const {data:target,error:te}=await adminClient.from('perfiles').select('id,rol').eq('id',id).maybeSingle(); if(te||!target)return res.status(404).json({ok:false,error:'Usuario no encontrado.'});
    if(target.rol==='docente')return res.status(409).json({ok:false,error:'La baja docente debe registrarse en Bajas y relevos, para conservar cobertura e historial.'});
    if(['direccion_escolar','control_escolar','control'].includes(target.rol))return res.status(403).json({ok:false,error:'Las cuentas de Dirección y Control Escolar requieren una operación administrativa especial.'});
+   if(target.rol==='alumno')return res.status(409).json({ok:false,error:'Usa el procedimiento escolar de baja, reincorporación o suspensión; el estado de la cuenta no puede sustituir la inscripción.'});
    const {error:pe}=await adminClient.from('perfiles').update({activo}).eq('id',id); if(pe)throw pe;
    if(target.rol==='docente'){const {error:e}=await adminClient.from('docentes').update({activo}).eq('auth_user_id',id);if(e)throw e;}
    if(target.rol==='alumno'){const {error:e}=await adminClient.from('alumnos').update({activo}).eq('auth_user_id',id);if(e)throw e;}
@@ -379,7 +382,7 @@ export default async function handler(req,res){
    if(ee)throw ee;
    if(existing?.length)return res.status(409).json({ok:false,error:'Este departamento ya tiene una cuenta institucional. Para cambiar al encargado, usa “Encargados departamentales”; no se crea otra cuenta.'});
   }
-  if(rol==='alumno'){const mat=String(b.matricula||'').trim();if(!mat)return res.status(400).json({ok:false,error:'La matrícula es obligatoria para el alumno.'});email=`${mat.replace(/\s+/g,'').toLowerCase()}@${institutionDomain}`;}
+  if(rol==='alumno'){if(b.grupo_id!=null&&b.grupo_id!=='')await assertLegacyGroupMovement(adminClient,[b.grupo_id]);const mat=String(b.matricula||'').trim();if(!mat)return res.status(400).json({ok:false,error:'La matrícula es obligatoria para el alumno.'});email=`${mat.replace(/\s+/g,'').toLowerCase()}@${institutionDomain}`;}
   if(rol==='docente') email=docenteEmail(nombre,institutionDomain);
   if(rol==='docente' && email){const base=email.replace(new RegExp(`@${institutionDomain.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}$`,'i'),'');let candidate=email;let n=2;while(await findUser(adminClient,candidate)){candidate=`${base}${n}@${institutionDomain}`;n++;}email=candidate;}
   if(!email)return res.status(400).json({ok:false,error:'Correo obligatorio.'});
