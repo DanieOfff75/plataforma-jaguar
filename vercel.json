@@ -1,7 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    {"source":"/api/shield","destination":"/api/router?__jaguar_route=shield"},
+    {
+      "source": "/api/shield",
+      "destination": "/api/router?__jaguar_route=shield"
+    },
     {
       "source": "/api/jaguar360",
       "destination": "/api/router?__jaguar_route=jaguar360"
@@ -41,6 +44,10 @@
     {
       "source": "/api/public",
       "destination": "/api/router?__jaguar_route=ithla-public"
+    },
+    {
+      "source": "/api/academic-lifecycle",
+      "destination": "/api/router?__jaguar_route=academic-lifecycle"
     }
   ]
 }
