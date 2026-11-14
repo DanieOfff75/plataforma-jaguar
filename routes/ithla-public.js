@@ -1,3 +1,4 @@
+import {editorialManagement,publicEditorialApproved,retiredPublicTitles} from '../lib/jaguar360_editorial.js';
 import { createClient } from '@supabase/supabase-js';
 import { randomBytes, createHash } from 'node:crypto';
 import { answerNexo } from '../lib/nexo_advisor.js';
@@ -72,10 +73,13 @@ export default async function handler(req,res){
   if(['appointment-slots','book-appointment'].includes(String(req.query?.action||'')))return await appointments(req,res);
   const action=String(req.method==='GET'?req.query?.action:req.body?.action||'');
   if(action.startsWith('admin-portal-')){
+    res.setHeader('Cache-Control','no-store');
+    if(action==='admin-portal-editorial-write'&&(req.method!=='POST'||!req.headers?.origin||!originOK(req)))return res.status(403).json({ok:false,error:'Origen u operación no autorizados.'});
+    if(action==='admin-portal-editorial-data'&&req.method!=='GET')return res.status(405).json({ok:false,error:'Método no permitido.'});
     const {user,profile,adminClient}=await requireRoles(req,['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','archivo_escolar','recursos_monetarios']);
     if(!canManagePublic(profile.rol))return res.status(403).json({ok:false,error:'Rol no autorizado.'});
     if(req.method==='POST'&&!originOK(req))return res.status(403).json({ok:false,error:'Origen no autorizado.'});
-    const data=await adminEditorialAction(adminClient,user,profile,action,req.body||{});
+    const data=action.startsWith('admin-portal-editorial-')?await editorialManagement(adminClient,user,profile,action,req.body||{}):await adminEditorialAction(adminClient,user,profile,action,req.body||{});
     res.setHeader('Cache-Control','no-store');return res.status(200).json({ok:true,data});
   }
   if(req.method==='POST'&&req.body?.action==='nexo-chat'){
@@ -147,11 +151,12 @@ export default async function handler(req,res){
   const page=selectPublic(settings);
   // Fuente única: avisos reales, eventos administrados en Jaguar, responsables actuales autorizados.
   const content=await publicEditorial(db);
+  content.avisos=[...await publicEditorialApproved(db),...content.avisos];
   // Compatibilidad con publicaciones que ya estaban visibles en V7.
   // No borra ni vuelve públicos avisos internos: sólo migra lecturas del JSON que YA era público.
   const oldNews=Array.isArray(settings.portal?.avisos)?settings.portal.avisos:[];
   const oldEvents=Array.isArray(settings.portal?.eventos)?settings.portal.eventos:[];
-  const seenNews=new Set(content.avisos.map(x=>String(x.titulo||'').toLocaleLowerCase('es').trim()));
+  const seenNews=new Set([...content.avisos.map(x=>String(x.titulo||'').toLocaleLowerCase('es').trim()),...await retiredPublicTitles(db)]);
   page.portal.avisos=[...content.avisos,...oldNews.filter(x=>x&&typeof x==='object'&&typeof x.titulo==='string'&&!seenNews.has(x.titulo.toLocaleLowerCase('es').trim())).slice(0,20).map(x=>({titulo:String(x.titulo).slice(0,180),contenido:String(x.contenido||x.descripcion||'').slice(0,10000),descripcion:String(x.descripcion||x.contenido||'').slice(0,300),fecha_publicacion:x.fecha||x.fecha_publicacion||null,responsable_nombre:'Publicación institucional anterior'}))];
   const seenEvents=new Set(content.eventos.map(x=>String(x.titulo||'').toLowerCase()+'|'+String(x.fecha_inicio||'')));
   page.portal.eventos=[...content.eventos,...oldEvents.filter(x=>x&&typeof x==='object'&&typeof x.titulo==='string'&&!seenEvents.has(String(x.titulo).toLowerCase()+'|'+String(x.fecha_inicio||x.fecha||''))).slice(0,20).map(x=>({titulo:String(x.titulo).slice(0,180),descripcion:String(x.descripcion||'').slice(0,1000),fecha_inicio:x.fecha_inicio||x.fecha||null}))];

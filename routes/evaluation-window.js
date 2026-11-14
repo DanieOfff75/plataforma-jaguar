@@ -1,3 +1,5 @@
+import {temporaryJustification} from './temporary-resolution.js';
+import {sessionAttendance} from './session-attendance.js';
 import {requireRoles} from '../lib/_admin.js';
 import {evaluationWindow} from '../lib/jaguar_evaluation_window.js';
 import {explainEvaluationSaveError} from '../lib/jaguar_evaluation_errors.js';
@@ -8,6 +10,13 @@ const positive=x=>Number.isSafeInteger(Number(x))&&Number(x)>0?Number(x):0;
 export default async function handler(req,res){
  res.setHeader('Cache-Control','no-store');
  try{
+  if((req.method==='GET'?req.query?.action:req.body?.action)==='temporary_justification'){
+   return await temporaryJustification(req,res,await requireRoles(req,['prefectura']));
+  }
+  if((req.method==='GET'?req.query?.action:req.body?.action)==='session_attendance'){
+   const auth=await requireRoles(req,['docente','prefectura','direccion_escolar','coordinacion_academica','control_escolar','control']);
+   return await sessionAttendance(req,res,auth);
+  }
   const {user,profile,adminClient:db}=await requireRoles(req,roles);
   const action=String((req.method==='GET'?req.query?.action:req.body?.action)||'status');
   if(req.method==='GET'&&action==='list'){

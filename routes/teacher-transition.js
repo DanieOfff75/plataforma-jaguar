@@ -1,3 +1,5 @@
+import {temporaryTeacher} from './temporary-group.js';
+import {supportTeachers} from './support-teachers.js';
 /** Flujo de baja y relevo: solo API autenticada, operaciones atómicas en PostgreSQL. */
 import {requireRoles} from '../lib/_admin.js';
 import {buildHandoverRubricPdf} from '../lib/jaguar_relevo_rubrica_pdf.js';
@@ -14,6 +16,8 @@ export default async function handler(req,res){
   const {user,profile,adminClient:db}=await requireRoles(req,ROLES);
   res.setHeader('Cache-Control','private, no-store');
   const role=profile.rol,admin=MANAGERS.includes(role);
+  if(await temporaryTeacher(req,res,{user,profile,adminClient:db}))return;
+  if(await supportTeachers(req,res,{user,profile,adminClient:db}))return;
   // La vista PDF se sirve sólo tras verificar sesión, vacante, titular actual y materia activa.
   if(req.method==='GET'&&req.query?.mode==='rubrica_pdf'){
    if(role!=='docente')throw failure(403,'El PDF sólo está disponible para el docente sustituto');

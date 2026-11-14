@@ -1,3 +1,6 @@
+import {studentContinuity} from './student-continuity.js';
+import {datedAgenda} from './dated-agenda.js';
+import {internalNotices} from './internal-notices.js';
 /** Jaguar 360: tablero contextual y solicitudes estudiantiles presenciales.
  * No genera ni entrega documentos privados. No confía en rol/alumno enviado por navegador.
  */
@@ -69,6 +72,9 @@ export default async function handler(req,res){
  try{
   const {user,profile,adminClient:db}=await requireRoles(req,ALL_ROLES);
   const role=profile.rol;
+  if(await studentContinuity(req,res,{user,profile,adminClient:db}))return;
+  if(await datedAgenda(req,res,{user,profile,adminClient:db}))return;
+  if(await internalNotices(req,res,{user,profile,adminClient:db}))return;
   if(req.method==='GET'){
    const mode=trim(req.query?.mode||'list',30);
    if(mode==='history'){
