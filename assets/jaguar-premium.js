@@ -32,18 +32,28 @@ window.jaguarCloseSidebar=()=>{
 };
 const iconMap={inicio:'⌂',resumen:'▦',alumnos:'♙',docentes:'♧',grupos:'♟',listas:'☷',materias:'▤',horarios:'▦',horario:'◷',calificaciones:'▥',asistencia:'✓',talleres:'✎',avisos:'♧',usuarios:'♙',revision_acceso:'♢',config:'⚙',perfil:'◉',estadisticas:'▥',reportes:'▥',finanzas:'◫',recursos_monetarios:'◫',departamentos:'▣',solicitudes_taller:'✉',archivo_solicitudes:'▤',planeaciones:'✎',institucion:'♜',encargados:'♧',notificaciones:'♧',credenciales:'▤'};
 const cleanLabel=text=>String(text||'').replace(/^[^\p{L}\p{N}]+/u,'').trim()||text;
-window.jaguarRenderNav=(items)=>items.map(([id,label])=>{
+const renderNavEntries=(items)=>items.map(([id,label])=>{
   const title=cleanLabel(label);
   const active=S.page===id;
   const cleanId=String(id||'').replace(/[^a-z0-9_]/gi,'');
   return `<button class="nav ${active?'active':''}" data-j-page="${cleanId}" aria-current="${active?'page':'false'}" onclick="loadPage('${cleanId}');jaguarCloseSidebar()"><span class="j-nav-ico" aria-hidden="true">${iconMap[id]||'◇'}</span><span class="j-nav-txt">${esc(title)}</span></button>`;
 }).join('');
+window.jaguarRenderNav=(items)=>{
+  if(!window.JaguarWorkspaces)return renderNavEntries(items);
+  const sections=window.JaguarWorkspaces.organize(items,S.role);
+  return sections.map(section=>{
+    if(section.entries.length===1)return renderNavEntries(section.entries);
+    const active=section.entries.some(([id])=>id===S.page);
+    return `<details class="j-workspace-nav"${active?' open':''}><summary class="j-workspace-summary"><span>${esc(section.label)}</span><span aria-hidden="true" class="j-workspace-chevron">›</span></summary><div class="j-workspace-children">${renderNavEntries(section.entries)}</div></details>`;
+  }).join('');
+};
 window.jaguarFocusModule=()=>{
   const query=String(document.getElementById('j-module-search')?.value||'').trim().toLowerCase();
   if(!query)return;
   const all=[...document.querySelectorAll('#app #nav .nav')];
   const target=all.find(btn=>btn.textContent.toLowerCase().includes(query));
   if(!target){toast('No hay un módulo visible para tu rol con ese nombre.');return}
+  const section=target.closest('details');if(section)section.open=true;
   target.scrollIntoView({behavior:'smooth',block:'center'});target.focus({preventScroll:true});
 };
 document.addEventListener('keydown',e=>{

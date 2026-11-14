@@ -116,6 +116,7 @@ const titles={sms_gateway:'Pasarela SMS',encargados:'Encargados departamentales'
 async function initAuth(){try{const r=await fetch('/api/auth?mode=config');const cfg=await r.json();if(!r.ok||!cfg.ok)throw Error(cfg.error||'No se pudo cargar configuración.');const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');supabaseClient=mod.createClient(cfg.url,cfg.anonKey);window.ithlaSessionGuard.setup({logout:async()=>{await supabaseClient.auth.signOut();showLogin();},tokenProvider:async()=>(await supabaseClient.auth.getSession()).data.session?.access_token});const {data:{session}}=await supabaseClient.auth.getSession();if(session){if(!window.ithlaSessionGuard.getId()){await supabaseClient.auth.signOut();showLogin();}else{await loadRealUser(session);}}supabaseClient.auth.onAuthStateChange((e,s)=>{if(e==='SIGNED_OUT')showLogin();if(e==='PASSWORD_RECOVERY'&&s)passwordModal('recovery');});}catch(e){setLoginStatus('No se pudo inicializar Supabase: '+e.message)}}
 function setLoginStatus(x){document.getElementById('loginStatus').textContent=x}
 function showLogin(){
+  ++jaguarNavigationRevision;S.workspaceId=0;
   document.getElementById('app')?.classList.add('hide');
   document.getElementById('login')?.classList.remove('hide');
   const email=document.getElementById('loginEmail');
@@ -258,7 +259,9 @@ async function jaguarReadJson(response){
   try{return JSON.parse(raw);}catch{throw Error(`Respuesta inválida del servidor (HTTP ${response.status}). Comprueba los registros de Vercel.`)}
 }
 function downloadPdf(base64,filename){const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));const blob=new Blob([bytes],{type:'application/pdf'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename||'comprobante.pdf';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-async function loadPage(page){
+let jaguarNavigationRevision=0;
+async function loadPage(page,context){
+  const revision=++jaguarNavigationRevision;
   if(page==='sms_gateway'&&S.role!=='tecnico')page='inicio';
   if(page==='notificaciones'&&!['alumno','tecnico','direccion_escolar','control_escolar','control','docente','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','archivo_escolar','recursos_monetarios'].includes(S.role))page='inicio';
   if(S.role==='alumno'){
@@ -267,12 +270,22 @@ async function loadPage(page){
     const allowed=typeof ITHLA_SUSPENDED_ALLOWED!=='undefined'?ITHLA_SUSPENDED_ALLOWED:['inicio','notificaciones','revision_acceso_alumno','avisos','perfil'];
     if(suspended&&!allowed.includes(page)){if(page!=='inicio')toast('Este módulo está restringido mientras tu acceso permanezca suspendido.');page='inicio';}
   }
+  if(revision!==jaguarNavigationRevision)return;
+  // No persiste contexto entre perfiles ni entre accesos generales.
+  S.workspaceId=window.JaguarWorkspaces?.workspaceId(S.role,page,context)||0;
   S.page=page;renderShell();
   const c=document.getElementById('content');c.innerHTML='<div class="card">Cargando datos reales…</div>';
   try{
-    if(page==='sms_gateway'&&S.role==='tecnico')c.innerHTML=window.jaguarSmsAdminPage();
-    else if(page==='notificaciones')c.innerHTML=await jaguarNotificationsModule();
-    else c.innerHTML=await pageHtml(page);
+    const html=page==='sms_gateway'&&S.role==='tecnico'?window.jaguarSmsAdminPage():page==='notificaciones'?await jaguarNotificationsModule():await pageHtml(page);
+    if(revision!==jaguarNavigationRevision)return;
+    c.innerHTML=html;
+    if(S.role==='docente'&&S.workspaceId&&S.page===page&&page!=='grupos'){
+      const gmId=S.workspaceId;
+      c.insertAdjacentHTML('afterbegin',`<div class="j-workspace-breadcrumb"><button class="btn" onclick="loadPage('grupos',{gmId:${gmId}})">← Volver al grupo</button><button class="btn" onclick="loadPage('${page}')">Ver todas mis asignaciones</button></div>`);
+      if(page==='asistencia'&&window.__jaguarAttendance?.groups?.some(g=>Number(g.id)===gmId))jaguarAttendanceGroup(gmId);
+      if(page==='calificaciones'&&window.__jaguarTeacherGrade?.groups?.some(g=>Number(g.id)===gmId))await jaguarTeacherGradeGroup(gmId);
+    }
+    if(revision!==jaguarNavigationRevision)return;
     if(page==='sms_gateway'&&S.role==='tecnico')window.jaguarSmsAdminMount();
     if(page==='calificaciones'&&['control_escolar','control','direccion_escolar'].includes(S.role))jaguarGradesRender();
     if(page==='calificaciones'&&['control_escolar','control','direccion_escolar','docente'].includes(S.role))c.insertAdjacentHTML('afterbegin','<div class="card mb-3"><button class="btn primary" onclick="loadPage(\'calificaciones_lote_grupo\')">📄 Cargas por grupo y oficios docentes</button></div>');
@@ -280,7 +293,7 @@ async function loadPage(page){
     if(page==='perfil'&&['docente','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','direccion_escolar','control_escolar','control','recursos_monetarios'].includes(S.role)){requestAnimationFrame(()=>setupSignatureCanvas());setTimeout(setupSignatureCanvas,120);}
     if(typeof jaguarRefreshNotificationBadge==='function')await jaguarRefreshNotificationBadge();
     if(S.role==='alumno'&&typeof applyStudentAccessTheme==='function')applyStudentAccessTheme();
-  }catch(e){c.innerHTML='<div class="card border-red-500/30"><b>No se pudo cargar el módulo.</b><p class="text-sm text-[#A9BAC8] mt-2">'+esc(e.message)+'</p></div>';}
+  }catch(e){if(revision!==jaguarNavigationRevision)return;c.innerHTML='<div class="card border-red-500/30"><b>No se pudo cargar el módulo.</b><p class="text-sm text-[#A9BAC8] mt-2">'+esc(e.message)+'</p></div>';}
 }
 function renderShell(){
   const items=S.role==='alumno'&&(S.studentAccess?.suspended||S.studentSuspended)?jaguarStudentSuspendedNav():(roleNav[S.role]||(S.role==='control_escolar'?controlNav:[['inicio','⌂ Inicio'],['perfil','◉ Perfil']]));
@@ -306,9 +319,9 @@ async function pageHtml(p){
   if(p==='tramites_360')return jaguar360Page();
   if(p==='salud_360'&&['direccion_escolar','control_escolar','control'].includes(S.role))return jaguar360HealthPage();
   if(p==='admision_control'&&S.role==='direccion_escolar')return jaguarAdmissionDirectorModule();
-  if(p==='classroom')return jaguarClassroomModule();
+  if(p==='classroom')return jaguarClassroomModule(S.role==='docente'?S.workspaceId:0);
   if(p==='aulas')return jaguarAulasModule();
-  if(p==='examenes')return jaguarExamenesModule();
+  if(p==='examenes')return jaguarExamenesModule(S.role==='docente'?S.workspaceId:0);
   if(p==='calificaciones_masivas')return jaguarCalificacionesMasivasModule();
   if(p==='calificaciones_lote_grupo')return jaguarGroupBatchModule();
   if(p==='inicio'||p==='resumen'){
@@ -341,7 +354,7 @@ async function pageHtml(p){
   if(p==='alumnos'&&S.role==='control_escolar')return v3StudentsModule();
   if(p==='alumnos'&&['control_escolar','servicios_estudiantiles','coordinacion_academica'].includes(S.role))return v3StudentsModule();
   if(p==='grupos'&&['control_escolar','direccion_escolar'].includes(S.role))return v22GroupsModule();
-  if(p==='grupos'&&S.role==='docente')return teacherGroupsModule();
+  if(p==='grupos'&&S.role==='docente')return teacherGroupsModule(S.workspaceId);
   if(p==='grupos'&&['servicios_docentes','coordinacion_academica'].includes(S.role))return v23GroupsForRole();
   if(p==='materias'&&['direccion_escolar','control_escolar','coordinacion_academica'].includes(S.role))return v24Subjects();
   if(p==='materias'&&S.role==='coordinacion_academica')return v22Subjects();
@@ -350,10 +363,10 @@ async function pageHtml(p){
   if(p==='horario'&&S.role==='alumno')return v3StudentSchedule();
   if(p==='horario'&&S.role==='docente')return v3TeacherSchedule();
   if(p==='calificaciones'&&S.role==='alumno')return v3StudentGrades();
-  if(p==='calificaciones'&&S.role==='docente')return teacherGradesModule();
+  if(p==='calificaciones'&&S.role==='docente')return teacherGradesModule(S.workspaceId);
   if(p==='calificaciones'&&['control_escolar','control','direccion_escolar'].includes(S.role))return jaguarAcademicGradesModule();
   if(p==='asistencia'&&S.role==='alumno')return v24StudentAttendance();
-  if(p==='asistencia'&&S.role==='docente')return teacherAttendanceModule();
+  if(p==='asistencia'&&S.role==='docente')return teacherAttendanceModule(S.workspaceId);
   if(p==='asistencia'&&['direccion_escolar','control_escolar','control','servicios_docentes','prefectura','coordinacion_academica'].includes(S.role))return v23Attendance();
   if(p==='incidencias'&&S.role==='prefectura')return v3Incidents();
   if(p==='incidencias'&&['direccion_escolar','control_escolar','control'].includes(S.role))return v23Prefecture();
@@ -375,7 +388,7 @@ async function pageHtml(p){
   }
   if(p==='retencion'&&S.role==='archivo_escolar')return jaguarRetentionModule();
   if(p==='auditoria')return jaguarAuditModule();
-  if(p==='bitacora_calificaciones')return jaguarDailyGradebookModule();
+  if(p==='bitacora_calificaciones')return jaguarDailyGradebookModule(S.role==='docente'?S.workspaceId:0);
   if(p==='usuarios'&&['direccion_escolar','control_escolar','control'].includes(S.role))return v24Users();
   if(p==='documentos'&&['control_escolar','control'].includes(S.role))return jaguarDocumentsModule();
   if(p==='listas'&&['control_escolar','direccion_escolar','servicios_docentes','coordinacion_academica'].includes(S.role))return groupListsModule();
@@ -753,14 +766,14 @@ function departmentDashboard(name,desc,target){return `<div class="space-y-5"><d
 async function teachersModule(){const rows=jaguarOrdenarPersonas(await api('teachers'));const can=S.role==='servicios_docentes'||S.role==='coordinacion_academica'||S.role==='direccion_escolar'||S.role==='control_escolar';const canReset=['servicios_docentes','coordinacion_academica','direccion_escolar','control_escolar'].includes(S.role);const canStatus=['servicios_docentes','direccion_escolar','control_escolar','control'].includes(S.role);return `<div class="card"><div class="flex flex-col md:flex-row justify-between gap-3 mb-4"><div><h3>Docentes</h3><p class="text-sm text-[#8FA3B5]">Registro central de docentes. Puedes modificar su especialidad y gestionar su estado.</p></div>${can?`<button class="btn primary" onclick="formTeacherAccount()">+ Registrar docente / crear cuenta</button>`:''}</div><div class="scroll"><table class="table"><thead><tr><th>Empleado</th><th>Nombre</th><th>Especialidad</th><th>Correo</th><th>Horas solicitadas</th><th>Horas asignadas</th><th>Estado</th>${can||canReset?'<th>Acciones</th>':''}</tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.numero_empleado||r.clave_docente||'—')}</td><td>${esc(jaguarNombreInstitucional(r))}</td><td>${esc(r.especialidad||'—')}</td><td>${esc(r.correo||'—')}</td><td>${r.horas_solicitadas??0}</td><td>${r.horas_asignadas??0}</td><td>${r.activo?'<span class="chip">Activo</span>':'<span class="chip">Inactivo</span>'}</td>${can||canReset?`<td class="flex gap-2 flex-wrap">${can?`<button class="btn" onclick='formFor("teachers",${JSON.stringify(r)})'>✏️ Editar</button>`:''}${r.auth_user_id&&canReset?`<button class="btn" onclick='resetPassword(${JSON.stringify(r.auth_user_id)})'>🔑 Restablecer</button>`:''}${canStatus?`<button class="btn" onclick="loadPage('relevos_docentes')">♜ Bajas y relevos</button>`:''}</td>`:''}</tr>`).join('')||`<tr><td colspan="${(can||canReset)?8:7}">Sin docentes.</td></tr>`}</tbody></table></div></div>`}
 async function teacherConfigModule(){if(S.role!=='docente')return '<div class="card">Este módulo es para docentes.</div>';const r=await fetch('/api/teacher',{headers:{Authorization:'Bearer '+(await supabaseClient.auth.getSession()).data.session.access_token}});const d=await jaguarReadJson(r);if(!r.ok||!d.ok)throw Error(d.error);const x=d.data.docente;const colors=await apiQuery('teacherSubjectColors');return `<div class="space-y-5"><div class="card"><span class="chip">DOCENTE</span><h2 class="text-2xl mt-3">Configuración de carga</h2><p class="text-sm text-[#A9BAC8] mt-2">Indica cuántas horas semanales requieres y tu disponibilidad. Servicios Docentes usará esta información para la asignación.</p><div class="grid md:grid-cols-2 gap-4 mt-5"><div><label class="text-xs text-[#8FA3B5]">Horas semanales solicitadas</label><input id="th_horas" class="input mt-1" type="number" min="0" max="60" value="${x.horas_solicitadas||0}"></div><div><label class="text-xs text-[#8FA3B5]">Horas actualmente asignadas</label><input class="input mt-1" disabled value="${x.horas_asignadas||0}"></div></div><button class="btn primary mt-5" onclick="saveTeacherConfig()">Guardar configuración</button></div><div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>🎨 Color por materia</h3><p class="text-sm text-[#A9BAC8] mt-1">Elige un color para cada materia asignada. Se usará para identificarla en tablas y Excel.</p></div></div><div id="teacherSubjectColorsBox" class="mt-4">${colors.map(c=>`<label class="flex items-center gap-3 py-2"><input id="tc_${c.materia_id}" type="color" value="${esc(c.color_hex||'#D4AF37')}" class="w-12 h-10 rounded cursor-pointer bg-transparent"><span><b>${esc(c.materia?.nombre||'Materia')}</b><span class="block text-xs text-[#8FA3B5]">${esc(c.materia?.clave||'')}</span></span></label>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes materias asignadas actualmente.</p>'}</div><button class="btn primary mt-4" onclick="saveTeacherSubjectColors()">💾 Guardar colores</button></div><div class="card"><h3>Cómo funciona</h3><p class="text-sm text-[#A9BAC8] mt-2">Tus horas solicitadas son una preferencia/carga objetivo. Servicios Docentes y Coordinación Académica pueden distribuir grupos compatibles de forma aleatoria y revisar el resultado.</p></div></div><div class="card border-[#D4AF3755]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"><div><span class="chip">📐 EVALUACIÓN DOCENTE</span><h3 class="text-xl mt-3">Rúbrica, actividades y cierre de periodo</h3><p class="text-sm text-[#A9BAC8] mt-2">Configura la rúbrica, incorpora notas de tu única Bitácora Excel y cierra el periodo con el desglose de calificaciones.</p></div><button class="btn primary" onclick="openTeacherEvaluationHub()">Abrir apartado de evaluación</button></div><div class="grid md:grid-cols-3 gap-3 mt-5 text-sm"><div class="rounded-xl border border-white/5 p-3"><b>1 · Rúbrica</b><div class="text-[#A9BAC8] mt-1">Ponderaciones que deben sumar 100%.</div></div><div class="rounded-xl border border-white/5 p-3"><b>2 · Actividades</b><div class="text-[#A9BAC8] mt-1">Notas por alumno y actividad.</div></div><div class="rounded-xl border border-white/5 p-3"><b>3 · Cierre</b><div class="text-[#A9BAC8] mt-1">Rúbrica validada y respaldo.</div></div></div></div></div>`}
 
-async function openTeacherEvaluationHub(){
+async function openTeacherEvaluationHub(gmId=0,periodId=0){
  try{
   const d=await apiQuery('teacherEvaluationOverview');
   const byKey=new Map((d.rubricas||[]).map(r=>[`${r.grupo_materia_id}|${r.periodo_id}`,r]));
   const draftByKey=new Map((d.borradores||[]).map(r=>[`${r.grupo_materia_id}|${r.periodo_id}`,r]));
   const openByPeriod=new Map((d.ventanas||[]).map(r=>[Number(r.periodo_id),r.habilitada===true]));
-  const periods=d.periods||[];
-  const cards=(d.assignments||[]).map(a=>{
+  const periods=(d.periods||[]).filter(p=>!periodId||Number(p.id)===Number(periodId));
+  const cards=(d.assignments||[]).filter(a=>!gmId||Number(a.grupo_materias?.id)===Number(gmId)).map(a=>{
    const gm=a.grupo_materias||{}, keyBase=gm.id;
    return `<div class="card border-[#D4AF3733]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><div class="text-xl font-extrabold">${esc(gm.grupos?.clave||'—')} · ${esc(gm.materias?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${a.horas_asignadas||gm.horas_semana||0} h/semana</div></div><span class="chip">${periods.length} periodos</span></div><div class="grid md:grid-cols-3 gap-3 mt-4">${periods.map(p=>{const r=byKey.get(`${keyBase}|${p.id}`);const closed=r?.estado==='cerrada',inactive=p.activo===false,draft=draftByKey.get(`${keyBase}|${p.id}`),opened=openByPeriod.get(Number(p.id))===true;return `<div class="rounded-xl border border-white/5 p-3"><div class="font-bold">${esc(p.nombre||`Periodo ${p.id}`)}</div><div class="text-xs mt-2 ${closed?'text-[#78d8a4]':'text-[#D4AF37]'}">${closed?'✓ Cerrado':inactive?'● Periodo inactivo · verificar autorización':'● Borrador / pendiente'}</div>${draft?`<div class="mt-3 rounded-lg border border-[#D4AF3755] p-3 text-sm"><b>📒 ${draft.cantidad} valores respaldados en bitácora</b><div class="text-xs mt-1">${esc(draft.fecha_clase||'')} · ${opened?'Periodo abierto':'Esperando apertura de Dirección'}${!draft.compatible?' · Rúbrica modificada: requiere revisión':''}</div>${opened&&!closed&&r&&draft.compatible?`<button class="btn primary mt-2" onclick="previewDailyDraftToEvaluation(${gm.id},${p.id})">Revisar y adoptar registros</button>`:''}</div>`:''}<div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="openEvaluationEditor(${gm.id},${p.id})">${r?'✏️ Editar rúbrica':'➕ Configurar'}</button>${r?`<button class="btn primary" onclick="openEvaluationCapture(${gm.id},${p.id})">📊 Capturar y cerrar</button>${opened&&!closed?`<button class="btn" onclick="openExcelGradeAdoption(${gm.id},${p.id})">📥 Adoptar Excel externo</button>`:''}`:''}</div></div>`}).join('')}</div></div>`;
   }).join('')||'<div class="card">No tienes asignaciones docentes activas.</div>';
@@ -1871,14 +1884,32 @@ function normalizeTeacherAssignmentRows(rows){
   }
   return unique;
 }
-async function teacherGroupsModule(){
+async function teacherGroupsModule(gmId=0){
   try{
     const rows=await api('teacherGroups');
     const unique=normalizeTeacherAssignmentRows(rows);
-    return `<div class="card"><div class="flex justify-between gap-3 items-center mb-4"><div><h3>Mis grupos</h3><p class="text-sm text-[#8FA3B5]">Solo aparecen los grupos y materias que realmente tienes asignados.</p></div><span class="chip">${unique.length} asignaciones</span></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${unique.map(x=>`<div class="card text-left hover:border-[#D4AF3766]"><div class="text-2xl font-extrabold">${esc(x.grupo?.clave||'—')}</div><div class="mt-2 font-bold">${esc(x.materia?.nombre||'—')}</div><div class="text-sm text-[#A9BAC8] mt-1">${x.horas} h/semana</div><div class="flex flex-wrap gap-2 mt-3"><button class="btn" onclick="teacherRosterModal(${x.id})">📋 Abrir lista</button><button class="btn" onclick="openDailyGradebook(${x.id})">📊 Excel diario</button><button class="btn primary" onclick="openTeacherEvaluationHub()">📐 Rúbrica y evaluación</button></div></div>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes grupos asignados.</p>'}</div></div>`;
-  }catch(e){
-    return `<div class="card border-red-500/30"><b>No se pudo cargar tus grupos.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`;
-  }
+    if(gmId){
+      const x=unique.find(r=>Number(r.id)===Number(gmId));
+      if(!x)return `<div class="card"><p>La asignación seleccionada ya no está disponible.</p><button class="btn mt-3" onclick="loadPage('grupos')">Volver a mis grupos</button></div>`;
+      const id=Number(x.id),g=x.grupo||{},m=x.materia||{};
+      const allowed=new Set((roleNav.docente||[]).map(row=>row[0]));
+      const actions=[
+        ['grupos','Lista','Padrón y listas PDF o Excel',`teacherRosterModal(${id})`],
+        ['asistencia','Asistencia','Fechas y registros por periodo',`loadPage('asistencia',{gmId:${id}})`],
+        ['calificaciones','Evaluación','Rúbrica, adopción de VALOR TOTAL y cierre',`openTeacherEvaluationHub(${id})`],
+        ['calificaciones','Consulta de notas','Calificaciones oficiales e historial por periodo',`loadPage('calificaciones',{gmId:${id}})`],
+        ['bitacora_calificaciones','Bitácora diaria','Crear, ampliar, respaldar Excel o generar PDF',`loadPage('bitacora_calificaciones',{gmId:${id}})`],
+        ['classroom','Google Classroom','Clase y calificaciones de esta asignación',`loadPage('classroom',{gmId:${id}})`],
+        ['examenes','Exámenes','Banco y creación con la asignación seleccionada',`loadPage('examenes',{gmId:${id}})`],
+        ['planeaciones','Planeaciones','Abrir el centro general de planeaciones',`loadPage('planeaciones')`]
+      ];
+      return `<div class="space-y-5"><div class="j-workspace-breadcrumb"><button class="btn" onclick="loadPage('grupos')">← Mis grupos</button><span class="text-sm">${esc(g.clave||'Grupo')} · ${esc(m.nombre||'Materia')}</span></div><div class="card border-[#D4AF3755]"><span class="chip">ESPACIO DE TRABAJO DOCENTE</span><h2 class="text-3xl font-extrabold mt-3">${esc(g.clave||'Grupo')}</h2><h3 class="mt-2">${esc(m.nombre||'Materia')}</h3><p class="text-sm mt-2">${esc(g.turno||'Turno sin definir')} · ${Number(x.horas)||0} h/semana · Ciclo ${esc(S.activeCycle||'—')}</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${actions.filter(a=>allowed.has(a[0])).map(a=>`<button type="button" class="card j-workspace-tile" onclick="${a[3]}"><strong class="text-lg">${a[1]}</strong><span class="text-sm text-[#8FA3B5]">${a[2]}</span><span class="text-xs mt-auto">Abrir →</span></button>`).join('')}</div></div>`;
+    }
+    const byGroup=new Map();
+    for(const x of unique){const key=x.grupo?.id!=null?`g:${x.grupo.id}`:`gm:${x.id}`;if(!byGroup.has(key))byGroup.set(key,[]);byGroup.get(key).push(x);}
+    const sorted=[...byGroup.values()].sort((a,b)=>String(a[0].grupo?.clave||'').localeCompare(String(b[0].grupo?.clave||''),'es',{numeric:true}));
+    return `<div class="space-y-5"><div class="card"><span class="chip">ESPACIO ACADÉMICO</span><h2 class="text-2xl font-extrabold mt-3">Mis grupos</h2><p class="text-sm mt-2">Selecciona tu grupo y asignatura. Las herramientas usan la misma asignación y los mismos registros de Jaguar.</p><p class="text-sm mt-2">${sorted.length} grupos · ${unique.length} asignaciones</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">${sorted.map(items=>`<div class="card"><h3 class="text-2xl font-extrabold">${esc(items[0].grupo?.clave||'Grupo')}</h3><p class="text-sm mt-1">${esc(items[0].grupo?.turno||'')}</p><div class="space-y-2 mt-4">${items.map(x=>`<button type="button" class="btn w-full text-left" onclick="loadPage('grupos',{gmId:${Number(x.id)}})">${esc(x.materia?.nombre||'Materia')} · ${Number(x.horas)||0} h/semana →</button>`).join('')}</div></div>`).join('')||'<div class="card">No tienes grupos asignados.</div>'}</div></div>`;
+  }catch(e){return `<div class="card border-red-500/30"><b>No se pudo cargar tus grupos.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`;}
 }
 async function teacherRosterModal(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const students=sortStudents(d.students),g=d.grupo_materia?.grupos||{},teacher=d.teacher?.nombre_completo||S.profile?.nombre_completo||'';modal(`${g.clave||''} · ${d.grupo_materia?.materias?.nombre||''}`,`<div class="flex flex-wrap justify-between gap-3 items-center mb-4"><div><p class="text-sm text-[#A9BAC8]">${students.length} alumnos</p></div><div class="flex flex-wrap gap-2"><button class="btn" onclick='jaguarFormalListMenu(${JSON.stringify(g)},${JSON.stringify(students)},${JSON.stringify(teacher)})'>📄 PDF formal</button><button class="btn primary" onclick='downloadRosterExcel(${gmId})'>📥 Excel</button></div></div><div class="scroll"><table class="table"><thead><tr><th>#</th><th>APELLIDOS Y NOMBRE(S)</th><th>Matrícula</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td>${esc(jaguarNombreInstitucional(x))}</td><td>${esc(x.matricula||'—')}</td></tr>`).join('')||'<tr><td colspan="3">Sin alumnos.</td></tr>'}</tbody></table></div>`)}catch(e){toast(e.message)}}
 async function downloadRosterExcel(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});const st=sortStudents(d.students);excelFile(`ITHLA-${d.grupo_materia?.grupos?.clave||'grupo'}-lista.xlsx`,['No.','APELLIDOS Y NOMBRE(S)','Matrícula'],st.map((x,i)=>[i+1,jaguarNombreInstitucional(x),x.matricula||'']),d.grupo_materia?.grupos?.clave||'Lista');toast('Lista Excel generada.')}catch(e){toast(e.message)}}
@@ -1890,9 +1921,11 @@ async function jaguarTeacherEvaluationWindows(){
  const out=await rsp.json().catch(()=>({}));if(!rsp.ok||!out.ok)throw Error(out.error||'No se pudo verificar la apertura de evaluaciones');
  return out.data||[];
 }
-async function teacherGradesModule(){
+async function teacherGradesModule(gmId=0){
+ const revision=jaguarNavigationRevision;
  const groups=await api('teacherGroups'),periods=await api('periods');
- const unique=[],seen=new Set();for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}
+ const unique=[],seen=new Set();for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id)||(gmId&&Number(gm.id)!==Number(gmId)))continue;seen.add(gm.id);unique.push(gm)}
+ if(revision!==jaguarNavigationRevision)return '';
  window.__jaguarTeacherGrade={groups:unique,periods:periods.filter(x=>x.activo!==false),groupId:0,periodId:0};
  return `<div class="space-y-5"><div class="card"><span class="chip">JAGUAR 360 · EVALUACIONES</span><h2 class="text-2xl font-extrabold mt-3">📚 Mis calificaciones por grupo</h2><p class="text-sm mt-2">Selecciona la materia y después el periodo. Consulta las calificaciones de periodos anteriores sin editarlas aquí. Si Dirección abre la captura, usa la rúbrica y la bitácora para registrar notas desde un único flujo.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${unique.map(g=>`<button type="button" class="card jaguar-grade-tile" onclick="jaguarTeacherGradeGroup(${Number(g.id)})"><span class="jaguar-grade-tile__group">${esc(g.grupos?.clave||'Grupo')}</span><strong>${esc(g.materias?.nombre||'Materia')}</strong><small>Ver periodos y calificaciones →</small></button>`).join('')||'<div class="card">No tienes grupos asignados.</div>'}</div><div id="jaguar-grade-periods" class="mt-5" aria-live="polite"></div><div id="teacherGradesTable" class="mt-4"></div></div>`;
 }
@@ -1903,7 +1936,7 @@ async function jaguarTeacherGradeGroup(groupId){
  if(!gm||!container)return;
  container.innerHTML=`<div class="card"><h3>${esc(gm.grupos?.clave||'')} · ${esc(gm.materias?.nombre||'')}</h3><p class="text-sm">Consultando registros y periodos…</p></div>`;
  let windows=[];try{windows=await jaguarTeacherEvaluationWindows();state.statusError='';}catch(e){state.statusError=e.message;}
- if(state.groupId!==Number(groupId))return;
+ if(window.__jaguarTeacherGrade!==state||S.page!=='calificaciones'||state.groupId!==Number(groupId))return;
  state.windows=windows;
  // En caso de error se bloquea toda edición; la consulta de datos históricos sigue disponible.
  const known=new Map(windows.map(w=>[Number(w.id),w]));
@@ -1920,15 +1953,18 @@ async function loadTeacherGradesTable(){try{
  const state=window.__jaguarTeacherGrade||{};const gmId=Number(state.groupId||document.getElementById('tg_group')?.value||0),periodoId=Number(state.periodId||document.getElementById('tg_period')?.value||0);
  if(!gmId||!periodoId)return toast('Selecciona grupo y periodo.');
  const d=await apiQuery('teacherGrades',{grupo_materia_id:gmId,periodo_id:periodoId}),students=sortStudents(d.students),period=state.periods?.find(x=>Number(x.id)===periodoId),windowInfo=state.windows?.find(x=>Number(x.id)===periodoId);
+ if(S.page!=='calificaciones'||window.__jaguarTeacherGrade!==state||state.groupId!==gmId||state.periodId!==periodoId)return;
  const canEdit=Boolean(windowInfo?.habilitada)&&!state.statusError;
  const registered=students.filter(x=>x.grade?.calificacion!=null&&x.grade?.calificacion!=='').length;
  const count=document.getElementById('jaguar-grade-count-'+periodoId);if(count)count.textContent=`${registered}/${students.length} calificaciones registradas`;
- document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><span class="chip">${esc(period?.nombre||'Periodo')}</span><h3 class="mt-2">${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${registered} de ${students.length} notas capturadas · ${canEdit?'✍️ Rúbrica disponible':'🔒 Consulta histórica'}</p></div>${canEdit?`<button class="btn primary" onclick="openTeacherEvaluationHub()">📐 Abrir rúbrica y adopción</button>`:'<span class="chip">Consulta histórica</span>'}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><b>${x.grade?.calificacion==null?'—':esc(x.grade.calificacion)}</b></td><td>${esc(x.grade?.observaciones||'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
+ document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><span class="chip">${esc(period?.nombre||'Periodo')}</span><h3 class="mt-2">${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${registered} de ${students.length} notas capturadas · ${canEdit?'✍️ Rúbrica disponible':'🔒 Consulta histórica'}</p></div>${canEdit?`<button class="btn primary" onclick="openTeacherEvaluationHub(${gmId},${periodoId})">📐 Abrir rúbrica y adopción</button>`:'<span class="chip">Consulta histórica</span>'}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><b>${x.grade?.calificacion==null?'—':esc(x.grade.calificacion)}</b></td><td>${esc(x.grade?.observaciones||'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
  }catch(e){toast(e.message);const region=document.getElementById('teacherGradesTable');if(region)region.innerHTML=`<div class="card">No se pudieron cargar las notas: ${esc(e.message)}</div>`;}}
 // Jaguar 360 · Asistencia por grupo, periodo y fechas ya registradas.
-async function teacherAttendanceModule(){
+async function teacherAttendanceModule(gmId=0){
+ const revision=jaguarNavigationRevision;
  const groups=await api('teacherGroups'),periods=await api('periods');const unique=[],seen=new Set();
- for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id))continue;seen.add(gm.id);unique.push(gm)}
+ for(const a of groups){const gm=a.grupo_materias;if(!gm||seen.has(gm.id)||(gmId&&Number(gm.id)!==Number(gmId)))continue;seen.add(gm.id);unique.push(gm)}
+ if(revision!==jaguarNavigationRevision)return '';
  window.__jaguarAttendance={groups:unique,periods:periods.filter(x=>x.activo!==false),groupId:0,periodId:0};
  return `<div class="space-y-5"><div class="card"><span class="chip">JAGUAR 360 · ASISTENCIA</span><h2 class="text-2xl font-extrabold mt-3">🗓️ Mis listas por periodo</h2><p class="text-sm mt-2">Elige grupo y materia, luego un periodo. Puedes abrir fechas anteriores sin sobreescribir otras listas.</p></div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${unique.map(g=>`<button type="button" class="card jaguar-grade-tile" onclick="jaguarAttendanceGroup(${Number(g.id)})"><span class="jaguar-grade-tile__group">${esc(g.grupos?.clave||'Grupo')}</span><strong>${esc(g.materias?.nombre||'Materia')}</strong><small>Ver registros por periodo →</small></button>`).join('')||'<div class="card">Sin asignaciones.</div>'}</div><div id="jaguar-att-periods"></div><div id="jaguar-att-dates"></div><div id="teacherAttendanceTable"></div><input type="hidden" id="ta_group"><input type="hidden" id="ta_period"><input type="hidden" id="ta_date"></div>`;
 }
@@ -1939,13 +1975,14 @@ function jaguarAttendanceGroup(groupId){
  document.getElementById('jaguar-att-periods').innerHTML=`<div class="card"><h3>${esc(gm?.grupos?.clave||'')} · ${esc(gm?.materias?.nombre||'')}</h3><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">${state.periods.map((per,i)=>`<button type="button" class="jaguar-grade-tile" onclick="jaguarAttendancePeriod(${Number(per.id)})"><span class="jaguar-grade-tile__group">${esc(per.nombre||`Periodo ${i+1}`)}</span><small>🗓️ Consultar fechas →</small></button>`).join('')}</div></div>`;
 }
 async function jaguarAttendancePeriod(periodId){
- const state=window.__jaguarAttendance;if(!state?.groupId)return;state.periodId=Number(periodId);
+ const state=window.__jaguarAttendance;if(!state?.groupId)return;const gmId=state.groupId;state.periodId=Number(periodId);
  document.getElementById('ta_period').value=periodId;const box=document.getElementById('jaguar-att-dates');
  document.getElementById('teacherAttendanceTable').innerHTML='';box.innerHTML='<div class="card">Cargando fechas registradas…</div>';
  try{
   const session=(await supabaseClient.auth.getSession()).data.session;if(!session?.access_token)throw Error('Sesión caducada');
-  const rsp=await fetch(`/api/evaluation-window?action=attendance_history&grupo_materia_id=${state.groupId}&periodo_id=${state.periodId}`,{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
+  const rsp=await fetch(`/api/evaluation-window?action=attendance_history&grupo_materia_id=${gmId}&periodo_id=${Number(periodId)}`,{headers:{Authorization:'Bearer '+session.access_token},cache:'no-store'});
   const result=await rsp.json().catch(()=>({}));if(!rsp.ok||!result.ok)throw Error(result.error||'Error al consultar historial');
+  if(window.__jaguarAttendance!==state||S.page!=='asistencia'||state.groupId!==gmId||state.periodId!==Number(periodId))return;
   const data=result.data||{},p=data.periodo||{};state.dateLimits={start:p.fecha_inicio||'',end:p.fecha_fin||''};
   const now=new Date().toLocaleDateString('en-CA');const date=(!p.fecha_inicio||now>=p.fecha_inicio)&&(!p.fecha_fin||now<=p.fecha_fin)?now:(p.fecha_inicio||now);
   box.innerHTML=`<div class="card"><h3>Fechas registradas · ${esc(p.nombre||'Periodo')}</h3><p class="text-sm">Selecciona una fecha existente para consultar o corregir sus asistencias, o elige otra fecha dentro del periodo.</p><div class="flex flex-wrap gap-2 mt-3">${(data.fechas||[]).map(x=>`<button class="btn" onclick="jaguarAttendanceDate('${esc(x.fecha)}')">📅 ${esc(x.fecha)} · ${Number(x.total)||0} registros</button>`).join('')||'<small>Todavía no hay fechas registradas.</small>'}</div><div class="flex flex-wrap gap-2 items-center mt-3"><label class="text-sm">Otra fecha: <input type="date" id="jaguar-att-date-picker" class="input" min="${esc(p.fecha_inicio||'')}" max="${esc(p.fecha_fin||'')}" value="${esc(date)}"></label><button class="btn primary" onclick="jaguarAttendanceDate(document.getElementById('jaguar-att-date-picker').value)">Abrir fecha</button></div></div>`;
@@ -1960,11 +1997,24 @@ async function jaguarAttendanceDate(fecha){const state=window.__jaguarAttendance
 async function loadTeacherAttendanceTable(){try{
  const gmId=Number(document.getElementById('ta_group')?.value||0),fecha=document.getElementById('ta_date')?.value;
  if(!gmId||!fecha)return toast('Selecciona grupo, periodo y fecha.');
+ const region=document.getElementById('teacherAttendanceTable');
  const d=await apiQuery('teacherAttendance',{grupo_materia_id:gmId,fecha}),st=sortStudents(d.students),present=st.filter(x=>x.attendance?.estado==='presente').length;
+ if(!region?.isConnected||S.page!=='asistencia'||Number(document.getElementById('ta_group')?.value)!==gmId||document.getElementById('ta_date')?.value!==fecha)return;
  document.getElementById('teacherAttendanceTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><h3>${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${esc(fecha)} · ${st.length} alumnos · ${present} presentes</p></div><div class="flex flex-wrap gap-2"><button class="btn" onclick="attendanceAll('presente')">✓ Todos presentes</button><button class="btn primary" onclick="saveTeacherAttendanceTable(${gmId})">💾 Guardar asistencia</button></div></div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Estado</th></tr></thead><tbody>${st.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><select id="att_${x.id}" class="select"><option value="presente" ${x.attendance?.estado==='presente'?'selected':''}>Presente</option><option value="falta" ${x.attendance?.estado==='falta'?'selected':''}>Falta</option><option value="retardo" ${x.attendance?.estado==='retardo'?'selected':''}>Retardo</option><option value="justificada" ${x.attendance?.estado==='justificada'?'selected':''}>Justificada</option></select></td></tr>`).join('')}</tbody></table></div></div>`;
  }catch(e){toast(e.message)}}
 function attendanceAll(v){document.querySelectorAll('[id^="att_"]').forEach(x=>x.value=v)}
-async function saveTeacherAttendanceTable(gmId){try{const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId}),fecha=document.getElementById('ta_date').value;const rows=sortStudents(d.students).map(s=>({alumno_id:s.id,estado:document.getElementById(`att_${s.id}`)?.value||'falta'}));const r=await apiPost('saveTeacherAttendance',{grupo_materia_id:gmId,fecha,rows});toast(r.message||'Asistencia guardada.');await loadTeacherAttendanceTable()}catch(e){toast(e.message)}}
+async function saveTeacherAttendanceTable(gmId){try{
+ const region=document.getElementById('teacherAttendanceTable'),fecha=document.getElementById('ta_date')?.value;
+ if(!region||!fecha||Number(document.getElementById('ta_group')?.value)!==Number(gmId))return toast('Selecciona la lista antes de guardar.');
+ const values=new Map([...region.querySelectorAll('select[id^="att_"]')].map(el=>[Number(el.id.slice(4)),el.value]));
+ const d=await apiQuery('teacherRoster',{grupo_materia_id:gmId});
+ if(!region.isConnected||Number(document.getElementById('ta_group')?.value)!==Number(gmId)||document.getElementById('ta_date')?.value!==fecha)return toast('Cambiaste de lista; vuelve a guardar en la lista correcta.');
+ const students=sortStudents(d.students);
+ if(students.some(st=>!values.has(Number(st.id)))||values.size!==students.length)return toast('El padrón cambió. Abre de nuevo la lista antes de guardar.');
+ const rows=students.map(st=>({alumno_id:st.id,estado:values.get(Number(st.id))}));
+ const r=await apiPost('saveTeacherAttendance',{grupo_materia_id:gmId,fecha,rows});toast(r.message||'Asistencia guardada.');
+ if(region.isConnected&&Number(document.getElementById('ta_group')?.value)===Number(gmId)&&document.getElementById('ta_date')?.value===fecha)await loadTeacherAttendanceTable();
+}catch(e){toast(e.message)}}
 async function teacherScheduleModule(){const rows=await api('teacherSchedule');const byDay={};rows.forEach(r=>(byDay[r.dia_semana]??=[]).push(r));const days=[1,2,3,4,5];const html=`<div class="card"><div class="flex justify-between gap-3 items-center"><div><h3>Mi horario</h3><p class="text-sm text-[#8FA3B5]">Ciclo ${currentCycleLabel()} · solo tus clases.</p></div><button class="btn primary" onclick="printTeacherSchedule()">📄 Descargar PDF</button></div><div class="grid lg:grid-cols-5 gap-3 mt-5">${days.map(d=>`<div class="card"><b>${day(d)}</b>${(byDay[d]||[]).map(r=>`<div class="mt-3 p-3 rounded-xl border border-white/5"><div class="font-bold">${esc(r.hora_inicio?.slice(0,5))}–${esc(r.hora_fin?.slice(0,5))}</div><div class="mt-1">${esc(r.grupo_materias?.grupos?.clave||'—')}</div><div class="text-xs text-[#A9BAC8]">${esc(r.grupo_materias?.materias?.nombre||'—')}</div></div>`).join('')||'<div class="text-xs text-[#8FA3B5] mt-3">Sin clases</div>'}</div>`).join('')}</div></div>`;window._teacherScheduleRows=rows;return html}
 function printTeacherSchedule(){const rows=window._teacherScheduleRows||[];printPdf('Horario docente',`<h1>ITHLA</h1><h2>Horario docente</h2><div class="meta">${esc(S.profile.nombre_completo||'Docente')} · Ciclo 2026-2027</div><table><thead><tr><th>Día</th><th>Hora</th><th>Grupo</th><th>Materia</th><th>Aula</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${day(r.dia_semana)}</td><td>${esc(r.hora_inicio?.slice(0,5))}–${esc(r.hora_fin?.slice(0,5))}</td><td>${esc(r.grupo_materias?.grupos?.clave||'')}</td><td>${esc(r.grupo_materias?.materias?.nombre||'')}</td><td>${esc(r.aula||'')}</td></tr>`).join('')}</tbody></table>`)}
 async function clarificationModule(){const rows=await api('clarifications');if(S.role==='alumno'){return `<div class="card"><div class="flex justify-between gap-3 items-center mb-4"><div><h3>Aclaraciones de calificación</h3><p class="text-sm text-[#8FA3B5]">La aclaración se envía directamente al docente de la materia.</p></div></div>${rows.map(r=>`<div class="card mb-3"><div class="flex justify-between"><b>${esc(r.grupo_materias?.materias?.nombre||'Materia')}</b><span class="chip">${esc(r.estado)}</span></div><p class="text-sm mt-2">Calificación: ${esc(r.valor_actual||r.calificaciones?.calificacion||'—')}</p><p class="text-sm text-[#A9BAC8] mt-1">${esc(r.motivo)}</p>${r.observaciones_resolucion?`<p class="text-xs mt-2">Respuesta: ${esc(r.observaciones_resolucion)}</p>`:''}</div>`).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes aclaraciones.</p>'}</div>`}return `<div class="card"><h3>Aclaraciones recibidas</h3><p class="text-sm text-[#8FA3B5] mt-1">Solo aparecen las aclaraciones de alumnos de tus grupos.</p><div class="scroll mt-4"><table class="table"><thead><tr><th>APELLIDOS Y NOMBRE(S)</th><th>Grupo</th><th>Materia</th><th>Calificación</th><th>Motivo</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(jaguarNombreInstitucional(r.alumnos))}</td><td>${esc(r.alumnos?.grupos?.clave||'')}</td><td>${esc(r.grupo_materias?.materias?.nombre||'')}</td><td>${esc(r.calificaciones?.calificacion??r.valor_actual)}</td><td>${esc(r.motivo)}</td><td>${esc(r.estado)}</td><td>${r.estado==='pendiente'?`<button class="btn primary" onclick='resolveClarificationModal(${r.id})'>Resolver</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="7">Sin aclaraciones.</td></tr>'}</tbody></table></div></div>`}
@@ -3645,7 +3695,7 @@ v3TeacherDashboard=async function(){
   return `<div class="space-y-5">
     <div class="card border-[#D4AF3755]"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4"><div><span class="chip">DOCENTE</span><h2 class="text-3xl font-extrabold mt-3">¡Bienvenido, ${esc(v3Name(d.teacher))}!</h2><p class="text-sm text-[#A9BAC8] mt-2">Carga académica real · ciclo ${esc(d.cycle)}</p></div><button class="btn" onclick="v3TeacherPdf()">📄 Descargar horario PDF</button></div></div>
     <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4">${v3Metric('Grupos asignados',groupList.length,'👥')}${v3Metric('Materias asignadas',subjects.length,'📚')}${v3Metric('Horas semanales',totalHours,'🕐')}${v3Metric('Aclaraciones pendientes',pending,'💬')}</div>
-    <div class="card"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><h3>👥 Grupos asignados</h3><p class="text-sm text-[#8FA3B5] mt-1">Las materias se obtienen directamente de los grupos y asignaciones docentes reales.</p></div><span class="chip">${groupList.length} grupo(s)</span></div>
+    <div class="card"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><h3>👥 Grupos asignados</h3><p class="text-sm text-[#8FA3B5] mt-1">Las materias se obtienen directamente de los grupos y asignaciones docentes reales.</p></div><button class="btn" onclick="loadPage('grupos')">Abrir mis grupos →</button></div>
       <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">${groupList.map(g=>{const gmRows=(assignments||[]).filter(a=>Number((a.grupo_materias||a.grupo_materia)?.grupo_id)===Number(g.id));return `<div class="p-4 rounded-xl border border-white/10"><div class="text-2xl font-extrabold">${esc(g.clave||'—')}</div><div class="text-xs text-[#8FA3B5] mt-1">${esc(g.grado||'—')}° · ${esc(g.turno||'—')}</div><div class="mt-3 space-y-2">${gmRows.map(a=>{const gm=a.grupo_materias||a.grupo_materia,m=gm?.materias,c=colorMap.get(String(m?.id))||'#D4AF37';return `<div class="rounded-lg p-2 border border-white/10" style="border-left:6px solid ${esc(c)}"><b>${esc(m?.nombre||'Materia')}</b><div class="text-xs text-[#A9BAC8] mt-1">${Number(a.horas_asignadas||gm?.horas_semana||m?.horas_semana||0)} h/semana</div></div>`}).join('')||'<div class="text-sm text-[#8FA3B5]">Sin materias registradas.</div>'}</div></div>`}).join('')||'<p class="text-sm text-[#8FA3B5]">No tienes grupos asignados en este momento.</p>'}</div></div>
     <div class="card"><div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3"><div><h3>🎨 Color por materia</h3><p class="text-sm text-[#A9BAC8] mt-1">Cada materia asignada conserva su color y se reutiliza en horarios y documentos.</p></div><button class="btn primary" onclick="v3SaveTeacherColors()">💾 Guardar colores</button></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4 mt-5">${subjects.map(x=>{const m=x.materia,c=colorMap.get(String(m.id))||'#D4AF37';return `<div class="p-4 rounded-xl border border-white/10" style="border-left:7px solid ${esc(c)}"><div class="flex items-start justify-between gap-3"><div><div class="text-xs text-[#8FA3B5]">${esc(m.clave||'')}</div><b class="text-lg">${esc(m.nombre||'Materia')}</b></div><input class="h-9 w-12 p-1 rounded cursor-pointer bg-transparent" type="color" id="teacher_color_${m.id}" value="${esc(c)}" title="Color de ${esc(m.nombre||'materia')}"></div><div class="text-xs text-[#8FA3B5] mt-3">${x.groups.size} grupo(s) · ${x.hours} h/semana</div></div>`}).join('')||'<p class="text-sm text-[#8FA3B5]">No hay materias derivadas de tus grupos asignados.</p>'}</div></div>
     <div class="card"><h3>📢 Avisos recientes</h3>${(d.notices||[]).slice(0,5).map(n=>`<div class="py-3 border-b border-white/5"><b>${esc(n.titulo)}</b><p class="text-sm text-[#A9BAC8] mt-1">${esc(n.contenido)}</p></div>`).join('')||'<p class="text-sm text-[#8FA3B5] mt-3">Sin avisos.</p>'}</div>
@@ -4241,6 +4291,7 @@ for(const rr of ['direccion_escolar','servicios_docentes','coordinacion_academic
  if(roleNav[rr]&&!roleNav[rr].some(x=>x[0]==='relevos_docentes'))roleNav[rr].splice(2,0,['relevos_docentes','♜ Bajas y relevos docentes']);
 }
 if(roleNav.coordinacion_academica&&!roleNav.coordinacion_academica.some(x=>x[0]==='planeaciones'))roleNav.coordinacion_academica.splice(3,0,['planeaciones','📝 Planeaciones docentes']);
+if(!roleNav.coordinacion_academica.some(x=>x[0]==='config'))roleNav.coordinacion_academica.push(['config','⚙ Criterios académicos']);
 if(roleNav.docente&&!roleNav.docente.some(x=>x[0]==='mis_relevos'))roleNav.docente.splice(3,0,['mis_relevos','📦 Mis relevos']);
 titles.relevos_docentes='Gestión de bajas y relevos';titles.mis_relevos='Continuidad académica';titles.horas_materias='Horas por materia';
 for(const r of ['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','archivo_escolar','recursos_monetarios']){const n=roleNav[r];if(n&&!n.some(x=>x[0]==='portal_publico'))n.push(['portal_publico','🌐 Contenido público']);if(n&&!n.some(x=>x[0]==='avisos'))n.push(['avisos','📢 Avisos'])}titles.portal_publico='Gestión del portal público';
@@ -4306,7 +4357,7 @@ async function jaguarAuditModule(){
 
 async function jaguarArchiveOpen(section='expedientes',kind='',ownerId=0){
   try{
-    S.page=section==='planeaciones'?'planeaciones':'archivo';renderShell();
+    ++jaguarNavigationRevision;S.workspaceId=0;S.page=section==='planeaciones'?'planeaciones':'archivo';renderShell();
     const c=document.getElementById('content');c.innerHTML='<div class="card">Cargando '+(section==='planeaciones'?'planeaciones docentes':'Archivo Escolar')+'…</div>';
     c.innerHTML=await jaguarArchiveModule(section,kind,ownerId);
   }catch(e){document.getElementById('content').innerHTML=`<div class="card border-red-500/30"><b>No se pudo cargar el módulo.</b><p class="text-sm text-[#A9BAC8] mt-2">${esc(e.message)}</p></div>`}
@@ -4912,11 +4963,11 @@ async function confirmTeacherDailyUpload(){
     const sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer()))].map(b=>b.toString(16).padStart(2,'0')).join('');
     const r=await apiPost('commitTeacherDailyUpload',{grupo_materia_id:gmId,periodo_id:periodoId,fecha:d.fecha,file_path:prep.path,file_name:file.name,file_sha256:sha,state,guardar_ponderaciones_como_borrador:count>0});
     window._pendingDailyGradebook=null;
-    toast(r.message||'Bitácora guardada.');closeModal();await loadPage('bitacora_calificaciones');
+    toast(r.message||'Bitácora guardada.');closeModal();await loadPage('bitacora_calificaciones',S.workspaceId?{gmId:S.workspaceId}:undefined);
   }catch(e){toast(e.message)}
 }
 
-async function jaguarDailyGradebookModule(){
+async function jaguarDailyGradebookModule(gmId=0){
   const allowed=['docente','servicios_docentes','control_escolar','direccion_escolar','coordinacion_academica'];
   if(!allowed.includes(S.role))return '<div class="card">Módulo no disponible.</div>';
   if(S.role==='docente'){
@@ -4937,7 +4988,7 @@ async function jaguarDailyGradebookModule(){
         ||(Array.isArray(periods)?periods:[])[0]
         ||S.activePeriod
         ||null;
-      const cards=normalized.map(g=>`<div class="card"><div class="font-bold text-lg">${esc(g.grupo?.clave||'—')} · ${esc(g.materia?.nombre||'—')}</div><div class="text-xs text-[#8FA3B5] mt-2">${g.horas?`${Number(g.horas)} h/semana · `:''}La rúbrica oficial y el color de la materia se aplican automáticamente.</div><div class="flex flex-wrap gap-2 mt-4"><button class="btn primary" onclick="openDailyGradebook(${g.id})">📥 Crear / ampliar Excel</button><button class="btn" onclick="showDailyUploadModal(${g.id},${Number(p?.id||0)})">📤 Subir Excel</button><button class="btn" onclick="downloadManualDailyGradebookPdf(${g.id},${Number(p?.id||0)})">📄 PDF para llenar a mano</button></div></div>`).join('');
+      const cards=normalized.filter(g=>!gmId||Number(g.id)===Number(gmId)).map(g=>`<div class="card"><div class="font-bold text-lg">${esc(g.grupo?.clave||'—')} · ${esc(g.materia?.nombre||'—')}</div><div class="text-xs text-[#8FA3B5] mt-2">${g.horas?`${Number(g.horas)} h/semana · `:''}La rúbrica oficial y el color de la materia se aplican automáticamente.</div><div class="flex flex-wrap gap-2 mt-4"><button class="btn primary" onclick="openDailyGradebook(${g.id})">📥 Crear / ampliar Excel</button><button class="btn" onclick="showDailyUploadModal(${g.id},${Number(p?.id||0)})">📤 Subir Excel</button><button class="btn" onclick="downloadManualDailyGradebookPdf(${g.id},${Number(p?.id||0)})">📄 PDF para llenar a mano</button></div></div>`).join('');
       return `<div class="space-y-5"><div class="card border-[#D4AF3755]"><span class="chip">RESPALDO ACADÉMICO</span><h2 class="text-2xl font-extrabold mt-3">📒 Bitácora diaria de Excel</h2><p class="text-sm text-[#A9BAC8] mt-2">Las materias se toman de tu <b>Carga docente</b> del ciclo actual. Esta es la única plantilla Excel de captura docente. En «VALORES PONDERACION» escribe <b>los puntos ya ponderados</b> de cada aspecto (por ejemplo, una libreta de 8/10 con peso 70% aporta 5.6 puntos). El total suma esos aportes una sola vez. Puedes respaldar tus notas aunque Dirección no haya abierto evaluaciones. Los valores de ponderación se guardan como borradores privados hasta que los revises y traslades a la rúbrica durante la apertura.</p></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${cards||'<div class="card md:col-span-2 lg:col-span-3"><b>No hay materias para la bitácora.</b><p class="text-sm text-[#A9BAC8] mt-2">Tu Carga docente no tiene asignaciones activas para este ciclo. Si en “Mis grupos” sí aparecen materias, vuelve a abrir este módulo; ahora ambas pantallas usan exactamente la misma fuente de asignaciones.</p></div>'}</div></div>`;
     }catch(e){
       return `<div class="card border-red-500/30"><b>No se pudo cargar la Bitácora Excel.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`;
@@ -5038,6 +5089,7 @@ async function jaguarInstitutionStatisticsModule(){
 }
 async function jaguarStudentPaymentsModule(){try{const [rows,charges]=await Promise.all([api('financeStudentPayments'),api('financeStudentCharges')]);return `<div class="space-y-5"><div class="card"><span class="chip">TRANSPARENCIA FINANCIERA</span><h2 class="text-2xl font-extrabold mt-3">💳 Mis pagos y cargos</h2><p class="text-sm text-[#A9BAC8] mt-2">Aquí puedes ver cargos pendientes y tus tickets emitidos por Recursos Monetarios.</p></div><div class="card"><h3>⏳ Pagos pendientes</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Folio de cargo</th><th>Concepto</th><th>Importe</th><th>Pagado</th><th>Pendiente</th></tr></thead><tbody>${charges.map(x=>`<tr><td><b>${esc(x.folio)}</b></td><td>${esc(x.recursos_conceptos?.nombre||'—')}</td><td>${financeMoney(x.importe)}</td><td>${financeMoney(x.paid)}</td><td><b>${financeMoney(x.remaining)}</b></td></tr>`).join('')||'<tr><td colspan="5">No tienes cargos pendientes.</td></tr>'}</tbody></table></div></div><div class="card"><h3>🧾 Mis comprobantes</h3><div class="scroll mt-3"><table class="table"><thead><tr><th>Fecha</th><th>Folio</th><th>Concepto</th><th>Importe</th><th>Estado</th><th></th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.fecha_pago||'—')}</td><td><b>${esc(x.folio)}</b></td><td>${esc(x.recursos_conceptos?.nombre||'—')}</td><td>${financeMoney(x.importe)}</td><td><span class="chip">${esc(x.estado)}</span></td><td>${x.archivo_path?`<button class="btn" onclick="jaguarFinanceReceipt(${x.id})">📄 Ver ticket</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="6">No tienes pagos registrados.</td></tr>'}</tbody></table></div></div></div>`}catch(e){return `<div class="card border-red-500/30"><b>No se pudieron consultar tus pagos.</b><p class="text-sm text-rose-300 mt-2">${esc(e.message)}</p></div>`}}
 </script>
+<script src="/assets/jaguar-workspaces.js"></script>
 <script src="/assets/jaguar-premium.js"></script>
 <script id="jaguar-documentos-premium-v4">
 

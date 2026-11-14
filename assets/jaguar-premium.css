@@ -126,3 +126,16 @@ body .modal .text-white{color:var(--j-ink)!important}body .modal .btn.primary,bo
 #app.jaguar-v3 #content .table,#app.jaguar-v3 #content .scroll{max-width:100%}
 #app.jaguar-v3 #content .scroll{overflow-x:auto;scrollbar-color:var(--j-line) transparent}
 @media(prefers-reduced-motion:reduce){html *,html *::before,html *::after{scroll-behavior:auto!important;animation-duration:.001ms!important;transition-duration:.001ms!important}}
+
+/* Jaguar · navegación agrupada y espacio de trabajo sin duplicar módulos. */
+#app .j-workspace-nav{margin:4px 0;border-radius:10px;min-width:0}
+#app .j-workspace-summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:6px;list-style:none;padding:11px 12px;color:inherit;font-size:12px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+#app .j-workspace-summary::-webkit-details-marker{display:none}
+#app .j-workspace-summary:focus-visible,#app .j-workspace-summary:hover{outline:1px solid var(--j-line,rgba(212,175,55,.45));border-radius:8px}
+#app .j-workspace-chevron{font-size:18px;color:var(--color-accent,#D4AF37);transition:transform .15s}
+#app .j-workspace-nav[open]>.j-workspace-summary .j-workspace-chevron{transform:rotate(90deg)}
+#app .j-workspace-children{padding-left:8px;border-left:1px solid var(--j-line,rgba(212,175,55,.28));margin-left:9px}
+#app .j-workspace-tile{display:flex;flex-direction:column;align-items:flex-start;gap:7px;width:100%;text-align:left;min-height:116px;white-space:normal;cursor:pointer}
+#app .j-workspace-tile:hover,#app .j-workspace-tile:focus-visible{border-color:var(--color-accent,#D4AF37);outline:1px solid var(--color-accent,#D4AF37)}
+#app .j-workspace-breadcrumb{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+@media(max-width:640px){#app .j-workspace-tile{min-height:96px}#app .j-workspace-summary{min-height:44px}}

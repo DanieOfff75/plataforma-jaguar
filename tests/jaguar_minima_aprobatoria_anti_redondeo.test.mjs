@@ -122,7 +122,8 @@ test('Coordinación Académica ve configuración de mínima, pero NO puede edita
 test('Los oficios llegan a bandeja real de notificaciones del personal, sin abrir otros reportes',()=>{
  const reports=read('api/reports.js');
  assert.match(html,/Notificaciones y oficios/);
- assert.match(html,/else if\(page==='notificaciones'\)c\.innerHTML=await jaguarNotificationsModule\(\)/);
+ assert.match(html,/page==='notificaciones'\?await jaguarNotificationsModule\(\)/);
+ assert.match(html,/if\(revision!==jaguarNavigationRevision\)return;\s*c\.innerHTML=html;/);
  assert.match(html,/oficio_precision_calificaciones/);
  assert.match(reports,/req\.body\?\.action==='grade_policy_office_pdf'\?/);
  assert.match(reports,/allowedRoleIds/);
