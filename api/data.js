@@ -896,14 +896,19 @@ async function commitTeacherDailyUpload(admin,user,body,profile){
   if(d.rubric){const total=d.rubric.total;if(Math.abs(total-100)>0.001) throw Object.assign(new Error(`La rúbrica institucional debe sumar exactamente 100%. Actualmente suma ${total.toFixed(2)}%.`),{status:409}); incoming.rubric=d.rubric;}
   if(incoming.activities.length>40) throw Object.assign(new Error('El archivo no puede contener más de 40 actividades.'),{status:400});
   const latest=d.latest?.snapshot?stableDailyState(d.latest.snapshot):null; if(latest) compareDailyLocked(latest,incoming);
-  const validActivities=new Set(incoming.activities.map(a=>String(a.key)));
+  const validActivities=new Map(incoming.activities.map(a=>[String(a.key),a]));
+  if(validActivities.size!==incoming.activities.length)throw Object.assign(new Error('La bitácora contiene claves de actividad duplicadas.'),{status:400});
   for(const k of Object.keys(incoming.activityScores||{})){
-    const [sid,activityKey]=k.split('|');
-    if(!allowed.has(String(sid))||!validActivities.has(String(activityKey)))throw Object.assign(new Error('La bitácora contiene una actividad o alumno no registrado.'),{status:400});
+    const [sid,activityKey,...extra]=k.split('|');
+    const activity=validActivities.get(String(activityKey));
+    if(extra.length||!allowed.has(String(sid))||!activity)throw Object.assign(new Error('La bitácora contiene una actividad o alumno no registrado.'),{status:400});
     const value=incoming.activityScores[k];
     if(value===''||value==null){delete incoming.activityScores[k];continue;}
-    if(!Number.isFinite(Number(value))||Number(value)<0||Number(value)>10)throw Object.assign(new Error('Las actividades deben calificarse de 0 a 10.'),{status:400});
-    incoming.activityScores[k]=Number(value);
+    const count=/^firmas?$/i.test(String(activity.nombre).trim());
+    const numeric=typeof value==='number'||(typeof value==='string'&&/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim()));
+    const n=Number(value);
+    if(!numeric||!Number.isFinite(n)||n<0||(count?!Number.isSafeInteger(n):n>10))throw Object.assign(new Error(count?'FIRMAS debe contener una cantidad entera no negativa.':`La actividad ${activity.nombre} debe calificarse de 0 a 10.`),{status:400});
+    incoming.activityScores[k]=n;
   }
   for(const k of Object.keys(incoming.weightedValues||{})){const [sid,cid]=k.split('|');if(!allowed.has(String(sid))||!(d.rubric?.components||[]).some(c=>String(c.id)===String(cid))) delete incoming.weightedValues[k];}
   const {data:existing,error:ee}=await admin.from('bitacora_excel_diaria').select('id,version').eq('docente_id',d.ctx.tid).eq('grupo_materia_id',gmId).eq('periodo_id',periodoId).eq('fecha_clase',fecha).order('version',{ascending:false}).limit(1).maybeSingle(); if(ee) throw ee;

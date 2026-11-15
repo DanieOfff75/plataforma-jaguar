@@ -4703,7 +4703,11 @@ function dailyStateFromWorkbook(wb,d){
         const estado=String(raw).trim();
         if(estado)attendance[`${st.id}|${col.date}`]=estado;
       }else{
-        const v=Number(raw);if(!Number.isFinite(v)||v<0||v>10)throw Error(`Valor inválido para ${mat} en ${activities[col.activityIndex].nombre}. Debe estar entre 0 y 10.`);
+        const activity=activities[col.activityIndex];
+        const count=/^firmas?$/i.test(String(activity.nombre).trim());
+        const numeric=typeof raw==='number'||(typeof raw==='string'&&/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw.trim()));
+        const v=Number(raw);
+        if(!numeric||!Number.isFinite(v)||v<0||(count?!Number.isSafeInteger(v):v>10))throw Error(`Valor inválido para ${mat} en ${activity.nombre}. ${count?'Escribe una cantidad entera no negativa de firmas, no una calificación.':'Debe estar entre 0 y 10.'}`);
         activityScores[`${st.id}|${col.key}`]=v;
       }
     }
@@ -4825,6 +4829,7 @@ function dailyWorkbook(d,options={}){
   // La asistencia vive únicamente en la hoja ASISTENCIAS.
   const wv={};
   setCell(wv,'A1',school,titleStyle);setCell(wv,'A2',`CICLO ${cycle} · GRUPO ${groupLabel} · ${subject}`,bandStyle);setCell(wv,'A3',`DOCENTE: ${teacher} · PERIODO: ${d.periodo?.nombre||'—'}`,subStyle);
+  setCell(wv,'A4','FIRMAS: captura la cantidad entera; registra su nota equivalente (0–10) en VALORES PONDERACION.',{...left,font:{name:'Arial',sz:9,bold:true,color:{rgb:'FF1B365D'}}});
   setCell(wv,'A5','No.',bandStyle);setCell(wv,'B5','NOMBRE COMPLETO',bandStyle);setCell(wv,'C5','MATRÍCULA',bandStyle);
   const existing=acts.filter(a=>a&&a.nombre);
   const wanted=Number(options?.addActivities??2);
@@ -4835,7 +4840,7 @@ function dailyWorkbook(d,options={}){
   for(let i=0;i<wanted;i++)activityEvents.push({type:'newActivity',key:dailyActivityKey(`nueva-actividad-${existing.length+i+1}`,existing.length+i),name:`NUEVA ACTIVIDAD ${existing.length+i+1}`});
   const visibleEvents=activityEvents;
   visibleEvents.forEach((ev,i)=>{const c=4+i;const a=ev.activity||ev;setCell(wv,`${dailyCol(c)}5`,a.nombre||a.name,bandStyle);setCell(wv,`${dailyCol(c)}6`,a.key,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});setCell(wv,`${dailyCol(c)}7`,a.fecha||d.fecha,{font:{sz:8,color:{rgb:'FF64748B'}},alignment:{horizontal:'center'}});});
-  students.forEach((st,i)=>{const r=8+i;setCell(wv,`A${r}`,i+1,center);setCell(wv,`B${r}`,jaguarNombreInstitucional(st),left);setCell(wv,`C${r}`,st.matricula||'',center);visibleEvents.forEach((ev,j)=>{const c=4+j;if(ev.type==='newActivity'){setCell(wv,`${dailyCol(c)}${r}`,'',center);}else{const a=ev.activity;setCell(wv,`${dailyCol(c)}${r}`,state.activityScores?.[`${st.id}|${a.key}`]??'',{...center,numFmt:'0.00'});}});});
+  students.forEach((st,i)=>{const r=8+i;setCell(wv,`A${r}`,i+1,center);setCell(wv,`B${r}`,jaguarNombreInstitucional(st),left);setCell(wv,`C${r}`,st.matricula||'',center);visibleEvents.forEach((ev,j)=>{const c=4+j;if(ev.type==='newActivity'){setCell(wv,`${dailyCol(c)}${r}`,'',center);}else{const a=ev.activity;setCell(wv,`${dailyCol(c)}${r}`,state.activityScores?.[`${st.id}|${a.key}`]??'',{...center,numFmt:/^firmas?$/i.test(String(a.nombre).trim())?'0':'0.00'});}});});
   const rubricStart=5+visibleEvents.length+2;
   setCell(wv,`${dailyCol(rubricStart)}5`,'RÚBRICA / PONDERACIÓN OFICIAL',bandStyle);
   setCell(wv,`${dailyCol(rubricStart)}6`,'ASPECTO',subStyle);setCell(wv,`${dailyCol(rubricStart+1)}6`,'PONDERACIÓN',subStyle);setCell(wv,`${dailyCol(rubricStart+2)}6`,'VALOR',subStyle);
