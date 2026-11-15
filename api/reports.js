@@ -1,6 +1,6 @@
 import {historicalBoletaValues} from '../lib/jaguar360_boleta_historica.js';
 import {mixedGradeSummary,averageText} from '../lib/jaguar360_mixed_grades.js';
-import {reportGradeText,legacyPeriodScope,countLegacyAbsenceDays,legacyEvaluationSummary,assignLegacyGrade} from '../lib/jaguar360_legacy_report.js';
+import {reportGradeText,legacyPeriodScope,provisionalPeriodScope,countLegacyAbsenceDays,legacyEvaluationSummary,assignLegacyGrade} from '../lib/jaguar360_legacy_report.js';
 import {gradePolicyFromRow} from '../lib/grade_precision.js';
 import {requireLegacyReportCompatible} from '../lib/jaguar360_report_guard.js';
 import {sortInstitutionalPeople} from '../lib/institutional_names.js';
@@ -735,13 +735,17 @@ async function boletaPdf(admin,id,req=null,actor=null){
     }
   }catch{}
   // Sin departamentos configurados no se imprimen firmas departamentales ficticias.
-  const periods=legacyPeriodScope(periodsQ.data||[],cycle);
+  // The verified historical path retains its strict calendar. A live cut is
+  // not a final accreditation and can display marks without a reconciled calendar.
+  const provisional=!historical;
+  const scope=historical?{periods:legacyPeriodScope(periodsQ.data||[],cycle),calendarValid:true}:provisionalPeriodScope(periodsQ.data||[],cycle);
+  const {periods,calendarValid}=scope;
   if(!Number.isInteger(gradesQ.count)||gradesQ.count!==(gradesQ.data||[]).length)throw Object.assign(Error('Consulta de notas incompleta. Se requiere conciliación.'),{status:409});
   const groupMatterScope=(groupSubjectsQ.data||[]).map(g=>g.id);
   if(!groupMatterScope.length)throw Object.assign(Error('No hay materias vigentes conciliadas.'),{status:409});
-  const attendanceQ=await admin.from('asistencias').select('fecha,estado,grupo_materia_id',{count:'exact'}).eq('alumno_id',id).eq('estado','falta').in('grupo_materia_id',groupMatterScope).gte('fecha',periods[0].fecha_inicio).lte('fecha',periods.at(-1).fecha_fin).order('fecha',{ascending:true}).limit(5000);
-  if(attendanceQ.error)throw attendanceQ.error;
-  if(!Number.isInteger(attendanceQ.count)||attendanceQ.count!==(attendanceQ.data||[]).length)throw Object.assign(Error('Consulta de faltas incompleta. Se requiere conciliación.'),{status:409});
+  const attendanceQ=calendarValid?await admin.from('asistencias').select('fecha,estado,grupo_materia_id',{count:'exact'}).eq('alumno_id',id).eq('estado','falta').in('grupo_materia_id',groupMatterScope).gte('fecha',periods[0].fecha_inicio).lte('fecha',periods.at(-1).fecha_fin).order('fecha',{ascending:true}).limit(5000):null;
+  if(attendanceQ?.error)throw attendanceQ.error;
+  if(attendanceQ&&(!Number.isInteger(attendanceQ.count)||attendanceQ.count!==(attendanceQ.data||[]).length))throw Object.assign(Error('Consulta de faltas incompleta. Se requiere conciliación.'),{status:409});
   const {data:modeSnapshot,error:modeError}=await admin.rpc('jaguar360_boleta_modos',{p_alumno:String(id),p_ciclo:cycle});
   if(modeError||!Array.isArray(modeSnapshot?.notas)||!Array.isArray(modeSnapshot?.modos)||!/^[a-f0-9]{32}$/.test(modeSnapshot.huella||''))throw Object.assign(Error('No se pudo conciliar el modo de evaluación de la boleta.'),{status:503});
   const gradeProjection=new Map(modeSnapshot.notas.map(r=>[r.id,r]));
@@ -828,7 +832,7 @@ async function boletaPdf(admin,id,req=null,actor=null){
   for(const x of subjects){
     x.teacher=[...x.teachers].map(t=>teacherNames.get(t)).filter(Boolean)[0]||'Sin docente';
   }
-  const absenceDays=historicalValues?.absenceDays??countLegacyAbsenceDays(attendanceQ.data||[],periods,groupSubjectsQ.data||[]);
+  const absenceDays=historicalValues?.absenceDays??(calendarValid?countLegacyAbsenceDays(attendanceQ.data||[],periods,groupSubjectsQ.data||[]):null);
   const minimum=gradePolicyFromRow(policyQ.data).minima_aprobatoria;
   const summary=mixedGradeSummary(subjects,periods.length,minimum);
   subjects.forEach((x,i)=>{x.avg=summary.summaries[i].avg;});
@@ -861,7 +865,7 @@ async function boletaPdf(admin,id,req=null,actor=null){
     const history=historyNames.length?`Antes: ${historyNames.join(', ')}`:'';
     teacherProfiles.push({name:t?.nombre_completo||teacherNames.get(String(tid))||'Docente',profile:prof,subject:related.join(', '),history});
   }
-  const verification=await registerVerifiableDocument(admin,{folio,tipo:'boleta',titulo:'BOLETA DE CALIFICACIONES',alumno_id:s.id,created_by:actor,req,payload:{...(historicalValues?{huella_historica:historicalValues.hash}:{}),evaluacion_huella:modeSnapshot.huella,alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:s.grupos?.clave,grado:s.grupos?.grado?`${s.grupos.grado}°`:'—',ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion,lema:institution.lema||institution.lema_traduccion||''},taller:workshopName,detalle:subjects.slice(0,40).map(x=>({label:x.name,value:`${periodLabels.map((_,i)=>x.grades[i]==null?'—':reportGradeText(x.grades[i])).join(' · ')} · Promedio ${averageText(x.avg,2,minimum)}`}))}});
+  const verification=await registerVerifiableDocument(admin,{folio,tipo:'boleta',titulo:provisional?'BOLETA DE CALIFICACIONES · CORTE PROVISIONAL':'BOLETA DE CALIFICACIONES',alumno_id:s.id,created_by:actor,req,payload:{corte_provisional:provisional,calendario_conciliado:calendarValid,...(historicalValues?{huella_historica:historicalValues.hash}:{}),evaluacion_huella:modeSnapshot.huella,alumno:{nombre:s.nombre_completo,matricula:s.matricula,grupo:s.grupos?.clave,grado:s.grupos?.grado?`${s.grupos.grado}°`:'—',ciclo:cycle},institucion:{siglas:institution.siglas,nombre_institucion:institution.nombre_institucion,lema:institution.lema||institution.lema_traduccion||''},taller:workshopName,detalle:subjects.slice(0,40).map(x=>({label:x.name,value:`${periodLabels.map((_,i)=>x.grades[i]==null?'—':reportGradeText(x.grades[i])).join(' · ')} · Promedio ${averageText(x.avg,2,minimum)}`}))}});
   let verificationQr=null;
   try{verificationQr=await qrPng(verification.verificationUrl,{size:180});}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
 
@@ -869,7 +873,7 @@ async function boletaPdf(admin,id,req=null,actor=null){
   try{bytes=await renderBoletaVisual15({
     institution,cycle,student:{...s,workshop:workshopName},subjects,periodLabels,
     teachers:teacherProfiles,departments:departmentSigners,folio,qrBytes:verificationQr,
-    attendanceFaltas:absenceDays,overall,minimum,failed:summary.failed,evaluationStatus:summary.status,observations,
+    attendanceFaltas:absenceDays,overall,minimum,failed:summary.failed,evaluationStatus:provisional?(summary.status==='Sin evaluar'?'Sin evaluar':'En curso'):summary.status,observations,provisional,
     loadSignature:(pdf,path)=>loadSignatureImage(pdf,admin,path)
   });}catch(e){await deleteVerifiableDocument(admin,verification.id);throw e;}
   return {pdf_base64:Buffer.from(bytes).toString('base64'),filename:`${institution.siglas||'ITHLA'}-Boleta-${safe(s.matricula||s.nombre_completo)}.pdf`};
