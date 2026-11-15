@@ -6,7 +6,7 @@ import {notificationId,notificationSummary} from '../lib/jaguar360_inbox.js';
 import {noticeVisibleTo,dashboardNotices} from '../lib/jaguar360_notice_scope.js';
 import {sortInstitutionalPeople} from '../lib/institutional_names.js';
 import crypto from 'node:crypto';
-import {createGroupGradeBatch,listGroupGradeReviews,approveGroupGradeReview} from '../lib/group_grade_batch.js';
+import {createGroupGradeBatch,listGroupGradeReviews,approveGroupGradeReview,groupGradeMatrix} from '../lib/group_grade_batch.js';
 import { buildExcelGradeRows } from '../lib/evaluation_excel_rules.js';
 import { academicGradesNavigation, academicGradeDetail, allowGradeExplorer } from '../lib/academic_grade_explorer.js';
 import { getClients, requireRoles } from '../lib/_admin.js';
@@ -4252,6 +4252,9 @@ export default async function handler(
     }
 
     // V5.8.4: bandeja de oficios, independiente de calificaciones oficiales.
+    if(req.method==='GET'&&req.query?.resource==='groupGradeMatrix'){
+      return res.status(200).json({ok:true,data:await groupGradeMatrix(adminClient,user,profile,req.query)});
+    }
     if(req.method==='GET'&&req.query?.resource==='groupGradeReviews'){
       return res.status(200).json({ok:true,data:await listGroupGradeReviews(adminClient,user,profile)});
     }
