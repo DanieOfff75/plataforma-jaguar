@@ -279,6 +279,7 @@ async function loadPage(page,context){
     const html=page==='sms_gateway'&&S.role==='tecnico'?window.jaguarSmsAdminPage():page==='notificaciones'?await jaguarNotificationsModule():await pageHtml(page);
     if(revision!==jaguarNavigationRevision)return;
     c.innerHTML=html;
+    if(page==='inicio')window.NEXO?.mountStatistics?.(c);
     if(S.role==='docente'&&S.workspaceId&&S.page===page&&page!=='grupos'){
       const gmId=S.workspaceId;
       c.insertAdjacentHTML('afterbegin',`<div class="j-workspace-breadcrumb"><button class="btn" onclick="loadPage('grupos',{gmId:${gmId}})">← Volver al grupo</button><button class="btn" onclick="loadPage('${page}')">Ver todas mis asignaciones</button></div>`);
@@ -5411,6 +5412,7 @@ async function jaguarBatchDownloadOffice(id){
 </script>
 <script>
 /* Sesión visible a NEXO únicamente a través de este proveedor local. */
+window.ithlaNexoMenu=()=>{if(!S?.role)return [];const items=S.role==='alumno'&&(S.studentAccess?.suspended||S.studentSuspended)?jaguarStudentSuspendedNav():(roleNav[S.role]||(S.role==='control_escolar'?controlNav:[]));return items.filter(x=>Array.isArray(x)&&typeof x[0]==='string'&&typeof x[1]==='string').map(([id,label])=>[id,label]);};
 window.ithlaNexoAuth=async()=>{
  try{
   if(typeof supabaseClient==='undefined'||!supabaseClient)return null;

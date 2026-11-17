@@ -1,0 +1,21 @@
+{
+  "sistema.html": "234e1fcb31aa688f9326382ca8135c66b3bee59d2af305ba1b57102627bb115c",
+  "assets/didactic-studio.js": "372b9316d59b76a8217d1e15687e01d3797499b1bed6089c8af3242afa741000",
+  "assets/didactic-studio.css": "9a9ca6ed9a66befb5e2f502f81ac531bb1941405a45493bcdf3da4c07ef1e006",
+  "assets/nexo-companion.js": "149682e95e53a4e154a02800823377ee161d738a556891beee6d1fbf4a5e317a",
+  "assets/nexo-companion.css": "72591af045b6b0e4975c10fd28850ba4bb36702dbabc730454eba96cc3f7014b",
+  "lib/nexo_intelligence.js": "1f51ea8af62137369d0b223952cb11cff39caf226fc9bb74bd000271ee0c6c75",
+  "lib/nexo_edu_memory.js": "1dcb4b2c7e1b01ea435f822a47d46e8afd233bffebcf77cdda291a5afda362d3",
+  "lib/nexo_curriculum.js": "e8554adbf36993570488f9b53d2eb1089aba0a1aa5a5046ad78d7c0bed4a13f8",
+  "lib/nexo_curriculum_sources.js": "f068170300ca785b766cfeeea579ad8a41a03d686936bd5e0a1359ec3540a371",
+  "lib/nexo_pedagogy.js": "da5f1d4e86250ad98f28c81eb3a35e745865f2adbb52e8cd5ceb4dfbda50020a",
+  "lib/nexo_context.js": "6e2fbe4b3492d7d43130b30e03accd2919d0dd7942dd691d6d15cfc4826760e2",
+  "lib/didactic_word.js": "fe93ec01143b01c7151c5095fc3dfadb791f22a7269c248fab10b5c0d19fcf07",
+  "lib/didactic_rules.js": "bb293e8a91b0c37490db0d80bbc4a2d4b9c2078011ee1b44933333fd3566916a",
+  "routes/didactic-studio.js": "2c1c6c3a9a7ed24d6b78395b8727ff3767fd6959102243f7faef40d0b78e24a4",
+  "routes/ithla-public.js": "3f0eeab90cfd509f4fe56105b7ad6c9d65c9a54beb05e806a1ee451e66d4393b",
+  "sql/ITHLA_NEXO_INTELIGENCIA_V45.sql": "40cac514c7fe2d6bc7d968703418f25f19bcc62e9271ca2651518e1326022154",
+  "sql/VERIFICAR_NEXO_V45_SOLO_LECTURA.sql": "7bcbfde221c182aa3ddbf84a434fca1752b0fbc6298f7b75c50db5dad6bf44dc",
+  "tests/nexo_intelligence_v45.test.mjs": "d52de570c59bb219228fa44f67f65dd39b3e36dd7254b1250c452b1b0aa13776",
+  "LEEME_NEXO_V45.md": "bbfd2e2bea6bcfbd7777a0e94fcea461e3e0ce57f5ae7fb0703eee9a60ea770e"
+}

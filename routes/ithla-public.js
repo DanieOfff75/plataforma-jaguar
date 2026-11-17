@@ -1,3 +1,6 @@
+import {institutionalStats,statsReply,wantsStatistics} from '../lib/nexo_intelligence.js';
+import {curriculumAdmin} from '../lib/nexo_curriculum.js';
+import {memoryReview} from '../lib/nexo_edu_memory.js';
 import {editorialManagement,publicEditorialApproved,retiredPublicTitles} from '../lib/jaguar360_editorial.js';
 import { createClient } from '@supabase/supabase-js';
 import { randomBytes, createHash } from 'node:crypto';
@@ -82,6 +85,11 @@ export default async function handler(req,res){
     const data=action.startsWith('admin-portal-editorial-')?await editorialManagement(adminClient,user,profile,action,req.body||{}):await adminEditorialAction(adminClient,user,profile,action,req.body||{});
     res.setHeader('Cache-Control','no-store');return res.status(200).json({ok:true,data});
   }
+  if(req.method==='POST'&&['catalog-list','catalog-add','catalog-retire','memory-review-list','memory-review'].includes(action)){
+    if(!originOK(req))return res.status(403).json({ok:false,error:'Origen no autorizado.'});
+    const {user,adminClient}=await requireRoles(req,['coordinacion_academica','direccion_escolar']);
+    const data=action.startsWith('catalog-')?await curriculumAdmin(adminClient,user,req.body):await memoryReview(adminClient,user,req.body);return res.status(200).json({ok:true,data});
+  }
   if(req.method==='POST'&&req.body?.action==='nexo-chat'){
     // Ruta pública independiente de operaciones de Dirección. Nunca lee expedientes.
     const origin=String(req.headers?.origin||'');
@@ -112,6 +120,10 @@ export default async function handler(req,res){
       if(profileError||!profile?.activo)return res.status(403).json({ok:false,error:'Perfil institucional no disponible.'});
       try{await assertSession(req,db,user.id,profile.rol,'jaguar');}catch{return res.status(401).json({ok:false,error:'La sesión protegida expiró.'});}
       role=profile.rol;actorId=user.id;
+    }
+    if(wantsStatistics(req.body?.message)&&settings.nexo?.activo!==false){
+      if(!actorId)return res.status(200).json({ok:true,data:{modo:'manual',respuesta:'Inicia sesión institucional para consultar estadísticas de tu departamento.'}});
+      try{return res.status(200).json({ok:true,data:statsReply(await institutionalStats(db,actorId,role,req.body.message))});}catch(e){return res.status(e.status||503).json({ok:false,error:e.message});}
     }
     const result=await replyNexoAI({message:req.body?.message,history:req.body?.history,settings,req,trustedContext:nexoTrustedContext('jaguar',role),verifiedActorId:actorId,
       acquireQuota:async hash=>{
