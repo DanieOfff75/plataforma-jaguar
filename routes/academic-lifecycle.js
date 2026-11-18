@@ -1,3 +1,4 @@
+import {classifyCycle,currentWorkload,futureWorkload} from '../lib/jaguar_cycle_workload.js';
 import {subjectEvaluationPreview} from './subject-evaluation-preview.js';
 import {schoolMovement} from './school-movement.js';
 import {recoveryWorkflow} from './recovery-workflow.js';
@@ -46,6 +47,35 @@ export default async function handler(req,res){
  if(await academicSeal(req,res,auth))return;
  if(await academicOperations(req,res,auth))return;
  if(req.method==='GET'){
+  if(req.query?.view==='workload'){
+   const cycle=validate(()=>validateCycle(req.query.cycle));
+   const paged=async make=>{const out=[];for(let a=0;a<10000;a+=500){const part=await read(make().order('id').range(a,a+499));out.push(...part);if(part.length<500)return out;}throw fail('Consulta demasiado extensa; no se mostrará un resumen parcial.',413);};
+   const periods=await paged(()=>db.from('periodos_escolares').select('id,ciclo_escolar,numero_periodo,fecha_inicio,fecha_fin,es_periodo_actual'));
+   const kind=classifyCycle(cycle,periods);
+   if(kind==='unknown')return res.status(200).json({ok:true,data:{kind,subjects:[],issues:['No existe un ciclo actual inequívoco. No se usará el catálogo vigente como histórico.']}});
+   if(kind==='historical'){
+    const row=await read(db.from('jaguar360_planes_ciclo').select('version,plan').eq('ciclo',cycle).eq('estado','validada_para_planificacion').order('version',{ascending:false}).limit(1).maybeSingle());
+    return res.status(200).json({ok:true,data:{kind,version:row?.version??null,subjects:(row?.plan?.curriculum||[]).map(r=>({id:r.legacyId,name:r.name,grade:r.grade,weekly:r.weeklyMinutes,periods:r.periodMinutes,total:r.totalMinutes,ready:false,groups:[],warning:'Plan histórico, no horas impartidas'})),issues:row?[]:['No hay una versión histórica validada. No se reconstruye con el catálogo actual.']}});
+   }
+   const catalog=await paged(()=>db.from('materias').select('id::text,nombre,grado,grados,horas_semana').eq('activa',true));
+   let result,calendar;
+   if(kind==='current'){
+    const p=periods.filter(p=>p.ciclo_escolar===cycle).sort((a,b)=>a.numero_periodo-b.numero_periodo);
+    calendar=p.length<=6&&p.every((x,i)=>x.numero_periodo===i+1)?p.map(x=>({start:x.fecha_inicio,end:x.fecha_fin})):[];
+    const [groups,slots,modes]=await Promise.all([
+     paged(()=>db.from('grupo_materias').select('id::text,grupo_id::text,materia_id::text,horas_semana,grupos!inner(clave,grado,activo),materias!inner(nombre,horas_semana,activa)').eq('activo',true).eq('grupos.activo',true).eq('materias.activa',true)),
+     paged(()=>db.from('horarios').select('id::text,grupo_materia_id::text,dia_semana,hora_inicio,hora_fin').eq('ciclo_escolar',cycle)),
+     read(db.from('jaguar360_modos_materia').select('materia_id::text,modo').eq('ciclo',cycle).limit(1000))]);
+    if(modes.length>=1000)throw fail('Demasiados modos de evaluación para una consulta completa.',413);
+    result=currentWorkload(catalog,groups,slots,calendar);
+    for(const r of result.subjects)r.mode=modes.find(m=>String(m.materia_id)===r.id)?.modo||null;
+   }else{
+    try{calendar=JSON.parse(req.query.calendar||'[]');}catch{throw fail('Calendario inválido.');}
+    if(!Array.isArray(calendar)||calendar.length>6||calendar.some(p=>!p||typeof p.start!=='string'||typeof p.end!=='string'||p.start<cycle.slice(0,4)+'-01-01'||p.end>cycle.slice(5)+'-12-31'))calendar=[];
+    result=futureWorkload(catalog,calendar,req.query.unit);
+   }
+   return res.status(200).json({ok:true,data:{kind,calendar,...result}});
+  }
   if(req.query?.view==='curriculum_catalog'){
    const rows=await read(db.from('materias').select('id::text,nombre,clave,grado,grados,activa,horas_semana').eq('activa',true).order('nombre').limit(500));
    return res.status(200).json({ok:true,data:rows.map(r=>({...r,id:String(r.id)}))});
