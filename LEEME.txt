@@ -1,0 +1,3 @@
+CORRECCIÓN V51 — RUTA TUTORÍA
+El repositorio main consultado contiene vercel.json con /api/tutoria pero api/router.js aún no registra tutoria. También faltan cuatro dependencias/recursos de V49. Este ZIP restaura esos cinco archivos, con las rutas exactas. No sustituir vercel.json ni sistema.html; no ejecutar SQL adicional. Requiere migración V49 previamente aplicada. Subir los cinco archivos al mismo commit si es posible. Verificar despliegue Ready en Vercel; recargar Ctrl+F5. Si sale otro error, revisar logs y pestaña Red (status de /api/tutoria). No compartir tokens.
+Pruebas locales: 27/27 V51 con API simulada + 3/3 dispatcher con otros módulos y autenticación simulados. No se modificó GitHub ni se desplegó Vercel. No se comprobó la base real.
