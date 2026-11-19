@@ -1,0 +1,172 @@
+TAP version 13
+# Subtest: ranking excluye alumno con nota parcial aunque tenga 10; cero es nota
+ok 1 - ranking excluye alumno con nota parcial aunque tenga 10; cero es nota
+  ---
+  duration_ms: 1.51725
+  type: 'test'
+  ...
+# Subtest: AP/RP separados del promedio
+ok 2 - AP/RP separados del promedio
+  ---
+  duration_ms: 0.505917
+  type: 'test'
+  ...
+# Subtest: celdas sin nota no se convierten en cero
+ok 3 - celdas sin nota no se convierten en cero
+  ---
+  duration_ms: 0.207917
+  type: 'test'
+  ...
+# Subtest: notas ajenas al grupo ignoradas y duplicados rechazan
+ok 4 - notas ajenas al grupo ignoradas y duplicados rechazan
+  ---
+  duration_ms: 0.477284
+  type: 'test'
+  ...
+# Subtest: modo incoherente se bloquea
+ok 5 - modo incoherente se bloquea
+  ---
+  duration_ms: 0.255527
+  type: 'test'
+  ...
+# Subtest: empates conservan puesto
+ok 6 - empates conservan puesto
+  ---
+  duration_ms: 0.307624
+  type: 'test'
+  ...
+# Subtest: asistencia justificada y duplicados conflictos no interpretados como faltas
+ok 7 - asistencia justificada y duplicados conflictos no interpretados como faltas
+  ---
+  duration_ms: 0.426409
+  type: 'test'
+  ...
+# Subtest: sesiones sustituyen día; dos clases el mismo día conservan marcas
+ok 8 - sesiones sustituyen día; dos clases el mismo día conservan marcas
+  ---
+  duration_ms: 0.399539
+  type: 'test'
+  ...
+# Subtest: adeudos sólo cargos abiertos y pagos registrados, sin datos identificables
+ok 9 - adeudos sólo cargos abiertos y pagos registrados, sin datos identificables
+  ---
+  duration_ms: 0.653064
+  type: 'test'
+  ...
+# Subtest: propuesta excluye inactivos, prioriza reparto y no sobrescribe grupo registrado
+ok 10 - propuesta excluye inactivos, prioriza reparto y no sobrescribe grupo registrado
+  ---
+  duration_ms: 0.861943
+  type: 'test'
+  ...
+# Subtest: propuesta conserva retiro previo y no propone cuando no hay docentes activos
+ok 11 - propuesta conserva retiro previo y no propone cuando no hay docentes activos
+  ---
+  duration_ms: 0.24412
+  type: 'test'
+  ...
+# Subtest: IDs inválidos bloqueados
+ok 12 - IDs inválidos bloqueados
+  ---
+  duration_ms: 0.976902
+  type: 'test'
+  ...
+# Subtest: PDF real y paginación de 39 alumnos / 14 materias
+ok 13 - PDF real y paginación de 39 alumnos / 14 materias
+  ---
+  duration_ms: 35.258372
+  type: 'test'
+  ...
+# Subtest: PDF informe y formato de una materia
+ok 14 - PDF informe y formato de una materia
+  ---
+  duration_ms: 7.025673
+  type: 'test'
+  ...
+# Subtest: asesor ajeno no puede leer panel, informe ni matriz
+ok 15 - asesor ajeno no puede leer panel, informe ni matriz
+  ---
+  duration_ms: 2.185066
+  type: 'test'
+  ...
+# Subtest: docente no puede asignar asesor ni descargar otra materia
+ok 16 - docente no puede asignar asesor ni descargar otra materia
+  ---
+  duration_ms: 0.267685
+  type: 'test'
+  ...
+# Subtest: gestor no puede leer expediente desde módulo de asignación
+ok 17 - gestor no puede leer expediente desde módulo de asignación
+  ---
+  duration_ms: 0.19643
+  type: 'test'
+  ...
+# Subtest: periodo ajeno bloqueado antes de leer datos
+ok 18 - periodo ajeno bloqueado antes de leer datos
+  ---
+  duration_ms: 0.222729
+  type: 'test'
+  ...
+# Subtest: alumno sin acceso a módulo
+ok 19 - alumno sin acceso a módulo
+  ---
+  duration_ms: 0.104033
+  type: 'test'
+  ...
+# Subtest: SQL nuevo revoca lectura directa y no altera notas ni asistencia
+ok 20 - SQL nuevo revoca lectura directa y no altera notas ni asistencia
+  ---
+  duration_ms: 2.870548
+  type: 'test'
+  ...
+# Subtest: consulta autorizada integra notas reales simuladas y no expone datos ajenos
+ok 21 - consulta autorizada integra notas reales simuladas y no expone datos ajenos
+  ---
+  duration_ms: 2.769499
+  type: 'test'
+  ...
+# Subtest: informe autorizado devuelve PDF real desde el endpoint simulado
+ok 22 - informe autorizado devuelve PDF real desde el endpoint simulado
+  ---
+  duration_ms: 5.176043
+  type: 'test'
+  ...
+# Subtest: observaciones requieren consentimiento y se guardan sólo en tabla de Tutoría
+ok 23 - observaciones requieren consentimiento y se guardan sólo en tabla de Tutoría
+  ---
+  duration_ms: 0.542421
+  type: 'test'
+  ...
+# Subtest: V51 opciones del asesor incluyen todas las materias y no revelan notas
+ok 24 - V51 opciones del asesor incluyen todas las materias y no revelan notas
+  ---
+  duration_ms: 0.713513
+  type: 'test'
+  ...
+# Subtest: V51 docente ordinario sólo puede listar y descargar sus asignaturas; matriz denegada
+ok 25 - V51 docente ordinario sólo puede listar y descargar sus asignaturas; matriz denegada
+  ---
+  duration_ms: 4.867427
+  type: 'test'
+  ...
+# Subtest: V51 descarga general o por materia con periodo exacto y modo blanco
+ok 26 - V51 descarga general o por materia con periodo exacto y modo blanco
+  ---
+  duration_ms: 7.290464
+  type: 'test'
+  ...
+# Subtest: V51 matriz de una sola materia conserva encabezado general y nombre de columna
+ok 27 - V51 matriz de una sola materia conserva encabezado general y nombre de columna
+  ---
+  duration_ms: 1.819607
+  type: 'test'
+  ...
+1..27
+# tests 27
+# suites 0
+# pass 27
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 176.808869
