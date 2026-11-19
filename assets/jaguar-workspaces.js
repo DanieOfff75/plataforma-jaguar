@@ -3,7 +3,7 @@
  'use strict';
  const groups=[
   ['inicio','Inicio',['inicio','resumen']],
-  ['escolar','Alumnos y grupos',['alumnos','grupos','listas','talleres','credenciales','horario']],
+  ['escolar','Alumnos y grupos',['alumnos','grupos','listas','talleres','credenciales','horario','tutoria']],
   ['academico','Organización académica',['materias','cargas','horas_materias','horarios','aulas','classroom']],
   ['evaluacion','Evaluación y seguimiento',['calificaciones','bitacora_calificaciones','asistencia','ventanas_evaluacion','calificaciones_masivas','calificaciones_lote_grupo','examenes']],
   ['personal','Personal docente',['docentes','carga_docente','relevos_docentes','mis_relevos']],
@@ -18,7 +18,7 @@
  ];
  const teacher=[
   ['inicio','Inicio',['inicio','resumen']],
-  ['grupos','Mis grupos',['grupos','asistencia','calificaciones','bitacora_calificaciones']],
+  ['grupos','Mis grupos',['grupos','asistencia','calificaciones','bitacora_calificaciones','tutoria']],
   ['horario','Mi horario',['horario']],
   ['didactico','Centro didáctico',['planeaciones','centro_didactico','classroom','examenes']],
   ['comunicaciones','Comunicaciones',['notificaciones','avisos','clarificaciones','oficios_firma']],
@@ -49,7 +49,7 @@
   return out;
  }
  function positiveId(raw){const n=Number(raw);return Number.isSafeInteger(n)&&n>0?n:0;}
- const contextual=['grupos','asistencia','calificaciones','bitacora_calificaciones','examenes','classroom'];
+ const contextual=['grupos','asistencia','calificaciones','bitacora_calificaciones','tutoria','examenes','classroom'];
  function workspaceId(role,page,context){return role==='docente'&&contextual.includes(page)?positiveId(context?.gmId):0;}
  function matches(id,requested){return !requested||positiveId(id)===positiveId(requested);}
  root.JaguarWorkspaces=Object.freeze({organize,positiveId,workspaceId,matches});
