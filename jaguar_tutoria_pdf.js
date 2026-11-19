@@ -13,7 +13,50 @@ const format=v=>v==null?'—':typeof v==='number'?String(Number(v.toFixed(4))):S
 function makePage(){let c=[];return {c,rect(x,y,w,h,color){c.push(`${color} rg ${x} ${y} ${w} ${h} re f`);},line(x1,y1,x2,y2,color=LINE,th=.5){c.push(`${color} RG ${th} w ${x1} ${y1} m ${x2} ${y2} l S`);},text(s,x,y,size=9,font='regular',color=INK,max=900,align='left'){let z=String(s??'');while(size>5.5&&measure(z,size,font)>max)size-=.15;if(measure(z,size,font)>max){while(z.length>1&&measure(z+'…',size,font)>max)z=z.slice(0,-1);z+='…';}if(align==='center')x+=(max-measure(z,size,font))/2;if(align==='right')x+=max-measure(z,size,font);c.push(`BT /${fonts[font][0]} ${size.toFixed(2)} Tf ${color} rg 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm ${str(z)} Tj ET`);},logo(x,y,w,h){c.push(`q ${w} 0 0 ${h} ${x} ${y} cm /Logo Do Q`);}};}
 function jpgSize(b){let i=2;while(i+9<b.length){if(b[i++]!==255)continue;let marker=b[i++];while(marker===255)marker=b[i++];if([0xd8,0xd9].includes(marker))continue;let len=b.readUInt16BE(i);if([0xc0,0xc1,0xc2].includes(marker))return {height:b.readUInt16BE(i+3),width:b.readUInt16BE(i+5)};if(len<2)break;i+=len;}throw Error('Logo JPEG inválido.');}
 function serialize(pages,logo){const objects=[null];const add=s=>{objects.push(Buffer.isBuffer(s)?s:Buffer.from(s,'ascii'));return objects.length-1;};const root=add(''),tree=add('');const fontIds=Object.values(fonts).map(([,f])=>add(`<< /Type /Font /Subtype /Type1 /BaseFont /${f} /Encoding /WinAnsiEncoding >>`));let imageId=null;if(logo){const {width,height}=jpgSize(logo);imageId=add(Buffer.concat([Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.length} >>\nstream\n`),logo,Buffer.from('\nendstream')]));}const ids=[];for(const p of pages){const content=Buffer.from(p.c.join('\n'),'ascii');const cid=add(Buffer.concat([Buffer.from(`<< /Length ${content.length} >>\nstream\n`),content,Buffer.from('\nendstream')]));ids.push(add(`<< /Type /Page /Parent ${tree} 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 ${fontIds[0]} 0 R /F2 ${fontIds[1]} 0 R /F3 ${fontIds[2]} 0 R >> ${imageId?`/XObject << /Logo ${imageId} 0 R >>`:''} >> /Contents ${cid} 0 R >>`));}objects[root]=Buffer.from(`<< /Type /Catalog /Pages ${tree} 0 R >>`);objects[tree]=Buffer.from(`<< /Type /Pages /Kids [${ids.map(i=>`${i} 0 R`).join(' ')}] /Count ${ids.length} >>`);let parts=[Buffer.from('%PDF-1.4\n%\xe2\xe3\xcf\xd3\n','latin1')],offset=parts[0].length;const offsets=[0];for(let i=1;i<objects.length;i++){offsets.push(offset);const a=Buffer.from(`${i} 0 obj\n`),b=Buffer.from('\nendobj\n');parts.push(a,objects[i],b);offset+=a.length+objects[i].length+b.length;}parts.push(Buffer.from(`xref\n0 ${objects.length}\n0000000000 65535 f \n${offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')}trailer\n<< /Size ${objects.length} /Root ${root} 0 R >>\nstartxref\n${offset}\n%%EOF\n`));return Buffer.concat(parts);}
-export async function buildTutoriaPdf(d,{report=false,blank=false}={}){let logo=null;try{logo=await readFile(new URL('../assets/tutoria-logo.jpg',import.meta.url));jpgSize(logo);}catch{logo=null;}const pages=[];
+// Registro de notas finales. Replica la cuadrícula y encabezado de la bitácora manual.
+// No consulta actividades ni ponderaciones; recibe las notas de calificaciones del periodo.
+function balanced(items,limit){
+ const count=Math.max(1,Math.ceil(items.length/limit)),parts=[];let i=0;
+ for(let j=0;j<count;j++){const n=Math.floor(items.length/count)+(j<items.length%count?1:0);parts.push(items.slice(i,i+n));i+=n;}
+ return parts;
+}
+async function buildFinalGradeSheet(d,{blank=false}={}){
+ const B='0 0 0',pages=[],left=30,right=762,top=443,headH=42,rowH=16.1;
+ let logo=null;try{logo=await readFile(new URL('../assets/tutoria-logo-bn.jpg',import.meta.url));jpgSize(logo);}catch{logo=null;}
+ const one=d.subjects.length===1,roster=d.students||[];
+ for(const subset of balanced(d.subjects,6)){
+  let offset=0;
+  for(const batch of balanced(roster,20)){
+   const p=makePage();pages.push(p);
+   const txt=(s,x,y,size=8,font='regular',max=730,align='left')=>p.text(s,x,y,size,font,B,max,align);
+   const line=(x,y,xx,yy,w=.7)=>p.line(x,y,xx,yy,B,w);
+   if(logo){const sz=jpgSize(logo),scale=34/Math.max(sz.width,sz.height),w=sz.width*scale,h=sz.height*scale;p.logo(34+(56-w)/2,548+(56-h)/2,w,h);}
+   txt('INSTITUTO TECNOLÓGICO E HISTÓRICO LATINOAMERICANO',110,580,12,'bold',650);
+   txt(`CCT: 15USU0128X    CICLO: ${d.cycle||'—'}    PERIODO: ${d.period?.nombre||'—'}`,110,559,8,'regular',646);
+   line(left,543,right,543,1.05);
+   txt(`GRUPO: ${d.group?.clave||'—'}     TURNO: ${d.group?.turno||'—'}     MATERIA: ${one?subset[0].nombre:'TODAS LAS ASIGNATURAS'}`,32,530,8.5,'regular',727);
+   txt(`${one?'DOCENTE':'ASESOR'}: ${d.teacher?.nombre_completo||'—'}     FECHA: ____ / ____ / ______`,32,511,8.5,'regular',727);
+   txt('REGISTRO DE CALIFICACIONES FINALES DEL PERIODO',32,480,12,'bold',726);
+   txt(blank?'Formato en blanco para llenado manual. Registre únicamente calificaciones finales del periodo.':'Calificaciones finales registradas. Los espacios vacíos se pueden completar a mano.',32,464,7,'regular',726);
+   const headers=['No.','APELLIDOS Y NOMBRE(S)','MATRÍCULA',...(one?['CALIFICACIÓN FINAL','OBSERVACIONES']:subset.map(m=>m.nombre))];
+   const lead=[31,207,111],remain=732-lead.reduce((a,b)=>a+b,0);
+   const ws=[...lead,...(one?[112,remain-112]:subset.map(()=>remain/Math.max(1,subset.length)))];
+   if(!subset.length)ws[1]+=remain;
+   const bottom=top-headH-batch.length*rowH;
+   let x=left;
+   headers.forEach((label,j)=>{line(x,top,x,bottom);const lines=wrap(label,ws[j]-8,7.3,'bold');const use=lines.length>3?[...lines.slice(0,2),lines.slice(2).join(' ')]:lines;use.forEach((s,k)=>txt(s,x+4,top-headH/2+(use.length-1)*4-2-k*8,7.3,'bold',ws[j]-8,'center'));x+=ws[j];});
+   line(right,top,right,bottom);line(left,top,right,top);line(left,top-headH,right,top-headH);
+   batch.forEach((s,i)=>{const y=top-headH-(i+1)*rowH;const marks=subset.map(m=>blank?'':format(s.marks.find(x=>String(x.id)===String(m.id))?.value).replace('—',''));const cells=[String(offset+i+1),studentRosterName(s),s.matricula,...marks,...(one?['']:[])];let xx=left;cells.forEach((v,j)=>{txt(v,xx+4,y+4.2,7.3,'regular',ws[j]-8,'center');xx+=ws[j];});line(left,y,right,y);});
+   offset+=batch.length;
+   txt('OBSERVACIONES: _____________________________________________________________________________________________________',32,Math.min(bottom-22,77),7.3,'regular',726);
+   line(left,45,right,45,.6);
+   txt('Uso interno de apoyo docente · AP/RP: resultado cualitativo. No sustituye la boleta ni modifica registros.',32,30,6.6,'regular',640);
+  }
+ }
+ pages.forEach((p,i)=>p.text(`PÁGINA ${i+1} / ${pages.length}`,679,30,6.6,'regular',B,83,'right'));
+ return serialize(pages,logo);
+}
+export async function buildTutoriaPdf(d,{report=false,blank=false}={}){if(!report)return buildFinalGradeSheet(d,{blank});let logo=null;try{logo=await readFile(new URL('../assets/tutoria-logo.jpg',import.meta.url));jpgSize(logo);}catch{logo=null;}const pages=[];
  const page=(title,subtitle)=>{const p=makePage();pages.push(p);p.rect(0,H-9,W,9,NAVY);p.rect(0,H-13,W,4,GOLD);if(logo){const sz=jpgSize(logo),r=Math.min(48/sz.width,51/sz.height);p.logo(L,H-79,sz.width*r,sz.height*r);}p.text('INSTITUTO TECNOLÓGICO E HISTÓRICO LATINOAMERICANO',90,H-41,11,'bold',NAVY,660);p.text('ITHLA · PLATAFORMA JAGUAR · DOCUMENTO INTERNO · Corte: '+String(d.generatedAt||'').slice(0,10),90,H-55,8,'regular',MUTED,660);p.text(title,L,H-103,18,'title',NAVY,728);p.text(`Ciclo ${d.cycle} · Grupo ${d.group.clave} · ${d.group.turno||'Sin turno'} · ${d.period.nombre}`,L,H-120,9,'regular',INK,728);p.text(`Docente: ${d.teacher.nombre_completo}   |   ${subtitle}`,L,H-134,8,'regular',MUTED,728);p.line(L,H-142,R,H-142,GOLD,1);return p;};
  const table=(p,headers,rows,w,top=449,rowH=19)=>{const max=R-L;let x=L;p.rect(L,top-26,max,26,NAVY);headers.forEach((h,i)=>{let ls=wrap(h,w[i]-8,7,'bold');if(ls.length>2)ls=[ls[0],ls.slice(1).join(' ')];ls.forEach((s,j)=>p.text(s,x+4,top-11-j*9,7,'bold',WHITE,w[i]-8,i===1?'left':'center'));x+=w[i];});rows.forEach((row,i)=>{const y=top-26-(i+1)*rowH;let xx=L;if(i%2===0)p.rect(L,y,max,rowH,PALE);row.forEach((cell,j)=>{const val=String(cell??'');if(j===1){const ls=wrap(val,w[j]-8,8,'regular');if(ls.length===1)p.text(val,xx+4,y+(rowH-8)/2,8,'regular',INK,w[j]-8);else{p.text(ls[0],xx+4,y+rowH/2+1,7.4,'regular',INK,w[j]-8);p.text(ls.slice(1).join(' '),xx+4,y+rowH/2-8,7.4,'regular',INK,w[j]-8);}}else p.text(val,xx+4,y+(rowH-8)/2,8,'regular',INK,w[j]-8,'center');p.line(xx,y,xx,y+rowH,LINE,.45);xx+=w[j];});p.line(R,y,R,y+rowH,LINE,.45);p.line(L,y,R,y,LINE,.45);});};
  const split=(a,n)=>a.length?Array.from({length:Math.ceil(a.length/n)},(_,i)=>a.slice(i*n,(i+1)*n)):[[]];
@@ -25,6 +68,6 @@ export async function buildTutoriaPdf(d,{report=false,blank=false}={}){let logo=
  p=page('Observaciones de los docentes','Aportaciones expresamente compartidas con Tutoría');y=440;if(!d.notes?.length)p.text('No hay observaciones registradas para este grupo y periodo.',L,y,10);
  for(const n of d.notes||[]){if(y<100){p=page('Observaciones de los docentes · continuación','Aportaciones expresamente compartidas');y=440;}p.text(`${n.docentes?.nombre_completo||'Docente'} · ${String(n.creado_en||'').slice(0,10)}`,L,y,10,'bold',NAVY,728);y-=16;for(const line of wrap(n.texto,728,10)){if(y<75){p=page('Observaciones de los docentes · continuación','Aportaciones expresamente compartidas');y=440;}p.text(line,L,y,10,'regular',INK,728);y-=14;}y-=13;}
  }
- const subjectBatches=split(d.subjects,6);for(const subset of subjectBatches){for(let pos=0;pos<Math.max(1,d.students.length);pos+=17){const batch=d.students.slice(pos,pos+17);const one=!report&&d.subjects.length===1;const p=page(report?'Anexo · Matriz de calificaciones':one?'Registro de calificaciones por materia':'Registro de calificaciones del grupo',blank?'Formato en blanco para captura manual':'Notas registradas · espacio para completar a mano');const headers=['No.','Apellidos y nombre(s)','Matrícula',...subset.map(s=>s.nombre),...(one?['Actividad / nota 1','Actividad / nota 2','Actividad / nota 3','Actividad / nota 4']:[])];const base=[28,232,104],n=headers.length-3,w=[...base,...Array.from({length:n},()=>364/Math.max(1,n))];if(!n)w[1]+=364;const rows=batch.map((s,i)=>[pos+i+1,studentRosterName(s),s.matricula,...subset.map(m=>blank?'':format(s.marks.find(x=>String(x.id)===String(m.id))?.value).replace('—','')),...(one?['','','','']:[])]);table(p,headers,rows,w,449,20);p.text(one?'Las columnas de actividad son espacios libres; no sustituyen la captura oficial.':'AP/RP: resultados cualitativos. Celdas vacías: sin nota o espacio para llenar.',L,66,8,'regular',MUTED,728);}}
+ const subjectBatches=split(d.subjects,6);for(const subset of subjectBatches){for(let pos=0;pos<Math.max(1,d.students.length);pos+=17){const batch=d.students.slice(pos,pos+17);const p=page('Anexo · Matriz de calificaciones','Notas finales registradas del periodo');const headers=['No.','Apellidos y nombre(s)','Matrícula',...subset.map(s=>s.nombre)];const base=[28,232,104],n=headers.length-3,w=[...base,...Array.from({length:n},()=>364/Math.max(1,n))];if(!n)w[1]+=364;const rows=batch.map((s,i)=>[pos+i+1,studentRosterName(s),s.matricula,...subset.map(m=>blank?'':format(s.marks.find(x=>String(x.id)===String(m.id))?.value).replace('—',''))]);table(p,headers,rows,w,449,20);p.text('AP/RP: resultados cualitativos. Celdas vacías: sin nota.',L,66,8,'regular',MUTED,728);}}
  pages.forEach((p,i)=>{p.line(L,39,R,39,GOLD,.8);p.text('CONFIDENCIAL · Consulta interna. No sustituye la boleta ni modifica calificaciones.',L,24,7.5,'regular',MUTED,635);p.text(`${i+1} / ${pages.length}`,R-55,24,8,'bold',NAVY,55,'right');});return serialize(pages,logo);
 }

@@ -1,0 +1,6 @@
+# V50 — Registro de calificaciones finales
+Requiere V49 instalada. No requiere SQL. Sustituye `lib/jaguar_tutoria_pdf.js` y agrega `assets/tutoria-logo-bn.jpg`. El archivo de pruebas sustituye al de V49 sólo si conservas las pruebas en tu repositorio. No cambia permisos de asesores ni los datos escolares.
+
+En Docente > Calificaciones, selecciona grupo/materia y periodo; descarga Registro de calificaciones PDF (notas finales registradas) o Formato en blanco PDF (lista precargada y columna final vacía). En Tutoría, las matrices también usan blanco y negro; el informe general conserva su estilo anterior. Las notas provienen de calificaciones por periodo con la presentación existente (numérica o AP/RP), no de actividades ni rúbricas. La columna de observaciones es para escribir a mano. Se mantiene la paginación de alumnos y asignaturas sin límite de diez materias. El escudo del nuevo formato es una copia monocromática; no reemplaza el escudo original del sistema.
+
+Pruebas: 23 casos del módulo Tutoría aprobados con datos simulados; comprobación de texto y renderizado de ambos PDF de ejemplo con 39 alumnos (2 páginas), incluidos ceros y espacios vacíos. Pendiente validar descarga en el despliegue y datos reales. No se modifica el PDF oficial de boletas. Las consultas y permisos de V49 permanecen iguales.
