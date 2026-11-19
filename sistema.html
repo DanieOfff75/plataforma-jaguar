@@ -280,6 +280,7 @@ async function loadPage(page,context){
     if(revision!==jaguarNavigationRevision)return;
     c.innerHTML=html;
     if(page==='inicio')window.NEXO?.mountStatistics?.(c);
+    if(page==='tutoria'&&S.role==='docente')void window.jaguarTutoria?.open();
     if(S.role==='docente'&&S.workspaceId&&S.page===page&&page!=='grupos'){
       const gmId=S.workspaceId;
       c.insertAdjacentHTML('afterbegin',`<div class="j-workspace-breadcrumb"><button class="btn" onclick="loadPage('grupos',{gmId:${gmId}})">← Volver al grupo</button><button class="btn" onclick="loadPage('${page}')">Ver todas mis asignaciones</button></div>`);
@@ -315,6 +316,7 @@ function jaguarTechnicalProfile(){
   return `<div class="space-y-5"><div class="card"><span class="chip">ADMINISTRACIÓN TÉCNICA</span><h2 class="text-2xl font-bold mt-3">${esc(p.nombre_completo||'Administrador técnico')}</h2><p class="text-sm text-[#A9BAC8] mt-2">Cuenta de acceso independiente para administrar los servicios técnicos autorizados.</p></div><div class="card max-w-2xl space-y-3"><div><small>Correo de acceso</small><div class="font-semibold mt-1">${esc(p.correo||u.email||'—')}</div></div><div><small>Rol autorizado</small><div class="font-semibold mt-1">Administrador técnico</div></div><div><small>Estado</small><div class="font-semibold mt-1">${p.activo===false?'Inactivo':'Activo'}</div></div></div></div>`;
 }
 async function pageHtml(p){
+  if(p==='tutoria')return window.jaguarTutoria.page();
   if(p==='modo_materia_360'&&['direccion_escolar','coordinacion_academica','control_escolar','control'].includes(S.role))return jaguarSubjectMode.page();
   if(p==='planificacion_360'&&['direccion_escolar','coordinacion_academica','control_escolar','control'].includes(S.role))return jaguarLifecycle.page();
   if(S.role==='tecnico' && p==='inicio')return jaguarTechnicalHome();
@@ -1966,6 +1968,7 @@ async function loadTeacherGradesTable(){try{
  const registered=students.filter(x=>x.grade?.calificacion!=null&&x.grade?.calificacion!=='').length;
  const count=document.getElementById('jaguar-grade-count-'+periodoId);if(count)count.textContent=`${registered}/${students.length} calificaciones registradas`;
  document.getElementById('teacherGradesTable').innerHTML=`<div class="card"><div class="flex flex-wrap justify-between gap-3 items-center"><div><span class="chip">${esc(period?.nombre||'Periodo')}</span><h3 class="mt-2">${esc(d.grupo_materia?.grupos?.clave||'')} · ${esc(d.grupo_materia?.materias?.nombre||'')}</h3><p class="text-sm">${registered} de ${students.length} notas capturadas · ${canEdit?'✍️ Rúbrica disponible':'🔒 Consulta histórica'}</p></div>${canEdit?`<button class="btn primary" onclick="openTeacherEvaluationHub(${gmId},${periodoId})">📐 Abrir rúbrica y adopción</button>`:'<span class="chip">Consulta histórica</span>'}</div><div class="scroll mt-4"><table class="table"><thead><tr><th>#</th><th>Alumno</th><th>Matrícula</th><th>Calificación</th><th>Observación</th></tr></thead><tbody>${students.map((x,i)=>`<tr><td>${i+1}</td><td><b>${esc(jaguarNombreInstitucional(x))}</b></td><td>${esc(x.matricula||'')}</td><td><b>${x.grade?.calificacion==null?'—':esc(x.grade.calificacion_visible??x.grade.calificacion)}</b></td><td>${esc(x.grade?.observaciones||'—')}</td></tr>`).join('')}</tbody></table></div></div>`;
+ document.getElementById('teacherGradesTable').insertAdjacentHTML('afterbegin',`<div class="card jt-buttons mb-3"><button class="btn primary" onclick="jaguarTutoria.sheet(${gmId},${periodoId})">📄 Descargar registro de calificaciones PDF</button><button class="btn" onclick="jaguarTutoria.sheet(${gmId},${periodoId},true)">Formato en blanco PDF</button></div>`);
  }catch(e){toast(e.message);const region=document.getElementById('teacherGradesTable');if(region)region.innerHTML=`<div class="card">No se pudieron cargar las notas: ${esc(e.message)}</div>`;}}
 // Jaguar 360 · Asistencia por grupo, periodo y fechas ya registradas.
 async function teacherAttendanceModule(gmId=0){
@@ -5446,6 +5449,12 @@ for(const r of ['direccion_escolar','coordinacion_academica','control_escolar','
 titles.planificacion_360='Planificación de ciclos escolares';
 for(const r of ['direccion_escolar','coordinacion_academica','control_escolar','control']){if(roleNav[r]&&!roleNav[r].some(x=>x[0]==='modo_materia_360'))roleNav[r].push(['modo_materia_360','◉ Modo de evaluación por materia']);}
 titles.modo_materia_360='Modo de evaluación por materia';
+</script>
+<link rel="stylesheet" href="/assets/jaguar-tutoria.css">
+<script src="/assets/jaguar-tutoria.js"></script>
+<script>
+for(const r of ['docente','direccion_escolar','coordinacion_academica','servicios_docentes']){if(roleNav[r]&&!roleNav[r].some(x=>x[0]==='tutoria'))roleNav[r].splice(1,0,['tutoria',r==='docente'?'Tutoría y grupos asesorados':'Asignación de asesores']);}
+titles.tutoria='Tutoría escolar';
 </script>
 </body>
 </html>

@@ -48,6 +48,10 @@
     {
       "source": "/api/academic-lifecycle",
       "destination": "/api/router?__jaguar_route=academic-lifecycle"
+    },
+    {
+      "source": "/api/tutoria",
+      "destination": "/api/router?__jaguar_route=tutoria"
     }
   ]
 }
