@@ -1,0 +1,14 @@
+JAGUAR V57 - ACTUALIZACION DE SOLICITUD SIN CANDIDATO
+===================================================
+Se incluyen UNICAMENTE dos archivos para reemplazar dentro de Jaguar V54 ya instalado:
+  routes/setecfi-jaguar-v54.js
+  assets/jaguar-setecfi-v54.js
+
+NO INSTALAR ESTE PARCHE EN PRODUCCION ANTES DE EJECUTAR EL SQL DEL PORTAL SETECFI V57.
+V57 requiere V52 y V53 y la integración V54 de Jaguar. Si V54 aún no se ha instalado, usa el ZIP acumulativo Jaguar V52-V57 que se entrega por separado.
+
+Servicios Docentes solo solicita una materia, sin nombre, correo ni candidato. Direccion aprueba la vacante y SETECFI consulta su padrón. Jaguar revela la identidad de la persona solo después del dictamen favorable.
+Las bajas, permisos y otros movimientos existentes mantienen sus procedimientos.
+Esta actualización NO modifica boletas, calificaciones, matriculas ni plantillas PDF/Excel de Jaguar.
+
+ORDEN RECOMENDADO: respaldar -> SQL V54 -> SQL examen V56 -> SQL V57 -> verificar -> desplegar portal V57 -> desplegar Jaguar V57 -> pruebas integrales. Las guardas opcionales solo se activan al final.
