@@ -2,7 +2,7 @@
 const fail=(message,status=400)=>Object.assign(Error(message),{status});
 export function validateSubjectPreview(body){
  const {cycle,subject,mode,minAP}=body||{};
- if(typeof cycle!=='string'||!/^\d{4}-\d{4}$/.test(cycle)||Number(cycle.slice(5))!==Number(cycle.slice(0,4))+1)throw fail('Selecciona un ciclo válido.');
+ if(typeof cycle!=='string'||!/^\d{4}-\d{4}(?:\/[1-9])?$/.test(cycle)||Number(cycle.slice(5,9))!==Number(cycle.slice(0,4))+1)throw fail('Selecciona un ciclo válido.');
  if(typeof subject!=='string'||!/^([1-9][0-9]{0,18})$/.test(subject)||BigInt(subject)>9223372036854775807n)throw fail('Selecciona una materia válida.');
  if(!['numerica','cualitativa'].includes(mode))throw fail('Selecciona un modo válido.');
  if(mode==='cualitativa'&&(typeof minAP!=='string'||!/^\d{1,2}(?:\.\d{1,6})?$/.test(minAP)||Number(minAP)<=0||Number(minAP)>10))throw fail('El mínimo AP debe ser mayor que 0 y hasta 10, con máximo 6 decimales.');

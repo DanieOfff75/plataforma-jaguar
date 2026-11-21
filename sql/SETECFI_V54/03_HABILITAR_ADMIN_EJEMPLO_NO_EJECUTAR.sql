@@ -1,0 +1,6 @@
+-- PASO MANUAL. Crea primero la cuenta en Supabase Auth > Users.
+-- Sustituye el correo de EJEMPLO por el correo REAL del administrador de Portal SETECFI.
+-- NO ejecutes con este correo de ejemplo ni compartas la contrasena aqui.
+-- INSERT INTO public.setecfi_operadores_v54(user_id,nivel,activo)
+-- SELECT id,'admin',true FROM auth.users WHERE lower(email)=lower('ADMINISTRADOR@EJEMPLO.COM')
+-- ON CONFLICT (user_id) DO UPDATE SET nivel='admin',activo=true;

@@ -351,6 +351,8 @@ async function pageHtml(p){
   if(p==='config'&&['control_escolar','direccion_escolar','coordinacion_academica'].includes(S.role))return jaguarSchoolCycleConfig();
   if(p==='config_docente')return teacherConfigModule();
   if(p==='relevos_docentes'&&['servicios_docentes','coordinacion_academica','direccion_escolar'].includes(S.role))return jaguarTeacherTransitionPage();
+  if(p==='bolsa_docente'&&['servicios_docentes','coordinacion_academica','direccion_escolar','docente'].includes(S.role))return jaguarDocentePoolPage();
+  if(p==='setecfi_gestion'&&['servicios_docentes','coordinacion_academica','direccion_escolar','control_escolar','docente'].includes(S.role))return jaguarSetecfiV54Page();
   if(p==='mis_relevos'&&S.role==='docente')return (await jaguarTeacherHandoverPage())+(window.jaguarTemporaryGroup?.teacherHtml()||'');
   if(p==='ventanas_evaluacion'&&S.role==='direccion_escolar')return jaguarEvaluationDirectionPage();
   if(p==='horas_materias'&&['coordinacion_academica','direccion_escolar','servicios_docentes'].includes(S.role))return jaguarHoursPerSubjectPage();
@@ -1573,7 +1575,7 @@ let periodCycleInfo='';
 if(resource==='periods'){
   const ctx=await api('periodContext');
   const cycle=String(ctx?.ciclo_escolar||'').trim();
-  if(!/^\d{4}-\d{4}$/.test(cycle))return toast('Configura el ciclo escolar activo antes de registrar periodos.');
+  if(!/^\d{4}-\d{4}(?:\/[1-9])?$/.test(cycle))return toast('Configura el ciclo escolar activo antes de registrar periodos.');
   if(!row.id){const nums=(ctx.periodos||[]).map(p=>Number(p.numero_periodo)||0);row={...row,numero_periodo:Math.max(0,...nums)+1};}
   periodCycleInfo=`<div class="card md:col-span-2"><span class="text-xs" style="color:var(--j-muted)">CICLO ESCOLAR ACTIVO</span><div class="font-bold mt-1">${esc(cycle)}</div><p class="text-xs mt-1" style="color:var(--j-muted)">El servidor asignará este ciclo automáticamente. El periodo nuevo quedará disponible sin sustituir al periodo actual.</p></div>`;
 }
@@ -2318,7 +2320,7 @@ const _v23UsersOld=v23Users;v23Users=async function(){const html=await _v23Users
 /* ==================== 2.4 AJUSTES ==================== */
 function v24TeacherEmail(n){const a=String(n||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z\s]/g,' ').trim().split(/\s+/).filter(Boolean);if(a.length<3)return '';return `${a[0].slice(0,3)}${a[1].slice(0,2)}${a[2].slice(0,2)}.docente@${institutionDomain()}`.toLowerCase()}
 function v24PreviewTeacherEmail(){const x=v24TeacherEmail(document.getElementById('td_nombre')?.value||'');const el=document.getElementById('td_email_preview');if(el)el.value=x||'Escribe nombre y dos apellidos'}
-formTeacherAccount=function(){modal('Registrar docente',`<div class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2"><label>Nombre completo</label><input id="td_nombre" class="input mt-1" oninput="v24PreviewTeacherEmail()"></div><div class="md:col-span-2"><label>Correo institucional generado por el sistema</label><input id="td_email_preview" class="input mt-1 bg-black/20" disabled placeholder="Se generará automáticamente"></div><div><label>Número de empleado</label><input id="td_emp" class="input mt-1"></div><div><label>Especialidad</label><input id="td_esp" class="input mt-1"></div><div><label>Horas solicitadas</label><input id="td_horas" class="input mt-1" type="number" min="0" max="60" value="0"></div></div><button class="btn primary w-full mt-5" onclick="v24CreateTeacher()">Crear cuenta</button>`)};
+formTeacherAccount=function(){modal('Registrar docente',`<div class="grid md:grid-cols-2 gap-4"><div class="md:col-span-2"><label>Nombre completo</label><input id="td_nombre" class="input mt-1" oninput="v24PreviewTeacherEmail()"></div><div class="md:col-span-2"><label>Correo institucional generado por el sistema</label><input id="td_email_preview" class="input mt-1 bg-black/20" disabled placeholder="Se generará automáticamente"></div><div><label>Número de empleado</label><input id="td_emp" class="input mt-1"></div><div><label>Especialidad</label><input id="td_esp" class="input mt-1"></div><div><label>Horas solicitadas</label><input id="td_horas" class="input mt-1" type="number" min="0" max="60" value="0"></div></div><p class="text-sm mt-3">Antes del alta docente, registra la solicitud, obtiene la aprobación de Dirección Escolar y valida la constancia interna en Portal SETECFI. El servidor comprobará la autorización al activar el control.</p><button class="btn w-full mt-3" onclick="closeModal();loadPage('setecfi_gestion')">Abrir solicitudes SETECFI</button><button class="btn primary w-full mt-5" onclick="v24CreateTeacher()">Crear cuenta</button>`)};
 async function v24CreateTeacher(){try{const nombre=document.getElementById('td_nombre').value.trim(),email=v24TeacherEmail(nombre);if(!email)return toast('Escribe nombre y dos apellidos.');const d=await adminUser({rol:'docente',nombre_completo:nombre,email,numero_empleado:document.getElementById('td_emp').value.trim(),especialidad:document.getElementById('td_esp').value.trim(),horas_solicitadas:Number(document.getElementById('td_horas').value||0)});closeModal();toast(`Cuenta creada: ${d.email}`);await loadPage('docentes')}catch(e){toast(e.message)}}
 
 async function v24Subjects(){const subs=v22Sort(await api('subjects')),gm=await api('groupSubjects'),groups=await api('groups');const by={};gm.forEach(x=>(by[x.materia_id]??=[]).push(x));return `<div class="space-y-5"><div class="card"><div class="flex justify-between items-center gap-3"><div><h3>📚 Materias</h3><p class="text-sm text-[#8FA3B5]">Una materia puede aplicarse a primero, segundo, tercero o a varios grados. Las horas se configuran por grupo.</p></div><button class="btn primary" onclick="v24SubjectForm()">+ Agregar materia</button></div></div><div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">${subs.map(s=>{const rs=by[s.id]||[],gs=[...new Set(rs.map(x=>x.grupos?.grado).filter(Boolean))].sort();return `<button class="card text-left" onclick="v24SubjectDetail(${s.id})"><div class="text-xs text-[#D4AF37]">${esc(s.clave||'')}</div><div class="text-xl font-bold mt-1">${esc(s.nombre)}</div><div class="text-sm mt-2">Grados: ${gs.length?gs.join(', '):s.grado||'—'}</div><div class="text-sm text-[#8FA3B5] mt-1">${rs.length} grupos · ${s.horas_semana||0} h base</div></button>`}).join('')||'<div class="card">No hay materias registradas.</div>'}</div></div>`}
@@ -4313,6 +4315,10 @@ if(roleNav.coordinacion_academica&&!roleNav.coordinacion_academica.some(x=>x[0]=
 if(!roleNav.coordinacion_academica.some(x=>x[0]==='config'))roleNav.coordinacion_academica.push(['config','⚙ Criterios académicos']);
 if(roleNav.docente&&!roleNav.docente.some(x=>x[0]==='mis_relevos'))roleNav.docente.splice(3,0,['mis_relevos','📦 Mis relevos']);
 titles.relevos_docentes='Gestión de bajas y relevos';titles.mis_relevos='Continuidad académica';titles.horas_materias='Horas por materia';
+for(const r of ['servicios_docentes','coordinacion_academica','direccion_escolar','docente']){const n=roleNav[r];if(n&&!n.some(x=>x[0]==='bolsa_docente'))n.splice(Math.min(4,n.length),0,['bolsa_docente','◈ Bolsa y cobertura docente']);}
+titles.bolsa_docente='Docentes · Asignaciones, apoyos y reservas';
+for(const r of ['servicios_docentes','coordinacion_academica','direccion_escolar','control_escolar','docente']){const n=roleNav[r];if(n&&!n.some(x=>x[0]==='setecfi_gestion'))n.splice(Math.min(5,n.length),0,['setecfi_gestion','Autorizaciones · SETECFI']);}
+titles.setecfi_gestion='Solicitudes de personal · Portal SETECFI';
 for(const r of ['direccion_escolar','control_escolar','control','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','archivo_escolar','recursos_monetarios']){const n=roleNav[r];if(n&&!n.some(x=>x[0]==='portal_publico'))n.push(['portal_publico','🌐 Contenido público']);if(n&&!n.some(x=>x[0]==='avisos'))n.push(['avisos','📢 Avisos'])}titles.portal_publico='Gestión del portal público';
 // Bandeja de oficios y notificaciones ya existente; no se crea otro módulo.
 for(const r of ['tecnico','direccion_escolar','control_escolar','control','docente','servicios_docentes','servicios_estudiantiles','prefectura','coordinacion_academica','archivo_escolar','recursos_monetarios']){const items=roleNav[r];if(items&&!items.some(x=>x[0]==='notificaciones'))items.splice(Math.min(2,items.length),0,['notificaciones','🔔 Notificaciones y oficios']);}
@@ -5431,6 +5437,8 @@ window.ithlaNexoAuth=async()=>{
 <script src="/assets/jaguar-session-ui.js" defer></script>
 <script src="/assets/nexo-companion.js" data-site="jaguar-session" data-endpoint="/api/public" defer></script>
 <script src="/assets/jaguar-teacher-transitions.js" defer></script>
+<script src="/assets/jaguar-docente-pool.js" defer></script>
+<script src="/assets/jaguar-setecfi-v54.js" defer></script>
 <script src="/assets/jaguar360.js" defer></script>
 <script src="/assets/jaguar360-dated-agenda.js" defer></script>
 <link rel="stylesheet" href="/assets/jaguar-shield-ui.css">

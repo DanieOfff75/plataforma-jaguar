@@ -1,5 +1,7 @@
+import {setecfiJaguarV54} from './setecfi-jaguar-v54.js';
 import {temporaryTeacher} from './temporary-group.js';
 import {supportTeachers} from './support-teachers.js';
+import {teacherPoolV53} from './teacher-pool-v53.js';
 /** Flujo de baja y relevo: solo API autenticada, operaciones atómicas en PostgreSQL. */
 import {requireRoles} from '../lib/_admin.js';
 import {buildHandoverRubricPdf} from '../lib/jaguar_relevo_rubrica_pdf.js';
@@ -18,6 +20,8 @@ export default async function handler(req,res){
   const role=profile.rol,admin=MANAGERS.includes(role);
   if(await temporaryTeacher(req,res,{user,profile,adminClient:db}))return;
   if(await supportTeachers(req,res,{user,profile,adminClient:db}))return;
+  if(await teacherPoolV53(req,res,{user,profile,adminClient:db}))return;
+  if(await setecfiJaguarV54(req,res,{user,profile,adminClient:db}))return;
   // La vista PDF se sirve sólo tras verificar sesión, vacante, titular actual y materia activa.
   if(req.method==='GET'&&req.query?.mode==='rubrica_pdf'){
    if(role!=='docente')throw failure(403,'El PDF sólo está disponible para el docente sustituto');
@@ -104,6 +108,15 @@ export default async function handler(req,res){
       q(db.from('grupo_materias').select('id,grupo_id,materia_id,horas_semana,grupos(clave),materias(nombre,horas_semana)').limit(4000))
     ]);
     output.teachers=teachers;output.assignments=assignments;output.subjects=subjects;output.groupSubjects=gm;
+    // Reservas sugeridas: solo lectura. Si V53 aún no se ha instalado, no bloquean los relevos vigentes.
+    const [reservesQ,poolsQ]=await Promise.all([
+      db.from('jaguar_docente_candidaturas_v53').select('grupo_materia_id,ciclo,docente_id,prioridad,estado,tipo').eq('tipo','suplencia').eq('estado','vigente').limit(4000),
+      db.from('jaguar_docente_bolsa_v53').select('docente_id,ciclo,estado,suplencia').eq('estado','aprobado').eq('suplencia',true).limit(2000)
+    ]);
+    const validPool=new Set((poolsQ.data||[]).map(x=>`${x.ciclo}|${x.docente_id}`));
+    output.reservas_sugeridas=(reservesQ.data||[]).filter(x=>validPool.has(`${x.ciclo}|${x.docente_id}`));
+    if(reservesQ.error||poolsQ.error)output.reservas_aviso='Bolsa V53 no instalada; los relevos tradicionales siguen disponibles.';
+
    }else if(vacantes.length){
     const originalIds=[...new Set(vacantes.map(x=>x.docente_anterior_id))];
     const groupIds=[...new Set(vacantes.map(x=>x.grupo_materia_id))];

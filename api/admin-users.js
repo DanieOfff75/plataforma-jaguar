@@ -386,6 +386,22 @@ export default async function handler(req,res){
   if(rol==='docente') email=docenteEmail(nombre,institutionDomain);
   if(rol==='docente' && email){const base=email.replace(new RegExp(`@${institutionDomain.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}$`,'i'),'');let candidate=email;let n=2;while(await findUser(adminClient,candidate)){candidate=`${base}${n}@${institutionDomain}`;n++;}email=candidate;}
   if(!email)return res.status(400).json({ok:false,error:'Correo obligatorio.'});
+  // SETECFI V54: validar ANTES de crear Auth. El trigger SQL comprueba y consume
+  // la aprobacion en la misma transaccion que inserta la ficha, cuando se active.
+  if(rol==='docente'||rol==='direccion_escolar'){
+    const {data:ctl,error:ctlErr}=await adminClient.from('setecfi_control_v54').select('obligatorio').eq('id',1).maybeSingle();
+    if(ctlErr && !['42P01','PGRST205','PGRST116'].includes(ctlErr.code))throw Object.assign(Error('No se pudo consultar el control SETECFI V54.'),{status:503});
+    if(ctl?.obligatorio){
+      const targetType=rol==='docente'?'alta_docente':'alta_direccion';
+      const {data:approved,error:approvalError}=await adminClient.from('setecfi_expedientes_v54')
+        .select('id,persona_nombre,vigencia_hasta')
+        .eq('tipo',targetType).eq('estado_direccion','aprobado')
+        .eq('estado_setecfi','aprobado').is('aplicado_en',null).limit(100);
+      if(approvalError)throw Object.assign(Error('No se pudieron validar las autorizaciones SETECFI.'),{status:503});
+      const available=(approved||[]).some(x=>String(x.persona_nombre).trim().toLowerCase()===nombre.trim().toLowerCase()&&(!x.vigencia_hasta||x.vigencia_hasta>=new Date().toISOString().slice(0,10)));
+      if(!available)throw Object.assign(Error('Antes de registrar este personal se requiere expediente aprobado por Direccion Escolar y Portal SETECFI.'),{status:409});
+    }
+  }
   const password=tempPassword();const {data:created,error}=await adminClient.auth.admin.createUser({email,password,email_confirm:true,user_metadata:{rol,must_change_password:true,login_email:email}});if(error)throw error;const id=created.user.id;
   const {error:pe}=await adminClient.from('perfiles').insert({id,nombre_completo:nombre,correo:email,rol,activo:true,matricula:rol==='alumno'?(b.matricula||null):null,clave_docente:rol==='docente'?(b.numero_empleado||null):null});if(pe){await adminClient.auth.admin.deleteUser(id);throw pe;}
   if(departmentKeyForRole(rol)){const dep=await getDepartmentByKey(adminClient,departmentKeyForRole(rol));if(dep){if(b.es_director===true){const {error:de}=await adminClient.from('responsables_departamento').update({es_director:false}).eq('departamento_id',dep.id).eq('es_director',true);if(de){await adminClient.from('perfiles').delete().eq('id',id);await adminClient.auth.admin.deleteUser(id);throw de;}}const {error:re}=await adminClient.from('responsables_departamento').upsert({departamento_id:dep.id,usuario_id:id,cargo:String(b.cargo||'').trim()||`Responsable de ${dep.nombre}`,es_director:b.es_director===true,activo:true},{onConflict:'departamento_id,usuario_id'});if(re){await adminClient.from('perfiles').delete().eq('id',id);await adminClient.auth.admin.deleteUser(id);throw re;}}}

@@ -71,7 +71,7 @@ export default async function handler(req,res){
     for(const r of result.subjects)r.mode=modes.find(m=>String(m.materia_id)===r.id)?.modo||null;
    }else{
     try{calendar=JSON.parse(req.query.calendar||'[]');}catch{throw fail('Calendario inválido.');}
-    if(!Array.isArray(calendar)||calendar.length>6||calendar.some(p=>!p||typeof p.start!=='string'||typeof p.end!=='string'||p.start<cycle.slice(0,4)+'-01-01'||p.end>cycle.slice(5)+'-12-31'))calendar=[];
+    if(!Array.isArray(calendar)||calendar.length>6||calendar.some(p=>!p||typeof p.start!=='string'||typeof p.end!=='string'||p.start<cycle.slice(0,4)+'-01-01'||p.end>cycle.slice(5,9)+'-12-31'))calendar=[];
     result=futureWorkload(catalog,calendar,req.query.unit);
    }
    return res.status(200).json({ok:true,data:{kind,calendar,...result}});

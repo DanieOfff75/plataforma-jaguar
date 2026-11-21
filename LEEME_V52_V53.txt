@@ -1,0 +1,53 @@
+PLATAFORMA JAGUAR — ACTUALIZACION ACUMULATIVA V52 + V53
+Fecha: 21 de noviembre de 2026
+Base requerida: Jaguar V51 (con la correccion del router y Tutoría ya incorporada).
+
+OBJETIVOS
+V52: aceptar identificadores como 2026-2027, 2026-2027/1, 2026-2027/2 y hasta /9.
+V53: organización docente y bolsa de cobertura por ciclo, sin sustituir las asignaciones oficiales.
+
+RUTAS DESPUES DE INSTALAR
+Servicios Docentes / Coordinación / Dirección / Docente: "Bolsa y cobertura docente".
+- Docente activo: solicita participar en recuperación, recursamiento o reserva, aun si no tiene grupo ordinario.
+- Servicios Docentes: registra solicitudes, revisa, aprueba, rechaza o suspende.
+- Coordinación: revisa titular, horas declaradas, horas asignadas y minutos reales de horario; accede a la asignación oficial existente; registra candidatos por materia y orden de prioridad.
+- Dirección: supervisa/autoriza perfiles y candidatos.
+- Bajas y relevos: muestra primero docentes de reserva aprobados para esa grupo-materia, sin asignarlos por sí solo.
+
+INSTALACIÓN RECOMENDADA
+1) Respaldar base y repositorio. Probar con una copia de la base si es posible.
+2) Supabase SQL Editor: ejecutar sql/ITHLA_CICLOS_SUFIJO_V52.sql. SOLO si V52 aún no está instalada.
+3) Ejecutar sql/VERIFICAR_CICLOS_V52.sql. Verificar mensajes, restricciones y conservación del ciclo vigente.
+4) Ejecutar sql/ITHLA_DOCENTES_BOLSA_V53.sql (transacción independiente).
+5) Ejecutar sql/VERIFICAR_DOCENTES_BOLSA_V53.sql. Debe mostrar dos tablas con RLS activado y sin SELECT autenticado.
+6) GitHub: colocar los archivos de esta carpeta en sus rutas RELATIVAS correctas, reemplazando archivos de igual nombre. NO subir todos los archivos sueltos a la raíz.
+   * sistema.html en raíz.
+   * assets/*.js en assets/
+   * lib/*.js en lib/
+   * routes/*.js en routes/
+   * los scripts sql/*.sql pueden quedarse en repo como documentación, pero hay que ejecutarlos por separado en Supabase.
+7) Hacer un solo commit y comprobar que Vercel publique el commit nuevo; reiniciar pestaña Ctrl+F5.
+8) Probar primero el rol de Servicios Docentes, luego Coordinación, Dirección y un Docente sin asignación ordinaria.
+
+RESTRICCIONES Y SEGURIDAD
+- V53 no crea, edita ni desactiva asignaciones docentes directamente. Usa la función existente de Coordinación para asignar titular y el flujo existente para cubrir vacantes.
+- Un candidato reserva no obtiene acceso al grupo ni a evaluaciones hasta que la asignación se apruebe y formalice.
+- Las tablas nuevas no están accesibles directamente desde clientes 'authenticated' o 'anon'; el backend verifica sesión, rol, ciclo y elegibilidad.
+- Las candidaturas de recuperación y recursamiento designan DOCENTES posibles, no generan automáticamente alumnos elegibles, intentos, convocatorias ni notas.
+- Horas semanales declaradas son unidades de horario; minutos programados salen de hora_inicio y hora_fin. No se confunde 50 minutos con 1 hora reloj.
+- El registro del docente se realiza en el PADRÓN original. La bolsa añade modalidades, no un nuevo rol ni una nueva cuenta.
+- No se renombra el ciclo 2026-2027 existente. /1 y /2 son identificadores distintos; no se ejecuta promoción al cambiar un sufijo.
+- No se modifican matrículas, calificaciones, boletas, bitácoras ni PDF institucionales.
+- La anterior prueba experimental de apoyo docente sigue separada y deshabilitada en producción; V53 no la activa.
+
+VERIFICACIÓN DE DESARROLLO
+15 pruebas automáticas de helpers/GUI y verificaciones de estructura superadas (sin base de datos real).
+Validación sintáctica Node de todos los JS del paquete.
+Aún NO se instaló V52 o V53 en Supabase, no se desplegó a Vercel ni se comprobó un flujo de extremo a extremo con datos reales.
+No se modifica tu proyecto conectado sin autorización explícita.
+
+SI APARECE 'RUTA NO DISPONIBLE'
+Comprobar que la ruta api/router.js de V51 está actualizada. V53 reutiliza /api/teacher-transition, que debe existir en V51; no agrega una ruta pública nueva.
+
+SI APARECE 'MIGRACION V53 PENDIENTE'
+Comprobar que sql/ITHLA_DOCENTES_BOLSA_V53.sql se ejecutó y que VERIFICAR_DOCENTES_BOLSA_V53.sql devuelve ambas tablas.

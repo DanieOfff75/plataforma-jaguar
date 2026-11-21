@@ -1,0 +1,39 @@
+JAGUAR V52 | Formato opcional del ciclo escolar
+Base: V51. No requiere reinstalar V49 a V51 si ya estan instaladas.
+
+FORMATOS
+AAAA-AAAA (dos anios consecutivos) o AAAA-AAAA/N (N=1..9).
+Ejemplos: 2026-2027, 2026-2027/1, 2026-2027/2, 2027-2028/3.
+Los identificadores se guardan completos y se comparan exactamente.
+No se renombra ni se divide el ciclo actual; no se toca ningun dato academico.
+
+INSTALACION
+1. Respalda la base de datos. Prueba primero en una copia de Supabase.
+2. En SQL Editor, con traduccion automatica desactivada, ejecuta completo
+   sql/ITHLA_CICLOS_SUFIJO_V52.sql. Esta migracion cambia exclusivamente
+   restricciones y literales de formato de funciones existentes. Si encuentra
+   instalaciones faltantes o inesperadas, cancela la transaccion.
+3. Ejecuta sql/VERIFICAR_CICLOS_V52.sql. Comprueba 8 restricciones y 11 funciones
+   con formato_ampliado=true. Los primeros cuatro ejemplos se aceptan; los
+   ultimos cuatro deben rechazarse. El ciclo vigente debe seguir siendo igual.
+4. Descomprime y sube a GitHub las carpetas assets, lib y routes completas
+   junto a sistema.html. No aplanes las rutas. Un solo commit.
+   La carpeta sql contiene los scripts para Supabase; subirla a GitHub no los ejecuta.
+5. Tras el despliegue, prueba Planificacion de ciclos con 2026-2027/1 y /2.
+
+ALCANCE Y SEGURIDAD
+Se habilita el formato en propuestas, consultas y validadores vinculados.
+Se mantienen los anios consecutivos y las reglas de fechas.
+Los sufijos no equivalen a periodos de evaluacion ni definen un semestre.
+La apertura anual y la continuidad/promocion de ciclos con sufijo quedan
+bloqueadas hasta definir las transiciones academicas correspondientes.
+No se cambia el ciclo vigente ni se migran registros. No se modifican los
+PDF institucionales. El token CICLO en nombres de grupos usa guion en lugar
+de barra para no crear nombres incompatibles.
+
+VERIFICACION REALIZADA
+67 pruebas locales seleccionadas superadas (7 nuevas y 60 regresiones).
+Se verificaron en modo solo lectura las 8 restricciones y las 11 funciones
+existentes de Supabase y la compatibilidad del cambio de formato.
+No se ejecuto la migracion ni se desplego en produccion. Es necesario probar
+el guardado de una propuesta y la verificacion SQL tras instalar en una copia.

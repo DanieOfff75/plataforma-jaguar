@@ -9,6 +9,7 @@ export async function cycleOpening(req,res,{user,profile,adminClient:db}){
  const dir=profile.rol==='direccion_escolar',experimental=process.env.JAGUAR360_TEST_SEALS==='true';
  if(!['direccion_escolar','control_escolar','control','coordinacion_academica'].includes(profile.rol)||write&&!dir)throw fail('Sin atribución.',403);
  const cycle=checked(()=>validateCycle((write?b:q).cycle));
+ if(cycle.includes('/'))throw fail('Este identificador es válido para planificación. La apertura de ciclos con sufijo requiere una regla de continuidad específica; no uses la apertura anual.',409);
  if(write){
   try{if(!req.headers?.origin||new URL(req.headers.origin).host!==(req.headers['x-forwarded-host']||req.headers.host))throw Error()}catch{throw fail('Origen no autorizado.',403)}
   if(!experimental)throw fail('Solo entorno aislado de pruebas.',409);

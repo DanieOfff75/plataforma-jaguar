@@ -1,0 +1,28 @@
+JAGUAR + PORTAL SETECFI V54 — LEER ANTES DE SUBIR
+
+SON DOS REPOSITORIOS Y DOS PROYECTOS VERCEL.
+
+1. Jaguar52-53-54_CONSOLIDADO.zip: actualización de Plataforma Jaguar (base V51). Incluye las V52 (ciclo con /1 y /2), V53 (bolsa docente) y V54 (bandeja solicitudes + validaciones). Extráelo y sube los archivos a su repositorio PLATAFORMA JAGUAR respetando las carpetas originales. NO subas los archivos descomprimidos sueltos a la raíz: entra a cada carpeta y reemplaza las rutas exactas.
+
+2. Portal_SETECFI_V54_GITHUB.zip: portal totalmente separado; crea repositorio GitHub nuevo y proyecto Vercel Hobby nuevo. Extrae este ZIP directamente en la raíz del NUEVO repo. NO lo subas dentro de la carpeta Jaguar.
+
+3. MISMO SUPABASE: No ejecutar todo sin respaldo y pruebas. SQL en orden:
+   a) Jaguar/sql/ITHLA_CICLOS_SUFIJO_V52.sql
+   b) Jaguar/sql/VERIFICAR_CICLOS_V52.sql
+   c) Jaguar/sql/ITHLA_DOCENTES_BOLSA_V53.sql
+   d) Jaguar/sql/VERIFICAR_DOCENTES_BOLSA_V53.sql
+   e) Portal/sql/01_SETECFI_V54.sql
+   f) Portal/sql/02_VERIFICAR_SETECFI.sql
+   g) Crea admin autenticado de Portal SETECFI en Supabase Auth y asigna privilegio con plantilla 03 (editada).
+   h) Publica ambos y prueba alta, permiso, baja y Dirección, y la descarga/verificación de documento.
+   i) SOLO LUEGO, opcional: Portal/sql/04_GUARDAS_OPCIONALES_V54.sql y Portal/sql/05_ACTIVAR_SOLO_TRAS_PRUEBAS.sql.
+   j) Portal/sql/06_DESACTIVAR_EMERGENCIA.sql: deshabilita controles en caso de necesidad.
+
+4. VERCEL Portal variables: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY (secreta sólo en servidor) y PUBLIC_PORTAL_ORIGIN.
+
+5. LOS DOCUMENTOS SETECFI SON INTERNOS ITHLA; NO COMPROBANTES OFICIALES GUBERNAMENTALES, NO CERTIFICADOS SEP.
+
+6. NO SE HA INSTALADO O DESPLEGADO NADA DE ESTE PAQUETE EN TU BASE/REPOSITORIOS.
+   Pruebas de código y navegador simuladas; es necesario verificar funcionamiento con el Supabase/ Vercel real.
+
+7. IMPORTANTE: los flujos existentes de altas y bajas NO quedan universalmente bloqueados por defecto. Las guardas opcionales tienen que habilitarse manualmente tras revisar su compatibilidad con los módulos existentes. La resolución tampoco crea automáticamente un contrato, cuenta, baja o nombramiento.
