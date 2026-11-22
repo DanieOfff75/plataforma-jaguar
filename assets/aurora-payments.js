@@ -64,6 +64,12 @@ window.jaguarAuroraPaymentForm=function jaguarAuroraPaymentForm(){
  <button id="ja_aurora_status" class="btn" type="button">Consultar estado</button>
  <button id="ja_aurora_verify" class="btn primary" type="button">Verificar pago</button>
  </div>
+ <div class="card space-y-2">
+ <h4 class="font-semibold">Verificar depósito o transferencia recibida</h4>
+ <p class="text-xs text-[#A9BAC8]">Cuando el pagador transfiera desde Aurora a la cuenta empresarial ITHLA o deposite en ventanilla, introduce aquí la referencia AU-... del comprobante.</p>
+ <input id="ja_aurora_incoming" class="input" placeholder="AU-..." pattern="AU-[a-fA-F0-9]{32}" autocomplete="off">
+ <button id="ja_aurora_verify_incoming" class="btn" type="button">Verificar abono bancario</button>
+ </div>
  <div id="ja_aurora_result" class="text-sm text-[#A9BAC8]" role="status"></div>
  <p class="text-xs text-[#A9BAC8]">La verificación conserva la referencia en conciliación. No duplica ni modifica los pagos registrados del instituto.</p>
  </div>`);
@@ -91,6 +97,21 @@ window.jaguarAuroraPaymentForm=function jaguarAuroraPaymentForm(){
    const r=await jaguarAuroraFinanceAction('status',getCharge(),id);
    show('Estado: '+r.status+' · Importe: '+r.amount+' MXN'+(r.reference?' · Referencia: '+r.reference:''));
   }catch(e){show(e.message)}
+ });
+ document.getElementById('ja_aurora_verify_incoming')?.addEventListener('click',async()=>{
+  const btn=document.getElementById('ja_aurora_verify_incoming');btn.disabled=true;
+  try{
+   const reference=document.getElementById('ja_aurora_incoming').value.trim().toUpperCase();
+   if(!/^AU-[a-f0-9]{32}$/i.test(reference))throw Error('Introduce la referencia completa AU-...');
+   const {data:{session}}=await supabaseClient.auth.getSession();
+   if(!session?.access_token)throw Error('Sesión vencida. Inicia sesión nuevamente.');
+   const rsp=await fetch('/api/aurora-banking',{method:'POST',headers:{
+    'Content-Type':'application/json',Authorization:'Bearer '+session.access_token},
+    body:JSON.stringify({action:'verify_incoming',cargoId:getCharge(),reference})});
+   const out=await rsp.json();
+   if(!rsp.ok||!out.ok)throw Error(out.error||'No se pudo verificar el abono');
+   show('Abono recibido en Aurora: '+out.amount+' MXN. Referencia '+out.reference+'. Verificación guardada.');
+  }catch(e){show(e.message)}finally{btn.disabled=false;}
  });
  document.getElementById('ja_aurora_verify')?.addEventListener('click',async()=>{
   const btn=document.getElementById('ja_aurora_verify');btn.disabled=true;
