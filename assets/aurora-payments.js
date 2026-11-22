@@ -29,7 +29,8 @@ window.jaguarAuroraBalanceForm=async function jaguarAuroraBalanceForm(){
    const rows=[
     ['Banco Aurora · cuenta empresarial ITHLA',d.bank.balance+' '+d.bank.currency],
     ['Recursos Monetarios · cuenta bancaria unificada',d.jaguar.balance+' '+d.jaguar.currency],
-    ['Diferencia de conciliación',d.difference+' MXN']
+    ['Diferencia de conciliación',d.difference+' MXN'],
+    ['Caja institucional (efectivo separado)',(d.cash?.balance||'0.00')+' MXN']
    ];
    for(const [label,value] of rows){
     const row=document.createElement('div');row.className='flex justify-between gap-4 border-b border-white/10 py-2';
@@ -39,6 +40,11 @@ window.jaguarAuroraBalanceForm=async function jaguarAuroraBalanceForm(){
    const summary=document.createElement('p');
    summary.className=d.matched?'text-emerald-300 font-semibold':'text-amber-300 font-semibold';
    summary.textContent=d.matched?'✓ Saldos conciliados':'⚠ Los saldos son diferentes. Revisa pagos y movimientos no verificados.';
+   if(d.cash?.lastClose){
+    const note=document.createElement('p');note.className='text-xs text-[#A9BAC8] mt-3';
+    note.textContent='Último corte de caja: '+d.cash.lastClose.folio+' · diferencia registrada '+d.cash.lastClose.difference+' MXN';
+    box.append(note);
+   }
    box.append(summary);node.replaceChildren(box);
   }catch(e){node.textContent='No se pudo obtener la conciliación: '+e.message;}
  };
