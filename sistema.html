@@ -1689,7 +1689,6 @@ function printPdf(title,html){
  window.onload=async()=>{try{await document.fonts.ready;await Promise.race([Promise.all([...document.images].map(im=>im.complete?Promise.resolve():new Promise(done=>{im.addEventListener('load',done,{once:true});im.addEventListener('error',done,{once:true})}))),new Promise(done=>setTimeout(done,4500))])}catch{}window.print()};
  <\/script>
 
-<script defer src="/assets/aurora-payments.js"></script>
 </body></html>`);
  w.document.close();
 }
@@ -5465,6 +5464,7 @@ titles.modo_materia_360='Modo de evaluación por materia';
 for(const r of ['docente','direccion_escolar','coordinacion_academica','servicios_docentes']){if(roleNav[r]&&!roleNav[r].some(x=>x[0]==='tutoria'))roleNav[r].splice(1,0,['tutoria',r==='docente'?'Tutoría y grupos asesorados':'Asignación de asesores']);}
 titles.tutoria='Tutoría escolar';
 </script>
+<script defer src="/assets/aurora-payments.js"></script>
 </body>
 </html>
 
