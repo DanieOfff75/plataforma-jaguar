@@ -69,6 +69,26 @@ export default async function auroraBanking(req,res){
   }
   const cargoId=Number(req.body?.cargoId);
   const record=await loadCharge(adminClient,cargoId);
+  if(action==='verify_incoming'){
+    const ref=String(req.body?.reference||'').trim().toUpperCase();
+    if(!/^AU-[0-9A-F]{32}$/.test(ref))throw BAD(400,'Referencia Aurora inválida.');
+    const payment=await bankRequest('/api/merchant/received/'+encodeURIComponent(ref));
+    if(payment.state!=='received'||!['deposit','internal'].includes(payment.type))
+      throw BAD(409,'La referencia no representa un depósito o transferencia confirmada.');
+    if(cents(payment.amount)!==record.due)throw BAD(409,'El abono no coincide con el saldo pendiente del cargo escolar.');
+    const details={aurora_intent_id:payment.operationId,cargo_id:cargoId,referencia:payment.reference,importe:payment.amount,
+      validado_por:user.id,origen:payment.type==='deposit'?'deposito':'transferencia'};
+    const ins=await adminClient.from('recursos_aurora_verificaciones').insert(details).select('id').maybeSingle();
+    if(ins.error&&ins.error.code!=='23505')throw BAD(503,'No se pudo guardar el comprobante verificado.');
+    if(ins.error){
+      const old=await adminClient.from('recursos_aurora_verificaciones').select('id,cargo_id,referencia,importe')
+        .eq('referencia',ref).maybeSingle();
+      if(old.error||!old.data||Number(old.data.cargo_id)!==cargoId||old.data.referencia!==ref||cents(old.data.importe)!==record.due)
+        throw BAD(409,'La referencia ya está asociada a otro movimiento escolar.');
+    }
+    return res.status(200).json({ok:true,verified:true,reference:payment.reference,amount:payment.amount,
+      note:'Abono bancario confirmado en Aurora; registrado para conciliación sin duplicar pagos escolares.'});
+  }
   if(action==='create'){
    const p=await bankRequest('/api/merchant/intents','POST',{
     externalChargeRef:record.externalChargeRef,amount:money(record.due)
