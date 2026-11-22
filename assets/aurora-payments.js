@@ -15,6 +15,36 @@ async function jaguarAuroraFinanceAction(action,cargoId,intentId=''){
  if(!r.ok||!d.ok)throw Error(d.error||'No se pudo consultar Banco Aurora.');
  return d;
 }
+window.jaguarAuroraBalanceForm=async function jaguarAuroraBalanceForm(){
+ if(!['recursos_monetarios','direccion_escolar'].includes(S.role))return;
+ modal('🏦 Conciliación bancaria · Banco Aurora',
+  '<div class="space-y-4"><p class="text-sm">Consultando saldo en Aurora y en la cuenta unificada de Recursos Monetarios…</p><div id="ja_balance_view" class="card">Cargando conciliación…</div><p class="text-xs text-[#A9BAC8]">Caja en efectivo se contabiliza por separado. Los saldos bancarios virtuales se verifican sin crear ingresos.</p><button id="ja_balance_refresh" class="btn">Actualizar saldos</button></div>');
+ const run=async()=>{
+  const node=document.getElementById('ja_balance_view');if(!node)return;
+  node.textContent='Consultando…';
+  try{
+   const d=await jaguarAuroraFinanceAction('bank_balance',0);
+   if(!node.isConnected)return;
+   const box=document.createElement('div');box.className='space-y-3';
+   const rows=[
+    ['Banco Aurora · cuenta empresarial ITHLA',d.bank.balance+' '+d.bank.currency],
+    ['Recursos Monetarios · cuenta bancaria unificada',d.jaguar.balance+' '+d.jaguar.currency],
+    ['Diferencia de conciliación',d.difference+' MXN']
+   ];
+   for(const [label,value] of rows){
+    const row=document.createElement('div');row.className='flex justify-between gap-4 border-b border-white/10 py-2';
+    const a=document.createElement('span'),b=document.createElement('strong');
+    a.textContent=label;b.textContent=value;row.append(a,b);box.append(row);
+   }
+   const summary=document.createElement('p');
+   summary.className=d.matched?'text-emerald-300 font-semibold':'text-amber-300 font-semibold';
+   summary.textContent=d.matched?'✓ Saldos conciliados':'⚠ Los saldos son diferentes. Revisa pagos y movimientos no verificados.';
+   box.append(summary);node.replaceChildren(box);
+  }catch(e){node.textContent='No se pudo obtener la conciliación: '+e.message;}
+ };
+ document.getElementById('ja_balance_refresh')?.addEventListener('click',run);
+ await run();
+};
 window.jaguarAuroraPaymentForm=function jaguarAuroraPaymentForm(){
  if(!['recursos_monetarios','direccion_escolar'].includes(S.role))return;
  const d=window._jaguarFinance||{};
