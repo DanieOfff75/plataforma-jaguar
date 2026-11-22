@@ -55,6 +55,18 @@ export default async function auroraBanking(req,res){
   if(origin&&new URL(origin).host!==String(req.headers.host||''))throw BAD(403,'Origen no permitido.');
   const {user,adminClient}=await requireRoles(req,['recursos_monetarios','direccion_escolar']);
   const action=String(req.body?.action||'');
+  if(action==='bank_balance'){
+    const bank=await bankRequest('/api/merchant/account-status');
+    const r=await adminClient.rpc('jaguar_recursos_saldo_cuenta',{p_cuenta_id:2,p_fecha:new Date().toISOString().slice(0,10)});
+    if(r.error)throw BAD(503,'No se pudo calcular el saldo bancario escolar.');
+    const jaguarBalance=String(r.data||0);
+    const difference=money(cents(bank.balance)-cents(jaguarBalance));
+    return res.status(200).json({ok:true,
+      bank:{name:'Banco Aurora · ITHLA',balance:bank.balance,currency:bank.currency,last4:bank.accountEnding},
+      jaguar:{name:'Cuenta bancaria unificada ITHLA',balance:jaguarBalance,currency:'MXN'},
+      difference,matched:cents(bank.balance)===cents(jaguarBalance),
+      cashSeparate:true});
+  }
   const cargoId=Number(req.body?.cargoId);
   const record=await loadCharge(adminClient,cargoId);
   if(action==='create'){
