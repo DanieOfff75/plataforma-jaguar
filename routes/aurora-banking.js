@@ -55,6 +55,20 @@ export default async function auroraBanking(req,res){
   if(origin&&new URL(origin).host!==String(req.headers.host||''))throw BAD(403,'Origen no permitido.');
   const {user,adminClient}=await requireRoles(req,['recursos_monetarios','direccion_escolar']);
   const action=String(req.body?.action||'');
+  if(action==='cash_transfer'){
+    const reference=String(req.body?.reference||'').trim().toUpperCase();
+    if(!/^AU-[0-9A-F]{32}$/.test(reference))throw BAD(400,'Referencia bancaria incorrecta.');
+    const received=await bankRequest('/api/merchant/received/'+encodeURIComponent(reference));
+    if(received.type!=='deposit'||received.state!=='received'||received.institutionalCashDeposit!==true)
+      throw BAD(409,'La referencia no corresponde a un traslado de caja ITHLA autorizado por sucursal.');
+    const {data:posted,error:postError}=await adminClient.rpc('jaguar_aurora_conciliar_caja_depositada',{
+      p_operation:received.operationId,p_reference:received.reference,p_amount:received.amount,p_actor:user.id
+    });
+    if(postError)throw BAD(409,'Aurora confirmó el depósito, pero no fue posible trasladarlo desde caja: '+postError.message);
+    return res.status(200).json({ok:true,transferId:posted?.transferencia_id,already:posted?.repeat===true,
+      reference:received.reference,amount:received.amount,
+      note:'Depósito confirmado. Caja disminuyó y cuenta bancaria institucional aumentó por el mismo importe.'});
+  }
   if(action==='bank_balance'){
     const bank=await bankRequest('/api/merchant/account-status');
     const r=await adminClient.rpc('jaguar_recursos_saldo_cuenta',{p_cuenta_id:2,p_fecha:new Date().toISOString().slice(0,10)});
