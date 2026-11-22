@@ -17,6 +17,7 @@ import jaguar360 from '../routes/jaguar360.js';
 import shield from '../routes/shield.js';
 import academicLifecycle from '../routes/academic-lifecycle.js';
 import tutoria from '../routes/tutoria.js';
+import auroraBanking from '../routes/aurora-banking.js';
 
 const handlers=Object.freeze({
   'academic-tools':academicTools,
@@ -31,7 +32,8 @@ const handlers=Object.freeze({
   'jaguar360':jaguar360,
   shield,
   'academic-lifecycle':academicLifecycle,
-  tutoria
+  tutoria,
+  'aurora-banking':auroraBanking
 });
 
 export default async function handler(req,res){
