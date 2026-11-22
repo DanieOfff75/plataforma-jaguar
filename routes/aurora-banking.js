@@ -1,6 +1,6 @@
 /** Jaguar / Recursos Monetarios ↔ Banco Aurora.
  * Solo el servidor conserva el convenio privado.
- * No inserta pagos, no modifica cargos y no comparte datos personales de alumnos.
+ * Solo acredita pagos tras prueba bancaria privada; nunca recibe números de tarjeta ni comparte datos personales.
  */
 import {requireRoles} from '../lib/_admin.js';
 
@@ -68,6 +68,23 @@ export default async function auroraBanking(req,res){
       cashSeparate:true});
   }
   const cargoId=Number(req.body?.cargoId);
+  if(['verify','verify_incoming','status'].includes(action)){
+    const ref=String(req.body?.reference||'').trim().toUpperCase(),intentId=String(req.body?.intentId||'');
+    let q=adminClient.from('recursos_aurora_verificaciones').select('cargo_id,referencia,importe,recurso_pago_id');
+    if(action==='verify_incoming'&&/^AU-[A-F0-9]{32}$/.test(ref))q=q.eq('referencia',ref);
+    else if(validUuid(intentId))q=q.eq('aurora_intent_id',intentId);
+    else q=null;
+    if(q){
+      const {data:prior,error:previousError}=await q.maybeSingle();
+      if(previousError)throw BAD(503,'No se pudo consultar la conciliación previa.');
+      if(prior){
+        if(Number(prior.cargo_id)!==cargoId)throw BAD(409,'La referencia pertenece a otro cargo.');
+        if(prior.recurso_pago_id)return res.status(200).json({ok:true,verified:true,already:true,
+          reference:prior.referencia,amount:String(prior.importe),paymentId:prior.recurso_pago_id,status:'authorized'});
+        throw BAD(409,'La referencia tiene una conciliación anterior pendiente de revisión.');
+      }
+    }
+  }
   const record=await loadCharge(adminClient,cargoId);
   if(action==='verify_incoming'){
     const ref=String(req.body?.reference||'').trim().toUpperCase();
@@ -76,18 +93,12 @@ export default async function auroraBanking(req,res){
     if(payment.state!=='received'||!['deposit','internal'].includes(payment.type))
       throw BAD(409,'La referencia no representa un depósito o transferencia confirmada.');
     if(cents(payment.amount)!==record.due)throw BAD(409,'El abono no coincide con el saldo pendiente del cargo escolar.');
-    const details={aurora_intent_id:payment.operationId,cargo_id:cargoId,referencia:payment.reference,importe:payment.amount,
-      validado_por:user.id,origen:payment.type==='deposit'?'deposito':'transferencia'};
-    const ins=await adminClient.from('recursos_aurora_verificaciones').insert(details).select('id').maybeSingle();
-    if(ins.error&&ins.error.code!=='23505')throw BAD(503,'No se pudo guardar el comprobante verificado.');
-    if(ins.error){
-      const old=await adminClient.from('recursos_aurora_verificaciones').select('id,cargo_id,referencia,importe')
-        .eq('referencia',ref).maybeSingle();
-      if(old.error||!old.data||Number(old.data.cargo_id)!==cargoId||old.data.referencia!==ref||cents(old.data.importe)!==record.due)
-        throw BAD(409,'La referencia ya está asociada a otro movimiento escolar.');
-    }
+    const {data:credited,error:dbErr}=await adminClient.rpc('jaguar_aurora_acreditar_pago_verificado',{
+      p_intent:payment.operationId,p_cargo:cargoId,p_ref:payment.reference,p_amount:payment.amount,
+      p_actor:user.id,p_method:payment.type==='deposit'?'deposito':'transferencia'});
+    if(dbErr)throw BAD(409,'Banco Aurora confirmó el abono, pero Jaguar no pudo acreditarlo: '+dbErr.message);
     return res.status(200).json({ok:true,verified:true,reference:payment.reference,amount:payment.amount,
-      note:'Abono bancario confirmado en Aurora; registrado para conciliación sin duplicar pagos escolares.'});
+      paymentId:credited?.pago_id,note:'Abono acreditado en la cuenta bancaria ITHLA y aplicado al cargo escolar.'});
   }
   if(action==='create'){
    const p=await bankRequest('/api/merchant/intents','POST',{
@@ -104,16 +115,11 @@ export default async function auroraBanking(req,res){
     throw BAD(409,'La referencia o el importe no coinciden con el saldo pendiente.');
    if(action==='status')return res.status(200).json({ok:true,status:p.state,amount:p.amount,reference:p.state==='authorized'?p.reference:null});
    if(p.state!=='authorized'||!/^AU-[0-9a-f]{32}$/i.test(String(p.reference||'')))throw BAD(409,'Banco Aurora todavía no ha confirmado el pago.');
-   const details={aurora_intent_id:p.id,cargo_id:cargoId,referencia:p.reference,importe:p.amount,validado_por:user.id};
-   const ins=await adminClient.from('recursos_aurora_verificaciones').insert(details).select('id').maybeSingle();
-   if(ins.error&&ins.error.code!=='23505')throw BAD(503,'No se pudo registrar la verificación.');
-   if(ins.error){
-    const old=await adminClient.from('recursos_aurora_verificaciones').select('id,cargo_id,importe,referencia').eq('aurora_intent_id',id).maybeSingle();
-    if(old.error||!old.data||old.data.cargo_id!==cargoId||old.data.referencia!==p.reference||cents(old.data.importe)!==record.due)
-     throw BAD(409,'Esta referencia ya pertenece a otra conciliación.');
-   }
+   const {data:credited,error:dbErr}=await adminClient.rpc('jaguar_aurora_acreditar_pago_verificado',{
+     p_intent:p.id,p_cargo:cargoId,p_ref:p.reference,p_amount:p.amount,p_actor:user.id,p_method:'tarjeta'});
+   if(dbErr)throw BAD(409,'Aurora recibió el pago, pero Jaguar requiere conciliarlo: '+dbErr.message);
    return res.status(200).json({ok:true,verified:true,reference:p.reference,amount:p.amount,
-    note:'Verificación almacenada; el asiento de recursos_pagos requiere conciliación institucional.'});
+     paymentId:credited?.pago_id,note:'Cargo escolar liquidado con pago virtual confirmado desde Banco Aurora.'});
   }
   throw BAD(400,'Operación desconocida.');
  }catch(error){
