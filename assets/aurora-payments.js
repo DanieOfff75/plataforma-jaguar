@@ -1,5 +1,5 @@
 /* Banco Aurora · puente seguro en Recursos Monetarios.
- * El registro verificado es de conciliación; NO altera pagos oficiales.
+ * Cada abono verificado se acredita una sola vez al cargo escolar.
  */
 (async()=>{ /* Módulo cargado sin operaciones automáticas */ })();
 
@@ -71,7 +71,7 @@ window.jaguarAuroraPaymentForm=function jaguarAuroraPaymentForm(){
  <button id="ja_aurora_verify_incoming" class="btn" type="button">Verificar abono bancario</button>
  </div>
  <div id="ja_aurora_result" class="text-sm text-[#A9BAC8]" role="status"></div>
- <p class="text-xs text-[#A9BAC8]">La verificación conserva la referencia en conciliación. No duplica ni modifica los pagos registrados del instituto.</p>
+ <p class="text-xs text-[#A9BAC8]">La verificación desde el servidor acredita el cargo escolar una sola vez en la cuenta bancaria unificada.</p>
  </div>`);
  const getCharge=()=>Number(document.getElementById('ja_aurora_charge')?.value||0);
  const show=m=>{const el=document.getElementById('ja_aurora_result');if(el)el.textContent=m;};
@@ -110,7 +110,7 @@ window.jaguarAuroraPaymentForm=function jaguarAuroraPaymentForm(){
     body:JSON.stringify({action:'verify_incoming',cargoId:getCharge(),reference})});
    const out=await rsp.json();
    if(!rsp.ok||!out.ok)throw Error(out.error||'No se pudo verificar el abono');
-   show('Abono recibido en Aurora: '+out.amount+' MXN. Referencia '+out.reference+'. Verificación guardada.');
+   show('Abono confirmado: '+out.amount+' MXN. Referencia '+out.reference+'. Cargo escolar acreditado.');
   }catch(e){show(e.message)}finally{btn.disabled=false;}
  });
  document.getElementById('ja_aurora_verify')?.addEventListener('click',async()=>{
@@ -118,7 +118,7 @@ window.jaguarAuroraPaymentForm=function jaguarAuroraPaymentForm(){
   try{
    const id=document.getElementById('ja_aurora_intent').value.trim();
    const r=await jaguarAuroraFinanceAction('verify',getCharge(),id);
-   show('Confirmado: '+r.reference+' · '+r.amount+' MXN. Registro de conciliación guardado.');
+   show('Confirmado: '+r.reference+' · '+r.amount+' MXN. Cargo escolar acreditado.');
   }catch(e){show(e.message)}finally{btn.disabled=false;}
  });
 };
