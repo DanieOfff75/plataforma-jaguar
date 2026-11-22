@@ -60,12 +60,19 @@ export default async function auroraBanking(req,res){
     const r=await adminClient.rpc('jaguar_recursos_saldo_cuenta',{p_cuenta_id:2,p_fecha:new Date().toISOString().slice(0,10)});
     if(r.error)throw BAD(503,'No se pudo calcular el saldo bancario escolar.');
     const jaguarBalance=String(r.data||0);
+    const cash=await adminClient.rpc('jaguar_recursos_saldo_cuenta',{p_cuenta_id:1,p_fecha:new Date().toISOString().slice(0,10)});
+    if(cash.error)throw BAD(503,'No se pudo calcular el saldo de caja.');
+    const {data:lastCash,error:cashHistoryError}=await adminClient.from('recursos_cortes_caja')
+      .select('folio,fecha_corte,diferencia').eq('cuenta_id',1)
+      .order('fecha_corte',{ascending:false}).limit(1).maybeSingle();
+    if(cashHistoryError)throw BAD(503,'No se pudo consultar el último corte de caja.');
     const difference=money(cents(bank.balance)-cents(jaguarBalance));
     return res.status(200).json({ok:true,
       bank:{name:'Banco Aurora · ITHLA',balance:bank.balance,currency:bank.currency,last4:bank.accountEnding},
       jaguar:{name:'Cuenta bancaria unificada ITHLA',balance:jaguarBalance,currency:'MXN'},
       difference,matched:cents(bank.balance)===cents(jaguarBalance),
-      cashSeparate:true});
+      cashSeparate:true,cash:{balance:String(cash.data||0),currency:'MXN',
+        lastClose:lastCash?{folio:lastCash.folio,date:lastCash.fecha_corte,difference:lastCash.diferencia}:null}});
   }
   const cargoId=Number(req.body?.cargoId);
   if(['verify','verify_incoming','status'].includes(action)){
